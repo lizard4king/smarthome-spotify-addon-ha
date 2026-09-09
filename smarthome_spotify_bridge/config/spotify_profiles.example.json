@@ -8,7 +8,7 @@
       "connection_id": "spotify_connection_a",
       "aliases": ["mein spotify"],
       "alexa_person_ids": ["amzn1.ask.person.example-a"],
-      "allowed_targets": ["kueche"],
+      "allowed_targets": ["kueche", "wohnzimmer", "badezimmer", "buero", "schlafzimmer"],
       "default_target": "kueche",
       "enabled": true
     }

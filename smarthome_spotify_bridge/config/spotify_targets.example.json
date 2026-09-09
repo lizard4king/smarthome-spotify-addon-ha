@@ -5,6 +5,26 @@
       "target_id": "kueche",
       "spotify_device_name": "Spotify-Gerät Küche",
       "aliases": ["Küche", "Echo Küche"]
+    },
+    {
+      "target_id": "wohnzimmer",
+      "spotify_device_name": "Andreas' Echo Show",
+      "aliases": ["Wohnzimmer", "Echo Show", "Andreas Echo Show"]
+    },
+    {
+      "target_id": "badezimmer",
+      "spotify_device_name": "Echo Dot Badezimmer",
+      "aliases": ["Badezimmer", "Echo Badezimmer", "Echo Dot Badezimmer"]
+    },
+    {
+      "target_id": "buero",
+      "spotify_device_name": "Echo Dot Büro",
+      "aliases": ["Büro", "Echo Büro", "Echo Dot Büro"]
+    },
+    {
+      "target_id": "schlafzimmer",
+      "spotify_device_name": "Echo Spot Schlafzimmer",
+      "aliases": ["Schlafzimmer", "Echo Spot Schlafzimmer", "Echo Spot"]
     }
   ]
 }
