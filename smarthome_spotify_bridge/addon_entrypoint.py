@@ -11,6 +11,7 @@ from smarthome.spotify_command_service import SpotifyCommandService
 from smarthome.spotify_connect import SpotifyConnectClient
 from smarthome.spotify_oauth import SpotifyTokenManager
 from smarthome.spotify_playback import SpotifyPlaybackClient
+from smarthome.spotify_service import SpotifyPlaybackService
 from smarthome.spotify_routing import load_spotify_profile_registry
 from smarthome.spotify_search import SpotifyMediaSearchClient
 from smarthome.spotify_file_store import SpotifyFileStore
@@ -43,7 +44,7 @@ def main() -> None:
         targets,
         token_provider,
         SpotifyMediaSearchClient(),
-        SpotifyPlaybackClient(),
+        SpotifyPlaybackService(token_provider, SpotifyConnectClient(), SpotifyPlaybackClient()),
     )
     connect = SpotifyConnectClient()
     for profile in profiles.profiles.values():
