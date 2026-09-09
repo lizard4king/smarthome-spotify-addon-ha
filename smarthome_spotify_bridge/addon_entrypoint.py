@@ -45,6 +45,20 @@ def main() -> None:
         SpotifyMediaSearchClient(),
         SpotifyPlaybackClient(),
     )
+    connect = SpotifyConnectClient()
+    for profile in profiles.profiles.values():
+        try:
+            token = token_provider.access_token(
+                profile.connection_id, now=datetime.now().astimezone()
+            )
+            catalog = connect.devices(token)
+            names = ", ".join(device.name for device in catalog.devices) or "keine"
+            print(f"Spotify-Geräte für {profile.display_name}: {names}", flush=True)
+        except Exception as exc:
+            print(
+                f"Spotify-Geräte für {profile.display_name} konnten nicht geladen werden: {exc}",
+                flush=True,
+            )
 
     class Dispatcher:
         def dispatch(self, command, *, voice_identity, session, now):
