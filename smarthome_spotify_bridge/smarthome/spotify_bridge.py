@@ -162,8 +162,11 @@ def make_server(
 ) -> ThreadingHTTPServer:
     """Create, but do not start, the local bridge server."""
 
-    if host != "127.0.0.1":
-        raise SpotifyBridgeError("Die Bridge darf standardmäßig nur lokal gebunden werden.")
+    # The add-on runs in an isolated Home Assistant container network. It may
+    # bind to all interfaces there so Cloudflared can reach it; arbitrary
+    # public binds remain rejected.
+    if host not in {"127.0.0.1", "0.0.0.0"}:
+        raise SpotifyBridgeError("Die Bridge darf nur lokal oder im Add-on-Netz gebunden werden.")
     if not isinstance(port, int) or isinstance(port, bool) or not 1024 <= port <= 65535:
         raise SpotifyBridgeError("Der Bridge-Port ist ungültig.")
 

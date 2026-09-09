@@ -69,7 +69,12 @@ def main() -> None:
                 now=now,
             )[0]
 
-    server = make_server(SpotifyBridge(Dispatcher(), os.environ["SPOTIFY_BRIDGE_SECRET"]))
+    # Bind inside the isolated add-on network so Cloudflared can proxy the
+    # authenticated endpoint. The bridge is not exposed directly to the LAN.
+    server = make_server(
+        SpotifyBridge(Dispatcher(), os.environ["SPOTIFY_BRIDGE_SECRET"]),
+        host="0.0.0.0",
+    )
     server.serve_forever()
 
 
