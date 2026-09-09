@@ -11,13 +11,24 @@ from smarthome.spotify_oauth import SpotifyTokenSet
 
 
 class SpotifyFileStore:
-    def __init__(self, directory: str | Path = "/data/spotify-tokens") -> None:
+    def __init__(
+        self,
+        directory: str | Path = "/data/spotify-tokens",
+        fallback_directories: tuple[str | Path, ...] = ("/config",),
+    ) -> None:
         self._directory = Path(directory)
+        self._fallback_directories = tuple(Path(path) for path in fallback_directories)
         self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self._directory, 0o700)
 
     def load(self, connection_id: str) -> SpotifyTokenSet | None:
         path = self._path(connection_id)
+        if not path.is_file():
+            for directory in self._fallback_directories:
+                candidate = directory / f"{connection_id}.json"
+                if candidate.is_file():
+                    path = candidate
+                    break
         if not path.is_file():
             return None
         try:
