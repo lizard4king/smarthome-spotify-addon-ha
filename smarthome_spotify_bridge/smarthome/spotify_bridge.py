@@ -19,6 +19,7 @@ from smarthome.spotify_alexa_commands import parse_spotify_alexa_intent
 MAX_BODY_BYTES = 16 * 1024
 MAX_CLOCK_SKEW_SECONDS = 300
 BRIDGE_PATH = "/api/spotify/command"
+HEALTH_PATH = "/health"
 
 
 class SpotifyBridgeError(ValueError):
@@ -171,6 +172,17 @@ def make_server(
         raise SpotifyBridgeError("Der Bridge-Port ist ungültig.")
 
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+            if self.path != HEALTH_PATH:
+                self.send_error(404)
+                return
+            encoded = b'{"status":"ok"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
         def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
             length = int(self.headers.get("Content-Length", "-1"))
             body = self.rfile.read(max(0, min(length, MAX_BODY_BYTES + 1)))
