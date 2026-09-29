@@ -86,6 +86,21 @@ class SpotifyTargetRegistry:
             )
         return target
 
+    def resolve_alias(self, alias: str) -> str | None:
+        """Resolve a spoken target name or stable target ID to its ID."""
+
+        if not isinstance(alias, str) or not alias.strip():
+            return None
+        normalized = _normalize_name(alias)
+        for target_id, target in self._targets.items():
+            if normalized in {
+                _normalize_name(target_id),
+                _normalize_name(target.spotify_device_name),
+                *(_normalize_name(item) for item in target.aliases),
+            }:
+                return target_id
+        return None
+
     def match_device_name(self, target_id: str, device_name: str) -> bool:
         """Match a refreshed Connect name against the logical target aliases."""
 

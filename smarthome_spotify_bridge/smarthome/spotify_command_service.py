@@ -68,12 +68,20 @@ class SpotifyCommandService:
 
         if not command.media_query:
             raise SpotifyCommandServiceError("Dem Spotify-Befehl fehlt der Inhalt.")
+        if command.target_alias is None:
+            requested_target = None
+        else:
+            requested_target = self._targets.resolve_alias(command.target_alias)
+            if requested_target is None:
+                # Do not silently fall back to the profile default for an
+                # explicitly requested but unknown target.
+                requested_target = command.target_alias
         routing = route_alexa_spotify_request(
             self._registry,
             AlexaSpotifyRoutingRequest(
                 voice_identity=voice_identity,
                 explicit_profile=command.profile_alias,
-                requested_target=command.target_alias,
+                requested_target=requested_target,
                 remember_for_session=command.remember_for_session,
             ),
             session,
