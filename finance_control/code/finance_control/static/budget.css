@@ -1,0 +1,135 @@
+#budget-planner{border-top:1px solid #dbe5e9;padding-top:24px;margin-top:8px}
+#payment-policy{margin:8px 0 24px;padding:18px;border:1px solid #dbe5e9;border-radius:8px;background:#fbfcfd}
+#payment-policy h3{margin:0 0 8px;font-size:16px}
+#payment-policy .payment-policy-principles{margin:14px 0;padding:12px 14px;background:#fff;border-radius:6px}
+#payment-policy .payment-policy-principles ul{margin:0;padding-left:22px}
+#payment-policy .payment-policy-phase-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:18px}
+#payment-policy .payment-policy-phases{display:grid;gap:14px}
+#payment-policy .payment-policy-phase-group h4{margin:0 0 8px;font-size:14px;color:#315767}
+#payment-policy .payment-policy-phase-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+#payment-policy .payment-policy-phase{padding:14px;border:1px solid #dbe5e9;border-left:4px solid #78909c;border-radius:7px;background:#fff}
+#payment-policy .payment-policy-phase.is-active{border-left-color:#36875b;background:#f6fcf8}
+#payment-policy .payment-policy-phase-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+#payment-policy .payment-policy-phase h4{margin:0;font-size:16px;overflow-wrap:anywhere}
+#payment-policy .payment-policy-phase-period{margin:4px 0 12px}
+#payment-policy .payment-policy-status{white-space:nowrap;padding:3px 7px;border-radius:999px;background:#eef2f4;font-size:13px}
+#payment-policy .payment-policy-status.is-confirmed{background:#dff3e5;color:#1c623d}
+#payment-policy .payment-policy-status.is-review-needed{background:#fff1d8;color:#845300}
+#payment-policy .payment-policy-values{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin:0}
+#payment-policy .payment-policy-values div{padding-top:7px;border-top:1px solid #edf1f3}
+#payment-policy .payment-policy-values dt{font-size:12px;color:#587078}
+#payment-policy .payment-policy-values dd{margin:2px 0 0;font-weight:600;overflow-wrap:anywhere}
+#payment-policy .payment-policy-history-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,2fr);gap:6px 14px;align-items:center;margin:14px 0;padding:12px;background:#fff;border:1px solid #dbe5e9;border-radius:7px}
+#payment-policy .payment-policy-history-controls label{font-weight:600;margin:0}
+#payment-policy .payment-policy-history-controls select{min-width:0;max-width:100%;margin:0}
+#payment-policy .payment-policy-history-controls p{grid-column:1/-1;margin:0;overflow-wrap:anywhere}
+#payment-policy .payment-policy-historical-note{margin:12px 0;border-left:4px solid #d3a247;background:#fff7e8}
+#payment-policy.is-historical .payment-policy-phase.is-active{border-left-color:#b47716;background:#fffaf0}
+@media(max-width:600px){#payment-policy .payment-policy-history-controls{grid-template-columns:1fr;gap:8px}#payment-policy .payment-policy-history-controls p{grid-column:auto}#payment-policy .payment-policy-history-controls select{width:100%}#payment-policy .payment-policy-phase-cards{grid-template-columns:minmax(0,1fr)}#payment-policy .payment-policy-phase{min-width:0}}
+@media(max-width:560px){#payment-policy .payment-policy-phase-head{flex-direction:column;gap:4px}#payment-policy .payment-policy-values{grid-template-columns:1fr}}
+#budget-planner .budget-cards{grid-template-columns:repeat(4,1fr);margin-bottom:12px}
+#budget-planner #budget-preview-status{margin:0 0 12px}
+#budget-planner #budget-notes{font-family:Segoe UI,Arial,sans-serif;line-height:1.5;background:#fffdf7;border-color:#d3a247}
+#budget-planner #budget-chart:empty{min-height:180px;background:linear-gradient(135deg,#f8fafb,#fcfefe)}
+#budget-planner details{margin:18px 0;border:1px solid #dbe5e9;border-radius:8px;padding:14px 16px;background:#fbfcfd}
+#budget-planner summary{cursor:pointer;font-weight:700;color:#315767}
+#budget-planner .budget-item{margin:14px 0;padding:16px;border:1px solid #dbe5e9;border-left:4px solid #4b98b8;border-radius:8px;background:white}
+#budget-planner .budget-item[data-confirmed="false"]{border-left-color:#d3a247}
+#budget-planner .budget-item-head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:12px}
+#budget-planner .budget-item-head h3{margin:0;font-size:16px;overflow-wrap:anywhere}
+#budget-planner .budget-item-head button{flex-shrink:0}
+#budget-planner .budget-item-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:12px}
+#budget-planner .budget-source{grid-column:span 2}
+#budget-planner .budget-confirmed{display:flex;align-items:center;gap:9px;align-self:center;margin-top:17px}
+#budget-planner .budget-confirmed input{width:auto;margin:0}
+#budget-planner #budget-status{min-height:1.5em;font-weight:600}
+#budget-planner .budget-setup-row{margin:16px 0;padding:18px;border:1px solid #ccdce4;border-radius:8px;background:#fff}
+#budget-planner .budget-setup-row h4{margin:0;font-size:16px}
+#budget-planner .budget-setup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 20px}
+#budget-planner .budget-setup-grid label{min-width:0;margin:0;overflow-wrap:anywhere}
+#budget-planner .budget-setup-grid input,#budget-planner .budget-setup-grid select{min-width:0}
+#budget-planner .budget-account-choices,#budget-planner .budget-personal-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 20px;margin:14px 0}
+#budget-planner .budget-setup .check{display:flex;align-items:center;gap:8px;margin:0;overflow-wrap:anywhere}
+#budget-planner .budget-setup .check input{width:auto;flex-shrink:0;margin:0}
+#budget-planner .budget-setup .budget-item-head button{font-size:13px;padding:8px 12px;color:#155879;background:#e5eff3;white-space:normal}
+#budget-planner .budget-setup-row .budget-setup-row{padding:14px;background:#f7fafb}
+#budget-planner .budget-allocation-part{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;gap:12px;align-items:end;margin:16px 0;padding:14px;border:1px solid #dbe5e9;border-radius:8px;background:#f7fafb}
+#budget-planner .budget-allocation-part label{min-width:0;margin:0;overflow-wrap:anywhere}
+#budget-planner .budget-allocation-part button{font-size:13px;padding:10px}
+#budget-planner [data-allocation-item-label]{display:none}
+#budget-planner .budget-allocation-results{display:grid;gap:12px;max-height:440px;overflow:auto;margin:16px 0}
+#budget-planner .budget-allocation-results>article{padding:14px;background:#fff;border:1px solid #dbe5e9;border-radius:8px}
+#budget-planner .budget-allocation-results p,#budget-planner .budget-allocation-description{overflow-wrap:anywhere}
+@media(max-width:700px){#budget-planner .budget-allocation-part{grid-template-columns:1fr}#budget-planner .budget-allocation-part button{justify-self:start}#budget-planner [data-allocation-item-label]{display:block;margin-top:6px;overflow-wrap:anywhere;font-weight:400}}
+@media(max-width:600px){#budget-planner .budget-setup-grid,#budget-planner .budget-account-choices,#budget-planner .budget-personal-choices{grid-template-columns:1fr}#budget-planner .budget-setup-row{padding:12px}#budget-planner .budget-setup .budget-item-head{align-items:flex-start;flex-direction:column;gap:8px}}
+#budget-planner #budget-warnings{background:#fff7e8}
+#budget-planner #budget-warnings ul{margin:8px 0 0;padding-left:22px;max-height:15em;overflow:auto}
+#budget-planner .budget-confidence{margin:18px 0;padding:16px;border:1px solid #d3a247;border-radius:8px;background:#fffdf7}#budget-planner .budget-confidence h3{margin:0}#budget-planner .budget-confidence .cards{margin:14px 0 0;grid-template-columns:repeat(3,1fr)}#budget-planner .budget-confidence .cards article{background:white;border:1px solid #ead9b6}
+#budget-planner .budget-outside-horizon{margin:0 0 12px;background:#fff7e8;border-left:4px solid #d3a247}
+#budget-planner .budget-outside-horizon strong{display:block}
+#budget-planner .budget-outside-horizon ul{margin:8px 0 0;padding-left:22px}
+#budget-planner .budget-month-details{margin:12px 0 0;background:#fff}
+#budget-planner td{white-space:normal}
+@media(max-width:900px){#budget-planner .budget-cards,#budget-planner .budget-item-grid,#budget-planner .budget-confidence .cards{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){#budget-planner .budget-cards,#budget-planner .budget-item-grid,#budget-planner .budget-confidence .cards{grid-template-columns:1fr}#budget-planner .budget-source{grid-column:auto}#budget-planner .budget-item-head{align-items:flex-start;flex-direction:column}}
+.plan-actual-cards{grid-template-columns:repeat(3,1fr)}
+.plan-actual-coverage{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
+.plan-actual-coverage>article{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px 16px;border:1px solid #dbe5e9;border-radius:8px;background:#f8fafb}
+.plan-actual-coverage>article>span{color:#526b79;font-size:14px}
+.plan-actual-coverage .plan-actual-details{grid-column:1/-1;width:100%}
+.plan-actual-cards small{color:#526b79;line-height:1.35}.plan-actual-liquidity{margin:22px 0;padding:20px;border:1px solid #cbdce3;border-radius:10px;background:#f8fbfc}.plan-actual-liquidity h3{margin:0 0 5px}.plan-actual-liquidity>p{margin:0 0 16px}.plan-actual-liquidity-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}.plan-actual-liquidity-summary article{padding:12px 14px;border-radius:8px;background:#fff;border:1px solid #dbe5e9}.plan-actual-liquidity-summary span{display:block;color:#526b79;font-size:13px}.plan-actual-liquidity-summary strong{display:block;margin-top:5px;font-size:20px}.plan-actual-account-details{margin-top:10px}.plan-actual-account-details summary{cursor:pointer;font-weight:600}.plan-actual-account-details ul{margin:8px 0 0;padding-left:20px}.plan-actual-account-details li{margin:4px 0}
+.plan-actual-state{font-weight:600}.plan-actual-state.within,.plan-actual-state.exact,.plan-actual-state.income{color:#287050}.plan-actual-state.near_limit{color:#966416}.plan-actual-state.unbudgeted{color:#a2352a}.plan-actual-state.exceeded,.negative{color:#a2352a}.plan-actual-unbudgeted-item>td,.plan-actual-unmapped-row.expense>td{background:#fff0ed}.plan-actual-unbudgeted-item>td:first-child,.plan-actual-unmapped-row.expense>td:first-child{border-left:3px solid #aa4836}
+.plan-actual-person-variance{font-weight:700}.plan-actual-person-variance.positive{color:#287050}.plan-actual-person-variance.negative{color:#a2352a}.plan-actual-person-variance.zero{color:#607581}
+.plan-actual-detail-row>td{padding:0 18px 18px;background:#f8fafb}.plan-actual-details{padding-top:10px}.plan-actual-details .table-wrap{margin:0}
+.plan-actual-section-row th{padding:16px 12px 8px;background:#e8f1f4;color:#173347;font-size:16px;text-align:left}.plan-actual-section-row.expense th{border-top:12px solid #fff}.plan-actual-owner-row th{padding:11px 12px 6px;background:#f5f8f9;color:#365363;font-size:13px;text-align:left;text-transform:uppercase;letter-spacing:.04em}.plan-actual-subgroup-row th{padding:9px 12px 5px;background:#fbfcfc;color:#607985;font-size:13px;text-align:left;font-weight:600}.plan-actual-payday-value{color:#287050}.plan-actual-payday-value.negative{color:#a2352a}
+.plan-actual-payday-totals{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:10px;margin:0 0 16px}.plan-actual-payday-total{display:flex;flex-direction:column;gap:3px;padding:12px 18px;border-radius:8px;background:#e7f3ec}.plan-actual-payday-total span{color:#526b79;font-size:13px}.plan-actual-payday-total strong{color:#287050;font-size:24px}.plan-actual-payday-total strong.negative{color:#a2352a}
+#plan-actual-mapping{margin-top:24px}.plan-actual-mapping-item{display:grid;grid-template-columns:minmax(180px,1fr) minmax(260px,2fr);gap:4px 18px;align-items:start;padding:14px 0;border-bottom:1px solid #dbe5e9}.plan-actual-mapping-item h3,.plan-actual-mapping-item p{margin:0}.plan-actual-category-choices{grid-column:2;grid-row:1/span 2;display:grid;gap:5px;max-height:190px;overflow:auto;padding:8px 10px;border:1px solid #bdcbd2;border-radius:6px;background:white}.plan-actual-category-choices .check{margin:0;padding:3px 0}
+@media(max-width:760px){.plan-actual-cards,.plan-actual-coverage,.plan-actual-liquidity-summary{grid-template-columns:repeat(2,1fr)}.plan-actual-mapping-item{grid-template-columns:1fr}.plan-actual-category-choices{grid-column:1;grid-row:auto}.plan-actual-table{min-width:720px}}
+
+.plan-actual-view-switch{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:16px 0}.plan-actual-view-switch .muted{flex:1 1 340px;margin:0;line-height:1.4}
+.plan-actual-view-switch button[aria-pressed="true"]{background:#17617b;color:#fff}
+.plan-actual-cockpit{display:grid;gap:16px}
+.plan-actual-cockpit[hidden],.plan-actual-tab-panel[hidden]{display:none!important}
+.plan-actual-free-card{display:grid;grid-template-columns:minmax(220px,1fr) auto;align-items:center;gap:8px 24px;margin:8px 0;padding:24px 28px;border:1px solid #a9cbb7;border-left:7px solid #38755b;border-radius:12px;background:linear-gradient(115deg,#edf8f1,#f7fbf8)}
+.plan-actual-free-card .eyebrow{color:#38755b;font-weight:700}.plan-actual-free-card h3{margin:5px 0}.plan-actual-free-card p{margin:0}
+.plan-actual-free-card>strong{grid-column:2;grid-row:1/3;color:#216443;font-size:clamp(30px,4vw,48px);font-variant-numeric:tabular-nums;text-align:right}
+.plan-actual-free-split{grid-column:1/-1;display:flex;gap:12px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #cfe2d5;color:#526b79;font-size:14px}
+.plan-actual-free-split .plan-actual-free-cap{flex-basis:100%;font-weight:700;color:#173347}
+.plan-actual-surplus-bridge{margin:14px 0 20px;border-left:7px solid #2d6f8e;background:#f7fbfd}.plan-actual-surplus-bridge .section-head{align-items:center}.plan-actual-surplus-bridge .section-head>strong{color:#165b7a;font-size:clamp(28px,3.5vw,42px);font-variant-numeric:tabular-nums;white-space:nowrap}.plan-actual-surplus-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}.plan-actual-surplus-steps article{padding:12px;border:1px solid #d6e3e9;border-radius:8px;background:#fff}.plan-actual-surplus-steps span{display:block;min-height:2.6em;color:#526b79;font-size:13px}.plan-actual-surplus-steps strong{display:block;margin-top:5px;font-size:20px;font-variant-numeric:tabular-nums}
+.plan-actual-due ol{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:0;list-style:none}
+.plan-actual-due li{padding:12px;border:1px solid #dbe5e9;border-radius:8px;background:white;overflow-wrap:anywhere}
+.plan-actual-due-inflow{border-top:3px solid #38755b!important}.plan-actual-due-outflow{border-top:3px solid #b17b20!important}
+.plan-actual-tabs{display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid #cddce3;padding:4px 0 0}
+.plan-actual-tabs [role="tab"]{white-space:nowrap;padding:11px 16px;border:1px solid transparent;border-bottom:3px solid transparent;border-radius:8px 8px 0 0;background:transparent;color:#506674}
+.plan-actual-tabs [role="tab"][aria-selected="true"]{background:white;border-color:#dbe5e9;border-bottom-color:#17617b;color:#124b60}
+.plan-actual-tabs [role="tab"]:focus-visible,.plan-actual-tree-toggle:focus-visible{outline:2px solid #17617b;outline-offset:2px}
+.plan-actual-tab-panel{margin:0!important;padding:18px;border:1px solid #dbe5e9;border-radius:0 0 10px 10px}
+#plan-actual-daily-chart{min-width:0;min-height:220px;background:white}
+#plan-actual-daily-chart text{fill:#526b79;font-size:12px}
+.plan-actual-daily-controls{display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin:8px 0}.plan-actual-daily-controls label{display:flex;align-items:center;gap:10px;margin:0;font-size:14px}.plan-actual-daily-controls select{width:auto;min-width:150px;margin:0}
+.plan-actual-daily-balance{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin:8px 0 14px}.plan-actual-daily-balance-value{display:flex;flex-direction:column;min-width:130px;padding:9px 12px;border:1px solid #dbe5e9;border-radius:8px;background:#f8fafb}.plan-actual-daily-balance-value span{font-size:12px;color:#526b79}.plan-actual-daily-balance-value strong{font-size:18px;font-variant-numeric:tabular-nums}.plan-actual-daily-balance>p{flex-basis:100%;margin:0}
+.plan-actual-daily-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin:14px 0 6px;padding:10px 12px;border:1px solid #dbe5e9;border-radius:8px;background:#f8fafb}
+.plan-actual-daily-legend-item{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;font-size:14px;font-weight:600;color:#173143}
+.plan-actual-daily-legend-line{display:inline-block;width:28px;border-top:3px solid #526b79}
+.plan-actual-daily-legend-line.is-plan{border-top-style:dashed}
+.plan-actual-chart-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
+.plan-actual-chart-scroll #plan-actual-daily-chart{width:100%;min-width:640px}
+.plan-actual-chart-scroll #plan-actual-daily-chart.is-monthly{min-width:900px}
+.plan-actual-chart-scroll #plan-actual-daily-chart.is-daily-range{min-width:1200px}
+#plan-actual-daily-chart .plan-actual-month-label{font-size:10px}
+#plan-actual-daily-chart .plan-actual-right-axis-label{fill:#34495e;font-size:11px;font-weight:600}
+#plan-actual-daily-chart .plan-actual-axis-title{fill:#243f4d;font-size:11px;font-weight:700}
+@media(max-width:640px){.plan-actual-daily-controls{justify-content:flex-start}.plan-actual-daily-controls label{flex:1 1 220px}.plan-actual-daily-controls select{min-width:0;flex:1}}
+.plan-actual-account-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.plan-actual-account-grid article{padding:16px;border:1px solid #dbe5e9;border-radius:9px;background:#fff}.plan-actual-account-grid h4{margin:0 0 12px}.plan-actual-account-grid dl{display:grid;grid-template-columns:1fr auto;gap:7px;margin:0}.plan-actual-account-grid dt{color:#526b79}.plan-actual-account-grid dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.plan-actual-tree{display:grid;gap:4px}
+.plan-actual-tree-row{display:grid;grid-template-columns:auto minmax(120px,1.5fr) repeat(3,minmax(100px,1fr)) minmax(120px,1fr) auto;align-items:center;gap:10px;padding:10px 12px 10px calc(12px + var(--tree-depth)*18px);border-bottom:1px solid #e2e9ed;background:white}
+.plan-actual-tree-row:has(.plan-actual-tree-toggle){grid-template-columns:auto minmax(150px,1fr) minmax(300px,2fr);background:#f6f9fa}
+.plan-actual-tree-row.level-0{background:#eaf2f5;font-weight:700}.plan-actual-tree-row.level-1{background:#f1f6f8;font-weight:600}
+.plan-actual-tree-row.has-deviation{box-shadow:inset 4px 0 #bd8425}.plan-actual-tree-row strong{overflow-wrap:anywhere}
+.plan-actual-tree-toggle{width:30px;height:30px;padding:0;background:#e5eff3;color:#155879}
+.plan-actual-tree-group-values{color:#526b79;font-size:14px}
+.plan-actual-tree-children[hidden],.plan-actual-tree-detail[hidden]{display:none!important}
+.plan-actual-state.income-partial,.plan-actual-state.near_limit{color:#966416}.plan-actual-state.income-exact{color:#287050}.plan-actual-state.income-over{color:#35677d}
+#plan-actual-coverage[hidden]{display:none!important}
+@media(max-width:900px){.plan-actual-due ol,.plan-actual-account-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-actual-tree-row,.plan-actual-tree-row:has(.plan-actual-tree-toggle){grid-template-columns:auto minmax(120px,1fr) repeat(2,minmax(95px,auto))}.plan-actual-tree-group-values{grid-column:2/-1}.plan-actual-tree-row>.plan-actual-state,.plan-actual-tree-row>button.secondary{grid-column:2/-1}}
+@media(max-width:600px){.plan-actual-free-card{grid-template-columns:1fr;padding:18px}.plan-actual-free-card>strong{grid-column:1;grid-row:auto;text-align:left}.plan-actual-free-split{grid-column:1}.plan-actual-surplus-bridge .section-head{display:block}.plan-actual-surplus-steps{grid-template-columns:1fr 1fr}.plan-actual-due ol,.plan-actual-account-grid{grid-template-columns:1fr}.plan-actual-tree-row,.plan-actual-tree-row:has(.plan-actual-tree-toggle){grid-template-columns:auto minmax(0,1fr);gap:6px}.plan-actual-tree-row>*:not(.plan-actual-tree-toggle){grid-column:2}.plan-actual-tree-group-values{grid-column:2}}

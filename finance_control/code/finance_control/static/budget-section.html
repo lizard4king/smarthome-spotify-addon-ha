@@ -1,0 +1,35 @@
+<section id="payment-policy" class="payment-policy" aria-labelledby="payment-policy-heading">
+<div class="section-head"><div><h2 id="payment-policy-heading">Zahlungslogik</h2><p class="muted">Lesende Darstellung der gespeicherten Regeln. Sie löst keine Zahlung aus und verändert keine Buchungen.</p></div><span id="payment-policy-revision" class="monthly-badge">Nicht hinterlegt</span></div>
+<p id="payment-policy-status" class="muted" role="status">Zahlungslogik wird geladen.</p>
+<div id="payment-policy-content" hidden>
+<div class="payment-policy-principles"><h3>Grundprinzipien</h3><ul id="payment-policy-principle-list"></ul></div>
+<div class="payment-policy-phase-head"><h3>Phasen</h3><span class="muted">Aktive Phase und weitere gespeicherte Zeiträume</span></div>
+<div id="payment-policy-phases" class="payment-policy-phases" aria-live="polite"></div>
+</div>
+</section><div id="budget-planner" aria-labelledby="budget-heading">
+<div class="section-head"><div><h2 id="budget-heading">Budgetentwurf</h2><p class="muted">Versionierte, ausdrücklich gepflegte Annahmen. Es werden weder Buchungen automatisch übertragen noch Kontostände vorhergesagt.</p></div><span id="budget-revision" class="monthly-badge">Noch nicht gespeichert</span></div>
+<div id="budget-preview" aria-live="polite">
+<div class="cards budget-cards"><article><span>Einnahmen im Zeitraum</span><strong id="budget-total-income">—</strong></article><article><span>Ausgaben im Zeitraum</span><strong id="budget-total-expenses">—</strong></article><article><span>Cashflow im ersten Monat</span><strong id="budget-first-cashflow">—</strong></article><article><span>Kumulierte Veränderung</span><strong id="budget-total-cashflow">—</strong></article></div>
+<p id="budget-preview-status" class="muted">Noch keine Vorschau berechnet. Die Grafik zeigt ausschließlich die Veränderung durch diesen Entwurf, keinen absoluten Kontostand.</p>
+<div id="budget-outside-horizon" class="notice budget-outside-horizon" hidden><strong id="budget-outside-horizon-heading"></strong><ul id="budget-outside-horizon-list"></ul></div>
+<p id="budget-detail-legacy" class="muted" hidden>Für dieses gespeicherte Ergebnis sind keine Positionsdetails verfügbar. Es wird nicht stillschweigend neu berechnet.</p>
+<svg id="budget-chart" viewBox="0 0 900 280" role="img" aria-label="Kumulierte Veränderung des Budgetentwurfs nach Monat" hidden></svg>
+<details id="budget-warnings" class="notice" hidden><summary id="budget-warning-summary"></summary><ul id="budget-warning-list"></ul></details>
+</div>
+
+<form id="budget-form">
+<div class="columns"><label for="budget-title">Titel <input id="budget-title" name="title" maxlength="120" required placeholder="Bezeichnung des Entwurfs"></label><label for="budget-start-month">Erster Planmonat <input id="budget-start-month" name="start_month" type="month" required></label><label for="budget-horizon-months">Vorschaumonate <input id="budget-horizon-months" name="horizon_months" type="number" min="1" max="120" step="1" value="12" required></label></div>
+<label for="budget-notes">Notizen und Quellenlage <textarea id="budget-notes" name="notes" rows="5" maxlength="2000" placeholder="Annahmen, Quellen, rechtliche oder preisliche Grenzen und noch zu prüfende Punkte"></textarea></label>
+<p class="notice">Der Betrag gilt je Zahlung; der Rhythmus läuft ab dem ersten Fälligkeitsmonat. Ein leerer Endmonat bedeutet: fortlaufend. „Bestätigt“ ist ein Prüfstatus; unbestätigte Positionen bleiben klar als offen markiert.</p>
+<details id="budget-items-details"><summary>Budgetpositionen bearbeiten (<span id="budget-item-count">0</span>)</summary>
+<div class="actions"><button id="budget-add-income" type="button">Einnahme hinzufügen</button><button id="budget-add-fixed" type="button" class="secondary">Fixkosten hinzufügen</button><button id="budget-add-variable" type="button" class="secondary">Variable Ausgabe hinzufügen</button></div>
+<div id="budget-items" aria-live="polite"></div>
+<p id="budget-empty-items" class="muted">Noch keine Position angelegt. Der leere Entwurf enthält keine angenommenen Beträge.</p>
+</details>
+<div class="actions"><button id="budget-calculate" type="submit">Vorschau berechnen</button><button id="budget-save" type="button">Neue Revision speichern und berechnen</button><button id="budget-reload" type="button" class="secondary">Gespeicherten Stand neu laden</button></div>
+<p id="budget-status" role="status"></p>
+</form>
+
+<details id="budget-result-details" hidden><summary>Monatswerte der Vorschau</summary><div class="table-wrap"><table><thead><tr><th>Monat</th><th class="numeric">Einnahmen EUR</th><th class="numeric">Fixkosten EUR</th><th class="numeric">Variable Ausgaben EUR</th><th class="numeric">Cashflow EUR</th><th class="numeric">Kumulierte Veränderung EUR</th><th>Positionen</th></tr></thead><tbody id="budget-result-rows"></tbody></table></div><details id="budget-month-details" class="budget-month-details" hidden><summary id="budget-month-details-summary">Positionen</summary><div class="table-wrap"><table><thead><tr><th>Bezeichnung</th><th>Art</th><th class="numeric">Betrag EUR</th><th>Quelle</th><th>Prüfstatus</th></tr></thead><tbody id="budget-month-detail-rows"></tbody></table></div></details></details>
+<details><summary>Revisionsverlauf und aktive Planung</summary><p class="muted">Eine Variante wird erst durch „Als aktive Planung übernehmen“ zur Grundlage für Plan &amp; Ist. Laden und Vergleichen ändern die aktive Planung nicht.</p><div class="table-wrap"><table><thead><tr><th>Revision</th><th>Titel und Status</th><th>Gespeichert am</th><th>Aktionen</th></tr></thead><tbody id="budget-history-rows"></tbody></table></div><p id="budget-empty-history" class="muted">Noch keine Revision gespeichert.</p></details>
+</div>

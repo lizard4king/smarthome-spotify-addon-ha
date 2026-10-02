@@ -1,0 +1,21 @@
+name: Finance Control
+slug: finance_control
+description: Privates Finance-Control-Cockpit als Home-Assistant-Add-on
+version: "0.1.0"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+ports:
+  8785/tcp: 8785
+ports_description:
+  8785/tcp: Internes Finance-Control-Cockpit
+map:
+  - type: addon_config
+    read_only: false
+    path: /data
+options: {}
+schema: {}
+backup: cold

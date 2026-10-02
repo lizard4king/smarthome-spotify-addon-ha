@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "target_id": "kueche",
+      "spotify_device_name": "Spotify-Gerät Küche",
+      "aliases": ["Küche", "Echo Küche"]
+    }
+  ]
+}

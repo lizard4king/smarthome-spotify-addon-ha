@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Home – Leitstand</title>
+  <style>
+    :root { --bg:#0b1220; --panel:#121c2f; --panel-2:#18253d; --line:#263754; --text:#edf4ff; --muted:#9fb0c8; --accent:#76e0c2; --accent-2:#79a7ff; --warn:#ffd27d; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--text); background:radial-gradient(circle at 80% -10%, #203b68 0, transparent 36%), var(--bg); font:15px/1.45 Inter, ui-sans-serif, system-ui, sans-serif; }
+    .shell { max-width:1420px; margin:auto; padding:30px 28px 44px; }
+    header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:26px; }
+    .eyebrow { color:var(--accent); font-size:12px; letter-spacing:.16em; text-transform:uppercase; font-weight:700; }
+    h1 { margin:5px 0 7px; font-size:clamp(28px,4vw,44px); line-height:1.05; letter-spacing:-.04em; }
+    .subtitle { color:var(--muted); margin:0; max-width:690px; }
+    .header-actions { display:flex; gap:10px; align-items:center; }
+    .quick-links { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .quick-link { display:inline-flex; align-items:center; gap:6px; color:#d9fff4; background:#153a39; border:1px solid #28645e; padding:8px 11px; border-radius:10px; font-size:13px; text-decoration:none; }
+    .quick-link:hover { border-color:var(--accent); color:#fff; }
+    button { border:1px solid var(--line); color:var(--text); background:var(--panel); border-radius:12px; padding:10px 14px; cursor:pointer; font:inherit; }
+    button:hover { border-color:var(--accent-2); }
+    .pill { display:inline-flex; gap:8px; align-items:center; color:#d9fff4; background:#153a39; border:1px solid #28645e; padding:9px 12px; border-radius:999px; font-size:13px; white-space:nowrap; }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 12px var(--accent); }
+    .grid { display:grid; gap:16px; }
+    .metrics { grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:18px; }
+    .spotify-card { margin-bottom:18px; }
+    .spotify-card { background:linear-gradient(135deg, rgba(25,72,58,.98), rgba(18,28,47,.98) 62%); }
+    .spotify-brand { display:flex; align-items:center; gap:10px; }
+    .spotify-logo { display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:#1ed760; color:#07150d; font-weight:900; font-size:18px; }
+    .system-ok { display:inline-flex; vertical-align:middle; align-items:center; gap:6px; margin-left:10px; padding:5px 9px; border:1px solid #28645e; border-radius:999px; color:#cffff0; background:#12302e; font-size:13px; letter-spacing:0; }
+    .spotify-search { display:flex; gap:10px; margin-top:14px; }
+    .spotify-search input { flex:1; min-width:0; background:#0d1729; border:1px solid #35634f; border-radius:10px; padding:11px 12px; color:var(--text); font:inherit; }
+    .spotify-search button { background:#1ed760; border-color:#1ed760; color:#07150d; font-weight:750; }
+    .spotify-routing { display:grid; grid-template-columns:1fr 1fr auto; gap:10px; margin-top:14px; align-items:end; }
+    .spotify-routing label { display:grid; gap:5px; color:var(--muted); font-size:12px; }
+    .spotify-routing select { width:100%; background:#0d1729; border:1px solid #35634f; border-radius:10px; padding:10px; color:var(--text); font:inherit; }
+    .spotify-now { display:grid; grid-template-columns:84px minmax(0,1fr); gap:14px; align-items:center; margin-top:16px; }
+    .spotify-art { width:84px; height:84px; border-radius:12px; background:linear-gradient(145deg,#1ed760,#116b49 45%,#0b1220); display:grid; place-items:center; color:#d9fff4; font-size:30px; box-shadow:0 8px 18px rgba(0,0,0,.25); }
+    .spotify-track { font-size:18px; font-weight:750; }
+    .spotify-track { width:100%; background:transparent; border:0; color:var(--text); padding:0; font:inherit; }
+    .spotify-results { display:grid; gap:8px; margin-top:14px; }
+    .spotify-embed-wrap { margin-top:16px; border-radius:12px; overflow:hidden; background:#000; box-shadow:0 8px 18px rgba(0,0,0,.25); }
+    .spotify-embed { display:block; width:100%; min-height:152px; border:0; }
+    .spotify-track-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+    .spotify-result { display:flex; align-items:center; gap:10px; padding:8px; border:1px solid rgba(53,99,79,.7); border-radius:10px; background:rgba(7,21,13,.18); }
+    .spotify-result-art { width:42px; height:42px; border-radius:7px; background:linear-gradient(145deg,#2bdc76,#155b42); }
+    .spotify-result-meta { min-width:0; }
+    .spotify-result-title { font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .spotify-result-subtitle { color:var(--muted); font-size:12px; }
+    .alexa-card { margin-bottom:18px; background:linear-gradient(135deg, rgba(43,54,83,.98), rgba(18,28,47,.98) 62%); }
+    .alexa-controls { display:grid; grid-template-columns:1fr 1fr 1.4fr; gap:10px; margin-top:14px; align-items:end; }
+    .alexa-controls label { display:grid; gap:5px; color:var(--muted); font-size:12px; }
+    .alexa-controls select, .alexa-command { width:100%; background:#0d1729; border:1px solid var(--line); border-radius:10px; padding:10px; color:var(--text); font:inherit; }
+    .alexa-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .alexa-actions a { text-decoration:none; }
+    .alexa-status { margin-top:10px; }
+    .card { background:linear-gradient(145deg, rgba(24,37,61,.96), rgba(15,25,43,.96)); border:1px solid var(--line); border-radius:18px; padding:18px; box-shadow:0 12px 28px rgba(0,0,0,.16); }
+    .metric-label, .meta { color:var(--muted); font-size:13px; }
+    .metric-value { font-size:30px; font-weight:750; margin-top:5px; letter-spacing:-.03em; }
+    .layout { grid-template-columns:minmax(0,1.5fr) minmax(320px,.8fr); align-items:start; }
+    .section-title { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 12px; }
+    h2 { margin:0; font-size:19px; letter-spacing:-.02em; }
+    .rooms { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .room { position:relative; overflow:hidden; min-height:152px; cursor:pointer; }
+    .room:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    .room.expanded { border-color:var(--accent-2); }
+    .room-details { position:relative; z-index:2; display:grid; gap:9px; margin-top:16px; padding-top:12px; border-top:1px solid rgba(38,55,84,.8); }
+    .room-detail-row { display:flex; justify-content:space-between; align-items:center; gap:10px; color:#cbd7e8; font-size:13px; }
+    .room-detail-row .room-detail-label { color:var(--muted); }
+    .room-detail-row button { padding:6px 9px; font-size:12px; }
+    .room-detail-row input[type=range] { width:105px; accent-color:var(--accent); }
+    .room::after { content:""; position:absolute; width:120px; height:120px; border-radius:50%; right:-42px; top:-38px; background:rgba(121,167,255,.12); }
+    .room-top { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    .room-name { font-size:18px; font-weight:700; }
+    .room-icon { font-size:26px; }
+    .room-count { color:var(--muted); font-size:13px; margin-top:12px; }
+    .room-status { margin-top:18px; display:flex; gap:8px; flex-wrap:wrap; }
+    .tag { border:1px solid var(--line); border-radius:999px; padding:5px 9px; color:#c9d6ea; font-size:12px; }
+    .tag.good { color:#cffff0; border-color:#28645e; background:#12302e; }
+    .side { display:grid; gap:16px; }
+    .device-list { display:grid; gap:10px; }
+    .device { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:11px 0; border-bottom:1px solid rgba(38,55,84,.7); }
+    .device:last-child { border-bottom:0; padding-bottom:0; }
+    .device-name { font-weight:650; }
+    .device-type { color:var(--muted); font-size:12px; margin-top:2px; }
+    .value { color:var(--accent); font-weight:700; white-space:nowrap; }
+    .value.warn { color:var(--warn); }
+    .controls { display:grid; gap:10px; }
+    .control-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid rgba(38,55,84,.7); }
+    .control-row:last-child { border-bottom:0; }
+    .control-name { font-weight:650; }
+    .control-help { color:var(--muted); font-size:12px; margin-top:2px; }
+    .toggle { min-width:88px; }
+    .toggle.on { background:#194c47; border-color:#3f9c8c; color:#d9fff4; }
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .field { display:grid; gap:5px; }
+    .field.full { grid-column:1/-1; }
+    .field label { color:var(--muted); font-size:12px; }
+    .field select, .field input[type=text] { width:100%; background:#0d1729; border:1px solid var(--line); border-radius:10px; padding:10px; }
+    .range-row { display:flex; align-items:center; gap:12px; }
+    .range-row input { width:100%; accent-color:var(--accent); }
+    .range-value { min-width:62px; text-align:right; color:var(--accent); font-weight:750; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:11px; }
+    .primary { background:var(--accent-2); border-color:var(--accent-2); color:#081324; font-weight:700; }
+    .danger { color:#ff9b9b; }
+    .mode { color:var(--warn); font-size:12px; }
+    .activity { max-height:150px; overflow:auto; color:#cbd7e8; font-size:12px; }
+    .activity div { padding:7px 0; border-bottom:1px solid rgba(38,55,84,.6); }
+    .activity div:last-child { border-bottom:0; }
+    .empty { color:var(--muted); font-style:italic; }
+    .thermostat-list { display:grid; gap:8px; }
+    .thermostat-row { display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:9px 0; border-bottom:1px solid rgba(38,55,84,.7); }
+    .thermostat-row:last-child { border-bottom:0; }
+    .thermostat-temp { color:var(--accent); font-weight:700; white-space:nowrap; }
+    .assignment-list { display:grid; gap:8px; }
+    .assignment { display:grid; grid-template-columns:1fr 145px; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid rgba(38,55,84,.7); }
+    .assignment:last-child { border-bottom:0; }
+    .assignment select { width:100%; background:#0d1729; border:1px solid var(--line); border-radius:9px; padding:8px; }
+    .notice { background:linear-gradient(135deg, rgba(121,167,255,.16), rgba(118,224,194,.07)); }
+    .notice p { color:#cad7ea; margin:8px 0 0; }
+    footer { color:var(--muted); font-size:12px; margin-top:24px; display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    @media (max-width:950px) { .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .layout { grid-template-columns:1fr; } }
+    @media (max-width:620px) { .shell { padding:18px 12px 28px; } header { display:block; } .header-actions { margin-top:18px; } .rooms { grid-template-columns:1fr; } .metrics { gap:10px; } .metric-value { font-size:24px; } .form-grid { grid-template-columns:1fr; } .field.full { grid-column:auto; } .card { padding:14px; } .control-row { align-items:flex-start; } .range-row { min-width:145px; } .spotify-routing { grid-template-columns:1fr; } }
+    @media (max-width:620px) { .alexa-controls { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">Privater Leitstand</div>
+        <h1>Smart Home <span class="system-ok"><span class="dot"></span>OK</span></h1>
+        <p class="subtitle">Eine ruhige, kompakte Übersicht über Räume, Licht, Klima und Systemstatus.</p>
+      </div>
+      <div class="header-actions">
+        <span class="pill"><span class="dot"></span> Home Assistant verbunden</span>
+        <button id="refresh" type="button">↻ Aktualisieren</button>
+      </div>
+    </header>
+    <nav class="quick-links" aria-label="Schnellzugriffe">
+      <a class="quick-link" href="https://developer.amazon.com/alexa/console/ask/build/custom/amzn1.ask.skill.897aac99-b445-4e97-8011-fd344f46ab17/development/de_DE/dashboard" target="_blank" rel="noopener">Alexa-Konsole ↗</a>
+      <a class="quick-link" href="http://hal9000.tail878505.ts.net:8785/" target="_blank" rel="noopener" title="Finanzcockpit auf HAL9000">Finanzcockpit ↗</a>
+    </nav>
+
+    <section class="card spotify-card" aria-label="Spotify">
+      <div class="section-title"><div class="spotify-brand"><span class="spotify-logo">●</span><h2>Spotify</h2></div><span class="meta">Titel zentral · Ziel und Profil im Raum</span></div>
+      <div class="spotify-search"><input id="spotifyQuery" type="search" placeholder="Titel, Interpret, Album oder Playlist suchen …" aria-label="Spotify-Suche"><button id="spotifySearch" type="button">Suchen</button></div>
+      <div class="spotify-routing" aria-label="Spotify-Wiedergabeziel">
+        <label for="spotifyProfile">Profil<select id="spotifyProfile"><option value="Andreas">Andreas</option><option value="Erlene Andreia">Erlene Andreia</option></select></label>
+        <label for="spotifyTarget">Abspielen auf<select id="spotifyTarget"><option value="Andreas' Echo Show">Wohnzimmer · Andreas' Echo Show</option><option value="Echo Spot Schlafzimmer">Schlafzimmer · Echo Spot Schlafzimmer</option><option value="Echo Küche">Küche · Echo Küche</option><option value="Echo Badezimmer">Badezimmer · Echo Badezimmer</option><option value="Echo Büro">Büro · Echo Büro</option></select></label>
+        <button id="spotifyPlay" class="primary" type="button">Abspielen</button>
+      </div>
+      <div class="spotify-embed-wrap" id="spotifyEmbedWrap"><iframe id="spotifyEmbed" class="spotify-embed" title="Spotify-Player" src="https://open.spotify.com/embed/track/0I1DJdLt9BKOb7GWmWxCjo?utm_source=generator&theme=0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>
+      <div class="spotify-now"><div class="spotify-art" aria-hidden="true">♪</div><div><input id="track" class="spotify-track spotify-track-hidden" type="text" value="Fields of Gold – Sting" aria-label="Ausgewählter Titel"><div id="nowPlaying" class="meta">Ausgewählt: Fields of Gold – Sting</div></div></div>
+      <div id="spotifyResults" class="spotify-results"><div class="meta">Suche nach einem Titel, um Treffer und Coverbilder anzuzeigen.</div></div>
+      <div class="actions"><button id="pause" type="button">Ⅱ Pause</button><button id="stop" class="danger" type="button">■ Stopp</button></div>
+    </section>
+
+    <section class="card alexa-card" aria-label="Alexa">
+      <div class="section-title"><div class="spotify-brand"><span class="spotify-logo" style="background:#79a7ff">⌁</span><h2>Alexa</h2></div><span class="meta">Profil, Echo und Schnellaktionen</span></div>
+      <div class="alexa-controls">
+        <label for="alexaProfile">Profil<select id="alexaProfile"><option>Andreas</option><option>Erlene Andreia</option></select></label>
+        <label for="alexaDevice">Echo-Ziel<select id="alexaDevice"><option>Andreas' Echo Show</option><option>Echo Spot Schlafzimmer</option><option>Echo Küche</option><option>Echo Badezimmer</option><option>Echo Büro</option></select></label>
+        <label for="alexaCommand">Befehl vorbereiten<input id="alexaCommand" class="alexa-command" type="text" value="Alexa, starte Lumi Chat."></label>
+      </div>
+      <div class="alexa-actions">
+        <button id="alexaSpeak" class="primary" type="button">Alexa sprechen lassen</button>
+        <button id="alexaCopy" type="button">Befehl kopieren</button>
+        <a class="quick-link" href="https://alexa.amazon.de/spa/index.html#settings" target="_blank" rel="noopener">Alexa-App öffnen ↗</a>
+        <a class="quick-link" href="https://developer.amazon.com/alexa/console/ask/build/custom/amzn1.ask.skill.897aac99-b445-4e97-8011-fd344f46ab17/development/de_DE/dashboard" target="_blank" rel="noopener">Skill-Konsole ↗</a>
+      </div>
+      <div id="alexaStatus" class="meta alexa-status">Ansage für Andreas' Echo Show vorbereitet.</div>
+    </section>
+
+    <section class="card" aria-label="Kameras">
+      <div class="section-title"><div class="spotify-brand"><span class="spotify-logo" style="background:#79a7ff">▣</span><h2>Kameras</h2></div><span class="meta">Livebild aus Home Assistant</span></div>
+      <div id="cameraGrid" class="room-grid"><p class="meta">Kameras werden gesucht …</p></div>
+    </section>
+
+    <div class="grid layout">
+      <section>
+        <div class="section-title"><h2>Räume</h2><span class="meta">Geräte nach Bereich</span></div>
+        <div class="grid rooms">
+          <article class="card room" data-room-target="wohnzimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Wohnzimmer</div><div class="room-icon">◒</div></div><div class="room-count">Echo Show · Robbi · Thermostat · Licht</div><div class="room-status"><span class="tag good">22,1 °C</span><span class="tag" data-room-light-state="living">Licht: Aus</span><span class="tag">Spotify-Ziel</span></div></article>
+          <article class="card room" data-room-target="schlafzimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Schlafzimmer</div><div class="room-icon">☾</div></div><div class="room-count">Dr. Staub · Thermostat · Licht</div><div class="room-status"><span class="tag good">Klima verfügbar</span><span class="tag" data-room-light-state="bed">Licht: Aus</span></div></article>
+          <article class="card room" data-room-target="kuechenheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Küche</div><div class="room-icon">⌂</div></div><div class="room-count">Echo Küche · Thermostat · LG ThinQ</div><div class="room-status"><span class="tag good">Batterie normal</span></div></article>
+          <article class="card room" data-room-target="badezimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Badezimmer</div><div class="room-icon">▦</div></div><div class="room-count">Echo Badezimmer · Thermostat</div><div class="room-status"><span class="tag good">Batterie normal</span></div></article>
+          <article class="card room" data-room-target="bueroheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Büro</div><div class="room-icon">▤</div></div><div class="room-count">Echo Büro · Thermostat · Arbeitsnotebooks</div><div class="room-status"><span class="tag good">Batterie normal</span></div></article>
+        </div>
+      </section>
+
+      <aside class="side">
+        <section class="card"><div class="section-title"><h2>Aktivität</h2><span class="meta">lokal</span></div><div id="activity" class="activity"><div class="empty">Noch keine Aktion im Cockpit.</div></div></section>
+        <section class="card notice"><h2>Als Nächstes</h2><p>Weitere Geräte können später über Home Assistant ergänzt werden. Diese Seite zeigt bewusst nur Statusdaten und löst keine Geräteaktion aus.</p></section>
+      </aside>
+    </div>
+    <footer><span>Smart Home – Leitstand</span><span id="updated">Stand: gerade eben · lokal</span></footer>
+  </main>
+  <script>
+    let cockpitMode = 'simulation';
+    const activity = document.getElementById('activity');
+    const lightState = { living:false, bed:false };
+    function renderRoomLights() {
+      for (const [key, label] of [['living','Wohnzimmer'],['bed','Schlafzimmer']]) {
+        const on = Boolean(lightState[key]);
+        document.querySelectorAll('[data-room-light-state="' + key + '"]').forEach((node) => { node.textContent = 'Licht: ' + (on ? 'Ein' : 'Aus'); });
+        document.querySelectorAll('[data-room-light-key="' + key + '"]').forEach((button) => {
+          button.textContent = on ? 'Ausschalten' : 'Einschalten';
+          button.classList.toggle('on', on);
+          button.setAttribute('aria-pressed', String(on));
+        });
+      }
+    }
+    function log(message) {
+      const empty = activity.querySelector('.empty');
+      if (empty) empty.remove();
+      const row = document.createElement('div');
+      row.textContent = new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' · ' + message;
+      activity.prepend(row);
+      document.getElementById('updated').textContent = 'Stand: gerade eben · lokal';
+    }
+    async function api(path, payload) {
+      try {
+        const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Unbekannter Fehler');
+        return result;
+      } catch (error) {
+        if (cockpitMode === 'live') throw error;
+        return { mode:'simulation' };
+      }
+    }
+    fetch('/api/capabilities').then(response => response.json()).then(capabilities => {
+      cockpitMode = capabilities.mode || 'simulation';
+      const pill = document.querySelector('.pill');
+      pill.innerHTML = '<span class="dot"></span> ' + (cockpitMode === 'live' ? 'Live-Anbindung bereit' : 'Lokale Simulation');
+      document.querySelectorAll('.mode').forEach(node => node.textContent = cockpitMode === 'live' ? 'Live' : 'Simulation');
+      const climateHelp = document.getElementById('climateHelp');
+      if (climateHelp) climateHelp.textContent = capabilities.home_assistant_writes ? 'Über Homematic-IP-Cloud' : 'Nur lokale Cockpit-Vorschau';
+    }).then(refreshHomeAssistantInventory).catch(() => {});
+    async function refreshHomeAssistantInventory() {
+      if (cockpitMode !== 'live') return;
+      try {
+        const response = await fetch('/api/ha/entities', { cache:'no-store' });
+        if (!response.ok) throw new Error('Inventar nicht erreichbar');
+        const payload = await response.json();
+        const entities = Array.isArray(payload.entities) ? payload.entities : [];
+        const climates = entities.filter(item => typeof item.entity_id === 'string' && item.entity_id.startsWith('climate.'));
+        const sensors = entities.filter(item => typeof item.entity_id === 'string' && item.entity_id.startsWith('sensor.'));
+        const lights = entities.filter(item => typeof item.entity_id === 'string' && item.entity_id.startsWith('light.'));
+        const livingLight = lights.find(item => item.entity_id === 'light.h618c');
+        const bedroomLight = lights.find(item => item.entity_id === 'light.h618c_2');
+        if (livingLight) lightState.living = livingLight.state === 'on';
+        if (bedroomLight) lightState.bed = bedroomLight.state === 'on';
+        renderRoomLights();
+        // Bekannte Wandthermostat-Entity-IDs: sie haben Vorrang vor den Heizkörperthermostaten.
+        // Die Zuordnung entspricht der aktuell in Home Assistant sichtbaren Gerätefolge.
+        const wallThermostats = {
+          'wohnzimmer': 'sensor.wohnung_wandthermostat_temperature',
+          'küche': 'sensor.wohnung_wandthermostat_temperature_2',
+          'schlafzimmer': 'sensor.wohnung_wandthermostat_temperature_3',
+        };
+        const preferredTemperature = (room) => {
+          const key = room.toLocaleLowerCase('de-DE');
+          const wall = sensors.find(item => item.entity_id === wallThermostats[key]);
+          if (wall) return { item: wall, wall: true };
+          const radiator = sensors.find(item => {
+            const name = String(item.name || '').toLocaleLowerCase('de-DE');
+            return name.includes(key) && name.includes('temperatur');
+          });
+          return { item: radiator, wall: false };
+        };
+        const rows = document.querySelectorAll('.thermostat-row');
+        rows.forEach((row) => {
+          const room = row.querySelector('.device-name')?.textContent?.trim() || '';
+          const climate = climates.find(item => String(item.name || '').toLocaleLowerCase('de-DE').includes(room.toLocaleLowerCase('de-DE')));
+          const preferred = preferredTemperature(room);
+          const temp = preferred.item;
+          const tempNode = row.querySelector('.thermostat-temp');
+          const modeNode = row.querySelector('.tag');
+          const typeNode = row.querySelector('.device-type');
+          if (tempNode) {
+            const value = Number(temp?.state);
+            tempNode.textContent = Number.isFinite(value) ? value.toLocaleString('de-DE', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' °C' : '—';
+          }
+          if (typeNode && preferred.wall) typeNode.textContent = 'Wohnung Wandthermostat';
+          if (modeNode) {
+            modeNode.textContent = climate?.state && climate.state !== 'unavailable' ? climate.state : 'Nicht verfügbar';
+            modeNode.classList.toggle('good', Boolean(climate?.state && climate.state !== 'unavailable'));
+          }
+        });
+        log('Home-Assistant-Inventar aktualisiert: ' + climates.length + ' Thermostate');
+      } catch (error) {
+        log('Home-Assistant-Inventar konnte nicht aktualisiert werden.');
+      }
+    }
+    const roomDetails = {
+      wohnzimmerheizung: { light:'living', lightDevice:'wohnzimmerlicht', spotifyTarget:"Andreas' Echo Show", extra:'Alexa: Andreas’ Echo Show · Robbi', source:'Wandthermostat bevorzugt' },
+      schlafzimmerheizung: { light:'bed', lightDevice:'schlafzimmerlicht', spotifyTarget:'Echo Spot Schlafzimmer', extra:'Alexa: Echo Spot Schlafzimmer · Dr. Staub', source:'Wandthermostat bevorzugt' },
+      kuechenheizung: { spotifyTarget:'Echo Küche', extra:'Alexa: Echo Küche · LG ThinQ: Kühlschrank verbunden', source:'Wandthermostat bevorzugt' },
+      badezimmerheizung: { spotifyTarget:'Echo Badezimmer', extra:'Alexa: Echo Badezimmer · Keine weitere steuerbare Entity erkannt', source:'Heizkörperthermostat' },
+      bueroheizung: { spotifyTarget:'Echo Büro', extra:'Alexa: Echo Büro · Arbeitsnotebooks: Status nicht steuerbar', source:'Heizkörperthermostat' },
+    };
+    document.querySelectorAll('[data-room-target]').forEach((roomCard) => {
+      const key = roomCard.dataset.roomTarget;
+      const definition = roomDetails[key] || { extra:'Keine Zusatzgeräte erkannt', source:'Thermostat' };
+      const roomName = roomCard.querySelector('.room-name').textContent;
+      const details = document.createElement('div');
+      details.className = 'room-details';
+      details.hidden = true;
+      details.innerHTML = '<div class="room-detail-row"><span class="room-detail-label">Temperatur · ' + definition.source + '</span><span><input class="room-temp" type="range" min="16" max="28" step="0.5" value="21.5"><span class="room-temp-value">21,5 °C</span> <button class="primary room-temp-set" type="button">Setzen</button></span></div>'
+        + (definition.light ? '<div class="room-detail-row"><span class="room-detail-label">Licht · Govee</span><button class="room-light" data-room-light-key="' + definition.light + '" type="button">Einschalten</button></div>' : '<div class="room-detail-row"><span class="room-detail-label">Licht / Steckdose</span><span>' + (definition.extra.includes('Keine') ? 'Nicht erkannt' : 'Keine Entity hinterlegt') + '</span></div>')
+        + '<div class="room-detail-row room-spotify-row"><span class="room-detail-label">Spotify · ' + definition.spotifyTarget + '</span><span><select class="room-spotify-profile" aria-label="Spotify-Profil für ' + roomName + '"><option>Andreas</option><option>Erlene Andreia</option></select> <button class="primary room-spotify-play" type="button">Abspielen</button></span></div>'
+        + '<div class="room-detail-row"><span class="room-detail-label">Weitere Geräte</span><span>' + definition.extra + '</span></div>';
+      roomCard.append(details);
+      const toggleDetails = () => { details.hidden = !details.hidden; roomCard.classList.toggle('expanded', !details.hidden); };
+      roomCard.addEventListener('click', (event) => { if (!event.target.closest('button, input, select')) toggleDetails(); });
+      roomCard.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleDetails(); } });
+      const slider = details.querySelector('.room-temp');
+      const value = details.querySelector('.room-temp-value');
+      slider.addEventListener('input', () => { value.textContent = Number(slider.value).toLocaleString('de-DE',{minimumFractionDigits:1}) + ' °C'; });
+      details.querySelector('.room-temp-set').addEventListener('click', async (event) => {
+        event.stopPropagation();
+        try { await api('/api/action', { action:'set_temperature', device_id:key, temperature:Number(slider.value) }); log(roomName + '-Sollwert auf ' + value.textContent + (cockpitMode === 'live' ? ' gesetzt' : ' gesetzt (Simulation)')); }
+        catch (error) { log(roomName + '-Sollwert abgelehnt: ' + error.message); }
+      });
+      details.querySelector('.room-light')?.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const key = definition.light;
+        const next = !lightState[key];
+        try { await api('/api/action', { action:'set_light', device_id:definition.lightDevice, is_on:next }); lightState[key] = next; renderRoomLights(); log(roomName + '-Licht ' + (next ? 'eingeschaltet' : 'ausgeschaltet')); }
+        catch (error) { log(roomName + '-Lichtbefehl abgelehnt: ' + error.message); }
+      });
+      details.querySelector('.room-spotify-play')?.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const track = document.getElementById('track').value || 'Unbekannter Titel';
+        const profile = details.querySelector('.room-spotify-profile').value;
+        try { await api('/api/spotify', { profile, target:definition.spotifyTarget, track }); document.getElementById('nowPlaying').textContent = '▶ ' + track + ' · ' + profile + ' · ' + definition.spotifyTarget; log('Spotify: ' + track + ' auf ' + definition.spotifyTarget + ' mit ' + profile + (cockpitMode === 'live' ? '' : ' (Simulation)')); }
+        catch (error) { log('Spotify-Befehl abgelehnt: ' + error.message); }
+      });
+    });
+    renderRoomLights();
+    document.getElementById('pause').addEventListener('click', () => { document.getElementById('nowPlaying').textContent = 'Ⅱ Wiedergabe pausiert'; log('Spotify pausiert (Simulation)'); });
+    document.getElementById('stop').addEventListener('click', () => { document.getElementById('nowPlaying').textContent = '■ Keine Wiedergabe'; log('Spotify gestoppt (Simulation)'); });
+    document.getElementById('spotifyPlay').addEventListener('click', async () => {
+      const track = document.getElementById('track').value || 'Unbekannter Titel';
+      const profile = document.getElementById('spotifyProfile').value;
+      const target = document.getElementById('spotifyTarget').value;
+      try { await api('/api/spotify', { profile, target, track }); document.getElementById('nowPlaying').textContent = '▶ ' + track + ' · ' + profile + ' · ' + target; log('Spotify: ' + track + ' auf ' + target + ' mit ' + profile + (cockpitMode === 'live' ? '' : ' (Simulation)')); }
+      catch (error) { log('Spotify-Befehl abgelehnt: ' + error.message); }
+    });
+    function updateAlexaStatus() {
+      const profile = document.getElementById('alexaProfile').value;
+      const device = document.getElementById('alexaDevice').value;
+      document.getElementById('alexaStatus').textContent = 'Ansage für ' + profile + ' auf ' + device + ' vorbereitet.';
+    }
+    document.getElementById('alexaProfile').addEventListener('change', updateAlexaStatus);
+    document.getElementById('alexaDevice').addEventListener('change', updateAlexaStatus);
+    document.getElementById('alexaCopy').addEventListener('click', async () => {
+      const command = document.getElementById('alexaCommand').value.trim();
+      try { await navigator.clipboard.writeText(command); document.getElementById('alexaStatus').textContent = 'Befehl kopiert: „' + command + '“'; log('Alexa-Befehl kopiert'); }
+      catch (error) { document.getElementById('alexaStatus').textContent = 'Kopieren nicht möglich; bitte den Befehl markieren und kopieren.'; }
+    });
+    document.getElementById('alexaSpeak').addEventListener('click', async () => {
+      const targetMap = {"Andreas' Echo Show":"media_player.andreas_echo_show", "Echo Spot Schlafzimmer":"media_player.echo_spot_schlafzimmer", "Echo Küche":"media_player.echo_dot_kuche", "Echo Badezimmer":"media_player.echo_dot_badezimmer", "Echo Büro":"media_player.echo_dot_buro"};
+      const target = targetMap[document.getElementById('alexaDevice').value];
+      const message = document.getElementById('alexaCommand').value.trim();
+      if (!message) return;
+      try {
+        const response = await fetch('/api/alexa/speak', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({target, message})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Ansage fehlgeschlagen.');
+        document.getElementById('alexaStatus').textContent = 'Alexa spricht jetzt auf ' + document.getElementById('alexaDevice').value + '.';
+        log('Alexa-Ansage gesendet');
+      } catch (error) { document.getElementById('alexaStatus').textContent = error.message; }
+    });
+    async function loadCameras() {
+      const grid = document.getElementById('cameraGrid');
+      try {
+        const response = await fetch('/api/ha/entities');
+        const result = await response.json();
+        const cameras = (result.entities || []).filter(item => String(item.entity_id || '').startsWith('camera.'));
+        if (!cameras.length) { grid.innerHTML = '<p class="meta">Keine Kamera-Entity in Home Assistant gefunden.</p>'; return; }
+        grid.innerHTML = cameras.map(camera => '<article class="card room"><div class="room-top"><div class="room-name">' + (camera.name || camera.entity_id) + '</div><div class="room-icon">▣</div></div><img loading="lazy" alt="' + (camera.name || 'Kamera') + '" style="width:100%;border-radius:10px;margin-top:10px;background:#091221;min-height:120px;object-fit:cover" src="/api/ha/camera_image?entity_id=' + encodeURIComponent(camera.entity_id) + '&t=' + Date.now() + '"><div class="meta" style="margin-top:8px">' + camera.entity_id + '</div></article>').join('');
+      } catch (error) { grid.innerHTML = '<p class="meta">Kameras konnten nicht geladen werden.</p>'; }
+    }
+    loadCameras();
+    function showSpotifyEmbed(uri) {
+      const match = String(uri || '').match(/(?:spotify:track:|open\.spotify\.com\/track\/)([A-Za-z0-9]+)/);
+      if (!match) return;
+      document.getElementById('spotifyEmbed').src = 'https://open.spotify.com/embed/track/' + match[1] + '?utm_source=generator&theme=0';
+      document.getElementById('spotifyEmbedWrap').hidden = false;
+    }
+    document.getElementById('spotifySearch').addEventListener('click', async () => {
+      const query = document.getElementById('spotifyQuery').value.trim();
+      const results = document.getElementById('spotifyResults');
+      if (!query) { results.innerHTML = '<div class="meta">Bitte einen Titel oder Interpreten eingeben.</div>'; return; }
+      results.innerHTML = '<div class="meta">Spotify-Suche läuft …</div>';
+      try {
+        const response = await fetch('/api/spotify/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ profile:document.getElementById('spotifyProfile').value, query }) });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Suche nicht verfügbar');
+        const items = Array.isArray(payload.results) ? payload.results : [];
+        results.innerHTML = items.length ? items.map((item) => '<button class="spotify-result" type="button" data-track-selection="' + String(item.title || '').replace(/"/g, '&quot;') + '" data-track-uri="' + String(item.uri || '').replace(/"/g, '&quot;') + '"><span class="spotify-result-art" style="background-image:url(\'' + String(item.image_url || '').replace(/'/g, '%27') + '\');background-size:cover"></span><span class="spotify-result-meta"><span class="spotify-result-title">' + (item.title || 'Unbekannter Titel') + '</span><span class="spotify-result-subtitle">' + (item.subtitle || '') + '</span></span></button>').join('') : '<div class="meta">Keine Treffer gefunden.</div>';
+        results.querySelectorAll('[data-track-selection]').forEach((button) => button.addEventListener('click', () => { document.getElementById('track').value = button.dataset.trackSelection; showSpotifyEmbed(button.dataset.trackUri); document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + button.dataset.trackSelection; log('Spotify-Titel ausgewählt: ' + button.dataset.trackSelection); }));
+      } catch (error) { results.innerHTML = '<div class="meta">Spotify-Suche derzeit nicht erreichbar.</div>'; log('Spotify-Suche: ' + error.message); }
+    });
+    document.getElementById('refresh').addEventListener('click', async () => { log('Status aktualisiert (lokal)'); await refreshHomeAssistantInventory(); });
+  </script>
+</body>
+</html>

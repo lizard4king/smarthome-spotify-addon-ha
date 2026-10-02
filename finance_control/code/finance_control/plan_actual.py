@@ -1,0 +1,1898 @@
+"""Read-only comparison of an immutable budget revision with classified ledger data."""
+
+import calendar
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from .budget import _item_active, _month, _revision, canonical_category_id, load
+from .classification import normalize_counterparty
+from .core import money
+from .person_attribution import account_allocations, person_label, split_cents
+from .transfer_corrections import source_declares_transfer
+
+_PAGE_SIZE = 25
+
+
+def _request(data, *, details=False):
+    required = {"revision", "month"}
+    allowed = required | ({"context", "page"} if details else {
+        "person_breakdown", "include_trend",
+    })
+    if (not isinstance(data, dict) or not required <= set(data) or set(data) - allowed
+            or (details and set(data) != allowed)):
+        raise ValueError("invalid actual comparison request")
+    if "person_breakdown" in data and type(data["person_breakdown"]) is not bool:
+        raise ValueError("invalid actual person breakdown")
+    if "include_trend" in data and type(data["include_trend"]) is not bool:
+        raise ValueError("invalid actual trend selection")
+    revision = _revision(data["revision"])
+    month = _month(data["month"], "month")
+    if not details:
+        return revision, month
+    context = data["context"]
+    if not isinstance(context, dict) or set(context) != {"type", "item_id"}:
+        raise ValueError("invalid actual detail context")
+    if context["type"] not in {
+            "item", "unmapped", "unmapped_income", "unmapped_expense", "unclassified"}:
+        raise ValueError("invalid actual detail context")
+    item_id = context["item_id"]
+    if context["type"] == "item":
+        if not isinstance(item_id, str) or not item_id:
+            raise ValueError("invalid actual detail item")
+    elif item_id is not None:
+        raise ValueError("invalid actual detail item")
+    page = data["page"]
+    if type(page) is not int or page < 1:
+        raise ValueError("invalid actual detail page")
+    return revision, month, context, page
+
+
+def _watermark(store):
+    audit = store.db.execute("SELECT COALESCE(MAX(id),0) FROM classification_audit").fetchone()[0]
+    imported = store.db.execute("SELECT COALESCE(MAX(id),0) FROM imports").fetchone()[0]
+    return {"classification_audit_id": audit, "import_id": imported}
+
+
+def _snapshot(store, revision, month):
+    snapshot = load(store, {"revision": revision})
+    calculation_row = next(
+        (row for row in snapshot["calculation"]["rows"] if row["period"] == month), None
+    )
+    if calculation_row is not None:
+        return snapshot, calculation_row, {
+            "type": "saved_budget", "label": "Gespeicherte Budgetrevision",
+        }
+    rows = snapshot["calculation"]["rows"]
+    if rows and month < rows[0]["period"]:
+        reference_items = (rows[0].get("items", []) if "items" in rows[0]
+                           else snapshot["plan"].get("items", []))
+        items = _retrospective_monthly_items(reference_items)
+        buckets = {kind: sum((money(item["amount"]) for item in items
+                              if item["kind"] == kind), Decimal("0.00"))
+                   for kind in ("income", "fixed", "variable")}
+        expenses = buckets["fixed"] + buckets["variable"]
+        return snapshot, {
+            "period": month, "income": _format(buckets["income"]),
+            "fixed": _format(buckets["fixed"]), "variable": _format(buckets["variable"]),
+            "cashflow": _format(buckets["income"] - expenses), "items": items,
+        }, {
+            "type": "retrospective_reference", "label": "Retrospektiver Referenzplan",
+            "derived_from_month": rows[0]["period"],
+            "excluded_nonmonthly_items": sum(
+                (item.get("interval_months") or 1) != 1 for item in reference_items),
+            "excluded_one_time_items": sum(
+                (item.get("interval_months") or 1) == 1
+                and item.get("start_month") == item.get("end_month")
+                for item in reference_items),
+        }
+    raise ValueError("month is outside the chosen budget revision")
+
+
+def _retrospective_monthly_items(reference_items):
+    """Apply the latest recurring monthly plan as the reference for older months."""
+    return [item.copy() for item in reference_items
+            if (item.get("interval_months") or 1) == 1
+            and item.get("start_month") != item.get("end_month")]
+
+
+def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=None):
+    rows = store.db.execute(
+        "SELECT t.*,c.counterparty,c.description,o.category_id,o.confirmed,"
+        "cat.label AS category_label,cat.transaction_type,a.kind AS account_kind,"
+        "a.owner AS account_owner "
+        "FROM transactions t "
+        "JOIN accounts a ON a.id=t.account_id "
+        "LEFT JOIN transaction_context c USING(account_id,external_id) "
+        "LEFT JOIN classification_overrides o USING(account_id,external_id) "
+        "LEFT JOIN category_catalog cat ON cat.id=o.category_id "
+        "WHERE substr(t.date,1,7)=? AND t.currency='EUR' "
+        "ORDER BY t.date,t.account_id,t.external_id",
+        (month,),
+    ).fetchall()
+    single_keys = {(row["account_id"], row["external_id"]) for row in store.db.execute(
+        "SELECT s.account_id,s.external_id FROM transfer_single_legs s "
+        "JOIN transactions t USING(account_id,external_id) "
+        "WHERE substr(t.date,1,7)=? AND t.currency='EUR'", (month,))}
+    correction_rows = store.db.execute(
+        "SELECT m.account_id,m.external_id,m.pair_id, "
+        "EXISTS(SELECT 1 FROM transfer_correction_members cm "
+        "JOIN accounts ca ON ca.id=cm.account_id AND ca.kind='CREDIT_CARD' "
+        "WHERE cm.pair_id=m.pair_id) AS has_card "
+        "FROM transfer_correction_members m "
+        "JOIN transfer_correction_pairs p ON p.id=m.pair_id AND p.revoked_at IS NULL "
+        "JOIN transactions t ON t.account_id=m.account_id AND t.external_id=m.external_id "
+        "WHERE substr(t.date,1,7)=? AND t.currency='EUR'", (month,)).fetchall()
+    correction_by_key = {(row["account_id"], row["external_id"]): row
+                         for row in correction_rows}
+    imported_ids = {row["transfer_id"] for row in rows if row["transfer_id"]}
+    card_transfer_ids = set()
+    if imported_ids:
+        placeholders = ",".join("?" for _ in imported_ids)
+        card_transfer_ids = {row["transfer_id"] for row in store.db.execute(
+            "SELECT DISTINCT t.transfer_id FROM transactions t "
+            "JOIN accounts a ON a.id=t.account_id AND a.kind='CREDIT_CARD' "
+            f"WHERE t.transfer_id IN ({placeholders}) AND t.currency='EUR'",
+            tuple(imported_ids))}
+    result = []
+    transfer_ids = set()
+    transfer_transaction_count = 0
+    included_transfer_transaction_count = 0
+    cash_withdrawal_count = 0
+    explicit_allocation_keys = set(explicit_allocations or {})
+    for row in rows:
+        item = dict(row)
+        key = (row["account_id"], row["external_id"])
+        if row["transfer_id"]:
+            transfer = row["transfer_id"]
+        elif source_declares_transfer(row):
+            transfer = f"source-category:{row['account_id']}:{row['external_id']}"
+        elif key in single_keys:
+            transfer = f"single:{row['account_id']}:{row['external_id']}"
+        else:
+            correction = correction_by_key.get(key)
+            transfer = None if correction is None else f"correction:{correction['pair_id']}"
+        explicitly_allocated_transfer = False
+        if transfer:
+            transfer_transaction_count += 1
+            transfer_ids.add(transfer)
+            correction = correction_by_key.get(key)
+            has_card = (item["account_kind"] == "CREDIT_CARD"
+                        or (bool(row["transfer_id"])
+                            and row["transfer_id"] in card_transfer_ids)
+                        or (correction is not None and correction["has_card"]))
+            if has_card:
+                card_transfer_ids.add(transfer)
+        cash_withdrawal = (
+            item["confirmed"] == 1
+            and canonical_category_id(store, item["category_id"]) == "AUSGABEN_BARGELD"
+            and money(item["amount"]) < 0
+        )
+        if cash_withdrawal:
+            cash_withdrawal_count += 1
+            continue
+        if transfer:
+            allocation_key = (item["account_id"], item["external_id"])
+            if allocation_key in explicit_allocation_keys:
+                amount = money(item["amount"])
+                direction = "income" if amount > 0 else "expense" if amount < 0 else None
+                if direction is None:
+                    continue
+                item["transaction_type"] = direction
+                explicitly_allocated_transfer = True
+                included_transfer_transaction_count += 1
+            else:
+                continue
+        # A transfer label without a verified pair is deliberately not enough to
+        # hide a card settlement or another posting from the open remainder.
+        if (not explicitly_allocated_transfer
+                and (item["confirmed"] != 1
+                     or item["transaction_type"] not in {"income", "expense"})):
+            item["actual_state"] = "unclassified"
+        else:
+            item["actual_state"] = "classified"
+        result.append(item)
+    if cash_receipt_item_id is not None:
+        result.extend(_cash_receipt_rows(store, month, cash_receipt_item_id))
+    return result, {
+        "transfer_count": len(transfer_ids),
+        "transfer_transaction_count": transfer_transaction_count,
+        "card_settlement_count": len(card_transfer_ids),
+        "included_transfer_transaction_count": included_transfer_transaction_count,
+        "cash_withdrawal_count": cash_withdrawal_count,
+    }
+
+
+def _cash_receipt_rows(store, month, item_id):
+    """Return confirmed Bonsy cash allocations, capped against duplicate payment links."""
+    rows = store.db.execute(
+        "SELECT ca.entry_id,ca.account_id,ca.external_id,ca.allocated_amount,"
+        "r.document_id,r.occurred_at,r.vendor,r.total,r.currency AS receipt_currency,"
+        "t.amount,t.currency AS transaction_currency,o.category_id,o.confirmed,"
+        "a.kind AS account_kind,a.owner AS account_owner "
+        "FROM bonsy_cash_allocations ca "
+        "JOIN bonsy_receipts r USING(entry_id) "
+        "JOIN transactions t USING(account_id,external_id) "
+        "JOIN accounts a ON a.id=ca.account_id "
+        "LEFT JOIN classification_overrides o USING(account_id,external_id) "
+        "WHERE substr(r.occurred_at,1,7)<=? "
+        "ORDER BY r.occurred_at,ca.entry_id,ca.account_id,ca.external_id",
+        (month,),
+    ).fetchall()
+    result_by_receipt_account = {}
+    remaining_by_receipt = {}
+    allocated_by_withdrawal = {}
+    withdrawal_amounts = {}
+    for row in rows:
+        if (row["receipt_currency"] != "EUR" or row["transaction_currency"] != "EUR"
+                or row["confirmed"] != 1
+                or canonical_category_id(store, row["category_id"]) != "AUSGABEN_BARGELD"
+                or money(row["amount"]) >= 0):
+            continue
+        receipt_key = row["entry_id"]
+        if receipt_key not in remaining_by_receipt:
+            direct_paid = sum((money(link[0]) for link in store.db.execute(
+                "SELECT allocated_amount FROM classification_document_links "
+                "WHERE document_id=? AND allocation_type='payment'",
+                (row["document_id"],))), Decimal("0.00"))
+            remaining_by_receipt[receipt_key] = max(
+                money(row["total"]) - direct_paid, Decimal("0.00"))
+        withdrawal_key = (row["account_id"], row["external_id"])
+        if withdrawal_key not in withdrawal_amounts:
+            withdrawal_amounts[withdrawal_key] = abs(money(row["amount"]))
+        withdrawal_remaining = max(
+            withdrawal_amounts[withdrawal_key]
+            - allocated_by_withdrawal.get(withdrawal_key, Decimal("0.00")),
+            Decimal("0.00"),
+        )
+        amount = min(
+            money(row["allocated_amount"]), remaining_by_receipt[receipt_key],
+            withdrawal_remaining,
+        )
+        if amount <= 0:
+            continue
+        remaining_by_receipt[receipt_key] -= amount
+        allocated_by_withdrawal[withdrawal_key] = (
+            allocated_by_withdrawal.get(withdrawal_key, Decimal("0.00")) + amount)
+        if row["occurred_at"][:7] != month:
+            continue
+        occurred_date = row["occurred_at"][:10]
+        aggregate_key = (row["entry_id"], row["account_id"])
+        synthetic = result_by_receipt_account.get(aggregate_key)
+        if synthetic is None:
+            synthetic = {
+            "account_id": row["account_id"],
+            "external_id": f"bonsy-cash:{row['entry_id']}:{row['account_id']}",
+            "date": occurred_date, "amount": _format(-amount), "currency": "EUR",
+            "counterparty": row["vendor"] or "", "description": "Bonsy cash receipt",
+            "category_id": "AUSGABEN_BARGELD", "category_label": "Bargeldbeleg",
+            "confirmed": 1, "transaction_type": "expense", "account_kind": row["account_kind"],
+            "account_owner": row["account_owner"], "actual_state": "classified",
+            "cash_receipt_item_id": item_id, "bonsy_entry_id": row["entry_id"],
+            "bonsy_document_id": row["document_id"],
+            "bonsy_sources": [],
+            }
+            result_by_receipt_account[aggregate_key] = synthetic
+        else:
+            synthetic["amount"] = _format(money(synthetic["amount"]) - amount)
+        synthetic["bonsy_sources"].append({
+            "account_id": row["account_id"], "external_id": row["external_id"],
+            "allocated_amount": _format(amount),
+        })
+    return list(result_by_receipt_account.values())
+
+
+def _positive_actual(row):
+    amount = money(row["amount"])
+    return amount if row["transaction_type"] == "income" else -amount
+
+
+def _mapping(store, snapshot):
+    mappings = snapshot["plan"].get("actual_mappings", [])
+    return {canonical_category_id(store, entry["category_id"]): entry["item_id"]
+            for entry in mappings}
+
+
+def _normalized_counterparty(value):
+    """Normalize counterparty spelling while preserving meaningful words."""
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    return normalize_counterparty(value)
+
+
+def _allocation_history(store, snapshot):
+    """Index explicit allocations by counterparty and confirmed category.
+
+    Exact historical amounts are retained to disambiguate signatures that
+    were explicitly allocated to more than one plan item.
+    """
+    groups = _allocations(snapshot)
+    history = {"counterparty": {}, "category": {}}
+    rows = {}
+    keys = list(groups)
+    for start in range(0, len(keys), 400):
+        chunk = keys[start:start + 400]
+        placeholders = ",".join("(?,?)" for _ in chunk)
+        parameters = [value for key in chunk for value in key]
+        query = (
+            f"WITH requested(account_id,external_id) AS (VALUES {placeholders}) "
+            "SELECT t.account_id,t.external_id,t.amount,cat.transaction_type,"
+            "c.counterparty,o.confirmed,o.category_id "
+            "FROM requested r "
+            "JOIN transactions t USING(account_id,external_id) "
+            "LEFT JOIN transaction_context c USING(account_id,external_id) "
+            "LEFT JOIN classification_overrides o USING(account_id,external_id) "
+            "LEFT JOIN category_catalog cat ON cat.id=o.category_id"
+        )
+        for row in store.db.execute(query, parameters):
+            rows[(row["account_id"], row["external_id"])] = row
+    for (account_id, external_id), allocations in groups.items():
+        row = rows.get((account_id, external_id))
+        if (row is None or row["confirmed"] != 1
+                or row["transaction_type"] not in {"income", "expense"}):
+            continue
+        counterparty = _normalized_counterparty(row["counterparty"])
+        amount = money(row["amount"])
+        positive = amount if row["transaction_type"] == "income" else -amount
+        keys = []
+        if counterparty:
+            keys.append(("counterparty", (account_id, row["transaction_type"], counterparty)))
+        category_id = canonical_category_id(store, row["category_id"])
+        if category_id:
+            keys.append(("category", (account_id, row["transaction_type"], category_id)))
+        if not keys:
+            continue
+        for item_id, allocated in _split_actual(positive, allocations):
+            for history_kind, key in keys:
+                history[history_kind].setdefault(key, {}).setdefault(item_id, set()).add(allocated)
+    return history
+
+
+def _match_history_signature(row, candidates):
+    """Resolve a unique history signature or a unique exact amount match."""
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    amount = _positive_actual(row)
+    exact = [item_id for item_id, amounts in candidates.items() if amount in amounts]
+    return exact[0] if len(exact) == 1 else None
+
+
+def _historical_allocation_match(row, history):
+    """Match by explicit allocation history for the same normalized counterparty."""
+    counterparty = _normalized_counterparty(row.get("counterparty"))
+    if not counterparty:
+        return None
+    key = (row["account_id"], row["transaction_type"], counterparty)
+    return _match_history_signature(row, history["counterparty"].get(key, {}))
+
+
+def _historical_category_match(store, row, history):
+    """Use category history only when the booking has no usable counterparty."""
+    if _normalized_counterparty(row.get("counterparty")):
+        return None
+    category_id = canonical_category_id(store, row["category_id"])
+    if not category_id:
+        return None
+    key = (row["account_id"], row["transaction_type"], category_id)
+    return _match_history_signature(row, history["category"].get(key, {}))
+
+
+def _month_plan_candidates(snapshot, month_plan, month):
+    """Index confirmed, active plan items with an explicit checking account."""
+    if "items" in month_plan:
+        items = month_plan["items"]
+    else:
+        items = [item for item in snapshot["plan"]["items"] if _item_active(item, month)]
+    candidates = {}
+    for item in items:
+        account_id = item.get("account_id")
+        if not item.get("confirmed") or not isinstance(account_id, str) or not account_id:
+            continue
+        direction = "income" if item["kind"] == "income" else "expense"
+        key = (account_id, direction, money(item["amount"]))
+        candidates.setdefault(key, set()).add(item["id"])
+    return candidates
+
+
+def _planned_account_match(row, candidates):
+    """Use account, direction and exact planned amount only when unique."""
+    account_id = row.get("account_id")
+    if not isinstance(account_id, str) or not account_id:
+        return None
+    key = (account_id, row["transaction_type"], _positive_actual(row))
+    matches = candidates.get(key, set())
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def _resolved_item(store, mapping, snapshot, row, history, month_candidates):
+    """Resolve a transaction through explicit evidence and safe fallbacks."""
+    explicit = mapping.get(canonical_category_id(store, row["category_id"]))
+    if explicit is not None:
+        return explicit, False, None
+    historical = _historical_allocation_match(row, history)
+    if historical is not None:
+        return historical, False, None
+    planned = _planned_account_match(row, month_candidates)
+    if planned is not None:
+        return planned, False, None
+    historical = _historical_category_match(store, row, history)
+    if historical is not None:
+        return historical, False, None
+    mapped = _mapped_item(store, mapping, snapshot, row)
+    if mapped[0] is not None:
+        return mapped
+    expense_fallback = snapshot["plan"].get("unmapped_expense_item_id")
+    if row["transaction_type"] == "expense" and expense_fallback is not None:
+        return expense_fallback, False, None
+    return mapped
+
+
+def _allocations(snapshot):
+    allocations = {}
+    for entry in snapshot["plan"].get("actual_allocations", []):
+        allocations.setdefault((entry["account_id"], entry["external_id"]), []).append({
+            "item_id": entry["item_id"],
+            "weight": Decimal(entry["weight"]) if "weight" in entry else None,
+        })
+    return allocations
+
+
+def _split_actual(actual, allocations):
+    """Split one cent-exact actual amount by weights without losing a cent."""
+    if len(allocations) == 1 and allocations[0]["weight"] is None:
+        return [(allocations[0]["item_id"], actual)]
+    total_weight = sum((entry["weight"] for entry in allocations), Decimal(0))
+    sign = Decimal(-1) if actual < 0 else Decimal(1)
+    cents = abs(int(actual * 100))
+    shares = []
+    assigned = 0
+    for index, entry in enumerate(allocations):
+        numerator = cents * entry["weight"]
+        base = int(numerator // total_weight)
+        shares.append([entry["item_id"], base, numerator % total_weight, index])
+        assigned += base
+    for share in sorted(shares, key=lambda value: (-value[2], value[3]))[:cents - assigned]:
+        share[1] += 1
+    return [(item_id, sign * Decimal(share_cents) / 100)
+            for item_id, share_cents, _, _ in shares]
+
+
+def _mapped_item(store, mapping, snapshot, row):
+    """Resolve an explicit mapping or one unambiguous salary owner match."""
+    explicit = mapping.get(canonical_category_id(store, row["category_id"]))
+    if explicit is not None:
+        return explicit, False, None
+    if row["category_id"] != "EINNAHMEN_GEHALT":
+        return None, False, None
+    owner = row["account_owner"]
+    if not isinstance(owner, str) or not owner or owner == "JOINT":
+        return None, False, None
+    owner = row["account_owner"].casefold()
+    candidates = [item["id"] for item in snapshot["plan"]["items"]
+                  if item["kind"] == "income"
+                  and _owner_label_matches(item["label"], owner)]
+    if len(candidates) == 1:
+        return candidates[0], True, None
+    return None, False, "ambiguous_salary_owner_mapping" if len(candidates) > 1 else None
+
+
+def _owner_label_matches(label, owner):
+    """Match an owner prefix without confusing names such as Ann and Anna."""
+    label_key = label.casefold().strip()
+    owner_key = owner.casefold().strip()
+    estimate_prefix = "schätzung · "
+    if label_key.startswith(estimate_prefix):
+        label_key = label_key[len(estimate_prefix):].lstrip()
+    if not owner_key or not label_key.startswith(owner_key):
+        return False
+    return len(label_key) == len(owner_key) or not label_key[len(owner_key)].isalnum()
+
+
+def _format(value):
+    return format(value, ".2f")
+
+
+def _split_by_household(amount, household_split):
+    """Allocate a cent-exact signed amount by shares using largest remainders."""
+    sign = Decimal(-1) if amount < 0 else Decimal(1)
+    cents = abs(int(amount * 100))
+    shares = []
+    assigned = 0
+    for index, entry in enumerate(household_split):
+        exact_cents = Decimal(cents) * money(entry["share"])
+        base_cents = int(exact_cents)
+        shares.append([entry["party_id"], base_cents, exact_cents - base_cents, index])
+        assigned += base_cents
+    for share in sorted(shares, key=lambda value: (-value[2], value[3]))[:cents - assigned]:
+        share[1] += 1
+    return {party_id: _format(sign * Decimal(share_cents) / 100)
+            for party_id, share_cents, _, _ in shares}
+
+
+def _surplus_bridge(rows, unmapped, unclassified, planned_cashflow, household_split=None):
+    """Explain confirmed headroom assuming every planned budget is fully used.
+
+    Unused budget is deliberately absent from this bridge: it answers what is
+    left after the plan is completed, rather than what is currently liquid.
+    Unconfirmed ledger rows remain a separate scenario.
+    """
+    planned_cashflow = money(planned_cashflow)
+    additional_income = money(unmapped["income"])
+    unplanned_expenses = money(unmapped["expenses"])
+    budget_planned = sum(
+        (money(row["planned"]) for row in rows
+         if row["kind"] == "variable" and money(row["planned"]) > 0),
+        Decimal("0.00"),
+    )
+    budget_actual = sum(
+        (money(row["actual"]) for row in rows
+         if row["kind"] == "variable" and money(row["planned"]) > 0),
+        Decimal("0.00"),
+    )
+    budget_remaining = max(budget_planned - budget_actual, Decimal("0.00"))
+    budget_overrun = max(budget_actual - budget_planned, Decimal("0.00"))
+    item_to_party = {
+        item_id: entry["party_id"]
+        for entry in household_split or []
+        for item_id in entry.get("personal_item_ids", [])
+    }
+    personal_adjustments = {
+        entry["party_id"]: Decimal("0.00") for entry in household_split or []
+    }
+    shared_still_unallocated = planned_cashflow + additional_income - unplanned_expenses
+    for row in rows:
+        planned = money(row["planned"])
+        actual = money(row["actual"])
+        party_id = item_to_party.get(row["item_id"])
+        adjustment = Decimal("0.00")
+        if row["kind"] == "income":
+            adjustment = max(actual - planned, Decimal("0.00"))
+            if party_id is None:
+                additional_income += adjustment
+        elif planned == 0:
+            adjustment = -actual
+            if party_id is None:
+                unplanned_expenses += actual
+        elif row["kind"] == "fixed":
+            # Fixed-plan excess is not part of the adjustable variable pool.
+            fixed_overrun = max(actual - planned, Decimal("0.00"))
+            adjustment = -fixed_overrun
+            if party_id is None:
+                unplanned_expenses += fixed_overrun
+        elif row["item_id"] in item_to_party:
+            # Explicit personal exceptions do not draw on the common pool.
+            adjustment = -max(actual - planned, Decimal("0.00"))
+        if party_id is None:
+            shared_still_unallocated += adjustment
+        else:
+            personal_adjustments[party_id] += adjustment
+
+    personal_variable_ids = set(item_to_party)
+    shared_budget_planned = sum(
+        (money(row["planned"]) for row in rows
+         if row["kind"] == "variable" and money(row["planned"]) > 0
+         and row["item_id"] not in personal_variable_ids),
+        Decimal("0.00"),
+    )
+    shared_budget_actual = sum(
+        (money(row["actual"]) for row in rows
+         if row["kind"] == "variable" and money(row["planned"]) > 0
+         and row["item_id"] not in personal_variable_ids),
+        Decimal("0.00"),
+    )
+    shared_still_unallocated -= max(
+        shared_budget_actual - shared_budget_planned, Decimal("0.00"))
+
+    still_unallocated = shared_still_unallocated + sum(
+        personal_adjustments.values(), Decimal("0.00"))
+    # ``absolute`` and ``net`` retain enough information to separate positive
+    # and negative postings even where no category has been confirmed yet.
+    unconfirmed_expenses = (
+        money(unclassified["absolute"]) - money(unclassified["net"])
+    ) / 2
+    unconfirmed_income = (
+        money(unclassified["absolute"]) + money(unclassified["net"])
+    ) / 2
+    unconfirmed_net = unconfirmed_income - unconfirmed_expenses
+    result = {
+        "original_planned_surplus": _format(planned_cashflow),
+        "confirmed": {
+            "additional_income": _format(additional_income),
+            "unplanned_expenses": _format(unplanned_expenses),
+            "budget_balance": {
+                "planned_total": _format(budget_planned),
+                "actual_total": _format(budget_actual),
+                "remaining": _format(budget_remaining),
+                "overrun": _format(budget_overrun),
+            },
+            "still_unallocated": _format(still_unallocated),
+        },
+        "unconfirmed": {
+            "income": _format(unconfirmed_income),
+            "expenses": _format(unconfirmed_expenses),
+            "net": _format(unconfirmed_net),
+            "count": unclassified["count"],
+            "still_unallocated_if_confirmed": _format(still_unallocated + unconfirmed_net),
+        },
+    }
+    result["household_split"] = None
+    if household_split:
+        # Unconfirmed bookings have no plan-item owner, even if their retained
+        # category would otherwise match an actual mapping.
+        shared_unconfirmed_net = unconfirmed_net
+        including_unconfirmed_shared = shared_still_unallocated + shared_unconfirmed_net
+        including_unconfirmed_personal = {
+            party_id: personal_adjustments[party_id]
+            for party_id in personal_adjustments
+        }
+        confirmed_allocations = _split_by_household(
+            shared_still_unallocated, household_split)
+        including_allocations = _split_by_household(
+            including_unconfirmed_shared, household_split)
+        for party_id, adjustment in personal_adjustments.items():
+            confirmed_allocations[party_id] = _format(
+                money(confirmed_allocations[party_id]) + adjustment)
+        for party_id, adjustment in including_unconfirmed_personal.items():
+            including_allocations[party_id] = _format(
+                money(including_allocations[party_id]) + adjustment)
+        including_unconfirmed = including_unconfirmed_shared + sum(
+            including_unconfirmed_personal.values(), Decimal("0.00"))
+        shared_budget_remaining = max(
+            shared_budget_planned - shared_budget_actual, Decimal("0.00"))
+        personal_budget_remaining = {
+            party_id: sum(
+                (max(money(row["planned"]) - money(row["actual"]), Decimal("0.00"))
+                 for row in rows
+                 if row["kind"] == "variable" and money(row["planned"]) > 0
+                 and item_to_party.get(row["item_id"]) == party_id),
+                Decimal("0.00"),
+            )
+            for party_id in personal_adjustments
+        }
+        confirmed_spendable_allocations = {
+            party_id: money(amount)
+            for party_id, amount in confirmed_allocations.items()
+        }
+        shared_budget_allocations = _split_by_household(
+            shared_budget_remaining, household_split)
+        for party_id in confirmed_spendable_allocations:
+            confirmed_spendable_allocations[party_id] += (
+                money(shared_budget_allocations[party_id])
+                + personal_budget_remaining[party_id]
+            )
+        including_spendable_allocations = confirmed_spendable_allocations.copy()
+        personal_unconfirmed_net = {
+            party_id: Decimal("0.00") for party_id in personal_adjustments
+        }
+        shared_unconfirmed_net = unconfirmed_net
+        shared_unconfirmed_allocations = _split_by_household(
+            shared_unconfirmed_net, household_split)
+        for party_id in including_spendable_allocations:
+            including_spendable_allocations[party_id] += (
+                money(shared_unconfirmed_allocations[party_id])
+                + personal_unconfirmed_net[party_id]
+            )
+        confirmed_spendable_total = sum(
+            confirmed_spendable_allocations.values(), Decimal("0.00"))
+        including_spendable_total = sum(
+            including_spendable_allocations.values(), Decimal("0.00"))
+        result["household_split"] = {
+            "shares": {entry["party_id"]: entry["share"] for entry in household_split},
+            "confirmed": {
+                "total": _format(still_unallocated),
+                "shared_total": _format(shared_still_unallocated),
+                "personal_adjustments": {
+                    party_id: _format(adjustment)
+                    for party_id, adjustment in personal_adjustments.items()
+                },
+                "allocations": confirmed_allocations,
+            },
+            "including_unconfirmed": {
+                "total": _format(including_unconfirmed),
+                "shared_total": _format(including_unconfirmed_shared),
+                "personal_adjustments": {
+                    party_id: _format(adjustment)
+                    for party_id, adjustment in including_unconfirmed_personal.items()
+                },
+                "allocations": including_allocations,
+            },
+            "spendable": {
+                "confirmed": {
+                    "total": _format(confirmed_spendable_total),
+                    "shared_budget_remaining": _format(shared_budget_remaining),
+                    "personal_budget_remaining": {
+                        party_id: _format(amount)
+                        for party_id, amount in personal_budget_remaining.items()
+                    },
+                    "allocations": {
+                        party_id: _format(amount)
+                        for party_id, amount in confirmed_spendable_allocations.items()
+                    },
+                },
+                "including_unconfirmed": {
+                    "total": _format(including_spendable_total),
+                    "shared_budget_remaining": _format(shared_budget_remaining),
+                    "personal_budget_remaining": {
+                        party_id: _format(amount)
+                        for party_id, amount in personal_budget_remaining.items()
+                    },
+                    "unconfirmed_net": _format(unconfirmed_net),
+                    "allocations": {
+                        party_id: _format(amount)
+                        for party_id, amount in including_spendable_allocations.items()
+                    },
+                },
+            },
+        }
+    return result
+
+
+def _tree(rows, unmapped, unclassified):
+    """Build a deterministic plan hierarchy without guessing category meaning."""
+    roots = {}
+
+    def node(container, key, label, level, kind=None, attention=False):
+        if key not in container:
+            container[key] = {
+                "key": key, "label": label, "level": level, "kind": kind,
+                "planned": Decimal("0.00"), "actual": Decimal("0.00"),
+                "remaining": Decimal("0.00"), "transaction_count": 0,
+                "attention": False, "transaction_keys": set(), "children": {},
+            }
+        return container[key]
+
+    def add_chain(kind, owner, group, item_id, label, planned, actual, transaction_keys,
+                  attention):
+        root_key = "income" if kind == "income" else "expense"
+        root_label = "Einnahmen" if kind == "income" else "Ausgaben"
+        root = node(roots, root_key, root_label, "kind", root_key)
+        owner_node = node(root["children"], f"owner:{owner}", owner, "owner", kind)
+        group_node = node(owner_node["children"], f"group:{group}", group, "group", kind)
+        item_node = node(group_node["children"], f"item:{item_id}", label, "item", kind, attention)
+        for current in (item_node, group_node, owner_node, root):
+            current["planned"] += planned
+            current["actual"] += actual
+            current["remaining"] += planned - actual
+            current["transaction_keys"].update(transaction_keys)
+            current["attention"] |= attention
+
+    for row in rows:
+        if money(row["planned"]) == 0 and money(row["actual"]) != 0:
+            group = "Sonstiges ohne Budget"
+        elif row["kind"] == "income":
+            group = "Einnahmen"
+        elif row["kind"] == "fixed":
+            group = "Feste Ausgaben" if row["confirmed"] else "Feste Schätzungen"
+        else:
+            group = "Steuerbare Budgets"
+        add_chain(row["kind"], row["owner_group"], group, row["item_id"], row["label"],
+                  money(row["planned"]), money(row["actual"]),
+                  row.get("tree_transaction_keys", set()),
+                  not row["confirmed"]
+                  or (row["kind"] != "income" and money(row["remaining"]) < 0))
+
+    for key, title, amount in (
+            ("income", "Nicht zugeordnet", money(unmapped["income"])),
+            ("expense", "Nicht zugeordnet", money(unmapped["expenses"]))):
+        if amount:
+            add_chain(key, "Weitere", "Sonstiges ohne Budget", f"unmapped:{key}", title,
+                      Decimal("0.00"), amount,
+                      unmapped.get("income_keys" if key == "income" else "expense_keys", set()),
+                      True)
+
+    if unclassified["count"]:
+        amount = money(unclassified["net"])
+        open_node = node(roots, "unclassified", "Noch nicht eingeordnet", "kind", "unclassified")
+        owner_node = node(open_node["children"], "owner:unclassified", "Weitere", "owner", "unclassified")
+        group_node = node(owner_node["children"], "group:unclassified", "Unklassifizierte Buchungen",
+                          "group", "unclassified")
+        item_node = node(group_node["children"], "item:unclassified", "Unklassifizierte Buchungen",
+                         "item", "unclassified", True)
+        for current in (item_node, group_node, owner_node, open_node):
+            current["actual"] += amount
+            current["remaining"] -= amount
+            current["transaction_count"] = unclassified["count"]
+            current["attention"] = True
+
+    def finish(current):
+        if current["transaction_keys"]:
+            current["transaction_count"] = len(current["transaction_keys"])
+        current.pop("transaction_keys")
+        current["planned"] = _format(current["planned"])
+        current["actual"] = _format(current["actual"])
+        current["remaining"] = _format(current["remaining"])
+        children = sorted(current.pop("children").values(), key=lambda child: child["label"])
+        current["children"] = [finish(child) for child in children]
+        return current
+
+    order = {"income": 0, "expense": 1, "unclassified": 2}
+    return [finish(current) for current in sorted(
+        roots.values(), key=lambda item: (order.get(item["kind"], 99), item["label"]))]
+
+
+def _daily_owner(owner, known_person_ids):
+    return owner if owner in known_person_ids and owner != "JOINT" else "JOINT"
+
+
+def _cashflow_plan_label(label, owner, owner_label=None):
+    """Remove supported estimate/owner prefixes only at explicit boundaries."""
+    label = label.strip()
+    estimate_prefix = "schätzung · "
+    if label.casefold().startswith(estimate_prefix):
+        label = label[len(estimate_prefix):].strip()
+    for prefix in (owner_label, owner):
+        if not prefix:
+            continue
+        prefix_key = prefix.strip().casefold()
+        for delimiter in (" · ", ": ", " - "):
+            head, separator, tail = label.partition(delimiter)
+            if separator and head.strip().casefold() == prefix_key:
+                label = tail.strip()
+                break
+    return label.casefold().strip()
+
+
+def _daily_series(month, ledger_rows, month_plan, planned_by_item, snapshot, *, today=None,
+                  account_owners=None, known_person_ids=None, person_ids=None):
+    """Return cumulative ledger and plan curves grouped by whole account owner."""
+    year, month_number = (int(part) for part in month.split("-"))
+    start = date(year, month_number, 1)
+    end = date(year, month_number, calendar.monthrange(year, month_number)[1])
+    today = today or datetime.now().astimezone().date()
+    as_of = min(today, end)
+    known_person_ids = set(known_person_ids if known_person_ids is not None
+                           else set())
+    person_ids = list(dict.fromkeys(
+        [*(person_ids or []), *sorted(known_person_ids)]))
+    person_ids = [person for person in person_ids if person != "JOINT"]
+    person_ids.append("JOINT")
+    if as_of < start:
+        return {"as_of": None, "today": today.isoformat(), "points": [],
+                "points_by_person": {person: [] for person in person_ids},
+                "basis": {"matched_due_count": 0, "linearized_amount": "0.00",
+                          "matched_expense_due_count": 0,
+                          "linearized_expense_amount": "0.00",
+                          "matched_income_due_count": 0,
+                          "linearized_income_amount": "0.00",
+                          "unmatched_expense_plan_is_time_prorated": True,
+                          "unmatched_income_plan_is_time_prorated": True}}
+
+    actual_daily_by_person = {person: {} for person in person_ids}
+    account_owners = account_owners or {}
+
+    def owner_for_account(account_id):
+        return _daily_owner(account_owners.get(account_id), known_person_ids)
+
+    for row in ledger_rows:
+        if row["actual_state"] != "classified":
+            continue
+        day = date.fromisoformat(row["date"])
+        if day > as_of:
+            continue
+        amount = _positive_actual(row)
+        field = "income" if row["transaction_type"] == "income" else "expenses"
+        person = owner_for_account(row.get("account_id"))
+        person_daily = actual_daily_by_person[person].setdefault(
+            day, {"income": Decimal("0.00"), "expenses": Decimal("0.00")})
+        person_daily[field] += amount
+
+    # payday cashflows are the only existing source of dated commitments. A
+    # match requires one unique label+amount pair; all other planned amounts
+    # are spread evenly over calendar days and are marked as estimates below.
+    # Older saved calculations did not persist per-month item details.  The
+    # selected ``planned_by_item`` set is still authoritative; use it to pick
+    # the matching definitions from the immutable plan instead of drawing a
+    # misleading zero plan curve.
+    definitions = {item["id"]: item for item in snapshot["plan"].get("items", [])}
+    definitions.update({item["id"]: item for item in month_plan.get("items", [])})
+    items = {item_id: definitions[item_id] for item_id in planned_by_item
+             if item_id in definitions}
+    possible = {}
+    cycle_owner_labels = {}
+    for cycle in snapshot["plan"].get("payday_cycles", []):
+        if cycle.get("owner_label"):
+            cycle_owner_labels.setdefault(cycle["account_id"], set()).add(cycle["owner_label"])
+    for cycle in snapshot["plan"].get("payday_cycles", []):
+        account_id = cycle["account_id"]
+        for flow in cycle["cashflows"]:
+            owner = account_owners.get(account_id)
+            owner_labels = cycle_owner_labels.get(account_id, set())
+            owner_label = next(iter(owner_labels)) if len(owner_labels) == 1 else None
+            key = (account_id, flow["direction"], _cashflow_plan_label(
+                flow["label"], owner, owner_label), money(flow["amount"]))
+            possible.setdefault(key, []).append(flow)
+    planned_items = {}
+    for item_id, planned in planned_by_item.items():
+        item = items.get(item_id)
+        if item is None or planned <= 0:
+            continue
+        category = "income" if item["kind"] == "income" else "expenses"
+        person = owner_for_account(item.get("account_id"))
+        planned_items[item_id] = (item, planned, category, person)
+
+    item_candidates = {}
+    for item_id, (item, planned, category, person) in planned_items.items():
+        account_id = item.get("account_id")
+        if not account_id:
+            continue
+        direction = "inflow" if category == "income" else "outflow"
+        owner = account_owners.get(account_id)
+        owner_labels = cycle_owner_labels.get(account_id, set())
+        owner_label = next(iter(owner_labels)) if len(owner_labels) == 1 else None
+        key = (account_id, direction,
+               _cashflow_plan_label(item["label"], owner, owner_label), planned)
+        item_candidates.setdefault(key, []).append(item_id)
+
+    scheduled = {person: {"income": {}, "expenses": {}}
+                 for person in person_ids}
+    matched_items = {"income": set(), "expenses": set()}
+    matched_due_count = {"income": 0, "expenses": 0}
+    for key, flow_list in possible.items():
+        account_id, direction, _, amount = key
+        field = "income" if direction == "inflow" else "expenses"
+        ids = item_candidates.get(key, [])
+        if len(flow_list) == 1 and len(ids) == 1:
+            flow = flow_list[0]
+            due = date.fromisoformat(flow["due_date"])
+            if due.year == year and due.month == month_number:
+                person = planned_items[ids[0]][3]
+                scheduled[person][field].setdefault(due, Decimal("0.00"))
+                scheduled[person][field][due] += amount
+                matched_items[field].add(ids[0])
+                matched_due_count[field] += 1
+
+    # Salary cycles do not contain inflow cashflows. Use a cycle's salary date
+    # only if exactly one positive planned income item belongs to that account.
+    income_items_by_account = {}
+    for item_id, (item, planned, category, person) in planned_items.items():
+        account_id = item.get("account_id")
+        if category == "income" and account_id:
+            income_items_by_account.setdefault(account_id, []).append(item_id)
+    for cycle in snapshot["plan"].get("payday_cycles", []):
+        account_id = cycle["account_id"]
+        ids = income_items_by_account.get(account_id, [])
+        salary_dates = [cycle.get(key) for key in ("last_salary_date", "next_salary_date")
+                        if cycle.get(key)]
+        salary_dates = [date.fromisoformat(value) for value in salary_dates
+                        if start <= date.fromisoformat(value) <= end]
+        if len(ids) != 1 or len(set(salary_dates)) != 1:
+            continue
+        item_id = ids[0]
+        if item_id in matched_items["income"]:
+            continue
+        item, amount, _, person = planned_items[item_id]
+        due = salary_dates[0]
+        scheduled[person]["income"].setdefault(due, Decimal("0.00"))
+        scheduled[person]["income"][due] += amount
+        matched_items["income"].add(item_id)
+        matched_due_count["income"] += 1
+
+    linearized = {person: {"income": Decimal("0.00"), "expenses": Decimal("0.00")}
+                  for person in person_ids}
+    for item_id, (_, amount, category, person) in planned_items.items():
+        field = "income" if category == "income" else "expenses"
+        if item_id not in matched_items[field]:
+            linearized[person][field] += amount
+
+    days_in_month = end.day
+    daily_amounts = {}
+    for person in scheduled:
+        daily_amounts[person] = {}
+        for field in ("income", "expenses"):
+            daily_cents, extra_cents = divmod(int(linearized[person][field] * 100), days_in_month)
+            daily_amounts[person][field] = (daily_cents, extra_cents)
+    cumulative_actual = {person: {"income": Decimal("0.00"), "expenses": Decimal("0.00")}
+                         for person in scheduled}
+    cumulative_planned = {person: {"income": Decimal("0.00"), "expenses": Decimal("0.00")}
+                          for person in scheduled}
+    points_by_person = {person: [] for person in scheduled}
+    for day_number in range(1, as_of.day + 1):
+        current = date(year, month_number, day_number)
+        for person in scheduled:
+            actual = actual_daily_by_person[person].get(current, {})
+            for field in ("income", "expenses"):
+                cumulative_actual[person][field] += actual.get(field, Decimal("0.00"))
+                daily_cents, extra_cents = daily_amounts[person][field]
+                cumulative_planned[person][field] += scheduled[person][field].get(
+                    current, Decimal("0.00"))
+                cumulative_planned[person][field] += Decimal(
+                    daily_cents + (day_number <= extra_cents)) / 100
+            points_by_person[person].append({
+                "date": current.isoformat(),
+                "cumulative_expenses": _format(cumulative_actual[person]["expenses"]),
+                "cumulative_income": _format(cumulative_actual[person]["income"]),
+                "planned_cumulative_expenses": _format(cumulative_planned[person]["expenses"]),
+                "planned_cumulative_income": _format(cumulative_planned[person]["income"]),
+            })
+    points = []
+    date_person = person_ids[0]
+    for index in range(as_of.day):
+        points.append({
+            "date": points_by_person[date_person][index]["date"],
+            **{key: _format(sum((Decimal(points_by_person[person][index][key])
+                                 for person in points_by_person), Decimal("0.00")))
+               for key in ("cumulative_expenses", "cumulative_income",
+                           "planned_cumulative_expenses", "planned_cumulative_income")},
+        })
+    linearized_total = {field: sum((values[field] for values in linearized.values()),
+                                   Decimal("0.00"))
+                        for field in ("income", "expenses")}
+    return {
+        "as_of": as_of.isoformat(), "today": today.isoformat(), "points": points,
+        "points_by_person": points_by_person,
+        "basis": {"matched_due_count": matched_due_count["expenses"],
+                  "linearized_amount": _format(linearized_total["expenses"]),
+                  "matched_expense_due_count": matched_due_count["expenses"],
+                  "linearized_expense_amount": _format(linearized_total["expenses"]),
+                  "matched_income_due_count": matched_due_count["income"],
+                  "linearized_income_amount": _format(linearized_total["income"]),
+                  "unmatched_expense_plan_is_time_prorated": True,
+                  "unmatched_income_plan_is_time_prorated": True,
+                  "unmatched_fixed_and_variable_are_time_prorated": True},
+    }
+
+
+def _liquidity_view(store, snapshot, month, comparison_rows):
+    """Separate checking-account liquidity from adjustable budget headroom."""
+    account_ids = snapshot["plan"].get("liquidity_accounts", [])
+    if not account_ids:
+        return None
+    year, month_number = (int(part) for part in month.split("-"))
+    period_start = date(year, month_number, 1)
+    today = datetime.now().astimezone().date()
+    if period_start > today:
+        return {"available": False, "reason": "future_month", "accounts": []}
+    period_end = date(year, month_number, calendar.monthrange(year, month_number)[1])
+    as_of = min(today, period_end).isoformat()
+    balances = _account_balances(store, as_of, account_ids)
+    if balances is None:
+        return {"available": False, "reason": "before_opening_balances", "accounts": []}
+    pending_by_account = {account_id: Decimal("0.00") for account_id in account_ids}
+    for transfer in snapshot["plan"].get("pending_transfers", []):
+        transfer_date = date.fromisoformat(transfer["value_date"])
+        if not period_start <= transfer_date <= period_end or transfer_date < date.fromisoformat(as_of):
+            continue
+        amount = money(transfer["amount"])
+        if transfer["from_account_id"] in pending_by_account:
+            pending_by_account[transfer["from_account_id"]] -= amount
+        if transfer["to_account_id"] in pending_by_account:
+            pending_by_account[transfer["to_account_id"]] += amount
+    row_by_item = {row["item_id"]: row for row in comparison_rows}
+    account_rows = {row["id"]: row for row in store.db.execute(
+        f"SELECT id,display_name,institution,owner FROM accounts WHERE id IN "
+        f"({','.join('?' for _ in account_ids)})", account_ids
+    )}
+    result = []
+    tracked_items = set()
+    for account_id in account_ids:
+        expected_income = Decimal("0.00")
+        estimated_income = Decimal("0.00")
+        committed_expenses = Decimal("0.00")
+        estimated_expenses = Decimal("0.00")
+        flexible_budget = Decimal("0.00")
+        commitments = []
+        estimates = []
+        income_items = []
+        for item in snapshot["plan"]["items"]:
+            if item.get("account_id") != account_id or item["id"] not in row_by_item:
+                continue
+            tracked_items.add(item["id"])
+            row = row_by_item[item["id"]]
+            remaining = max(money(row["remaining"]), Decimal("0.00"))
+            if item["kind"] == "income":
+                if item["confirmed"]:
+                    expected_income += remaining
+                    if remaining:
+                        income_items.append({"item_id": item["id"], "label": item["label"],
+                                             "amount": _format(remaining)})
+                else:
+                    estimated_income += remaining
+                    if remaining:
+                        estimates.append({"item_id": item["id"], "label": item["label"],
+                                          "amount": _format(remaining), "kind": "income"})
+            elif item["kind"] == "fixed":
+                if item["confirmed"]:
+                    committed_expenses += remaining
+                    if remaining:
+                        commitments.append({"item_id": item["id"], "label": item["label"],
+                                            "amount": _format(remaining)})
+                else:
+                    estimated_expenses += remaining
+                    if remaining:
+                        estimates.append({"item_id": item["id"], "label": item["label"],
+                                          "amount": _format(remaining), "kind": "expense"})
+            else:
+                flexible_budget += remaining
+        balance = balances.get(account_id, Decimal("0.00"))
+        pending_transfer = pending_by_account[account_id]
+        account = account_rows.get(account_id)
+        label = (account["display_name"] or f"{account['owner']} · {account['institution']}") \
+            if account is not None else account_id
+        result.append({
+            "account_id": account_id,
+            "label": label,
+            "current_balance": _format(balance),
+            "pending_transfer": _format(pending_transfer),
+            "balance_after_pending": _format(balance + pending_transfer),
+            "expected_income": _format(expected_income),
+            "estimated_income": _format(estimated_income),
+            "committed_expenses": _format(committed_expenses),
+            "estimated_expenses": _format(estimated_expenses),
+            "available_after_commitments": _format(
+                balance + pending_transfer + expected_income - committed_expenses),
+            "flexible_budget_remaining": _format(flexible_budget),
+            "commitments": commitments, "estimates": estimates, "income_items": income_items,
+        })
+    unassigned = []
+    for item in snapshot["plan"]["items"]:
+        row = row_by_item.get(item["id"])
+        if row is None or item["id"] in tracked_items:
+            continue
+        remaining = max(money(row["remaining"]), Decimal("0.00"))
+        if remaining:
+            unassigned.append({"item_id": item["id"], "label": item["label"],
+                               "kind": item["kind"], "amount": _format(remaining)})
+    flexible_total = sum(
+        (max(money(row_by_item[item["id"]]["remaining"]), Decimal("0.00"))
+         for item in snapshot["plan"]["items"]
+         if item["kind"] == "variable" and item["id"] in row_by_item
+         and (not item.get("account_id") or item["account_id"] in account_ids)),
+        Decimal("0.00"),
+    )
+    totals = {
+        key: _format(sum((money(account[key]) for account in result), Decimal("0.00")))
+        for key in ("current_balance", "pending_transfer", "balance_after_pending",
+                    "expected_income", "committed_expenses",
+                    "estimated_income", "estimated_expenses", "available_after_commitments")
+    }
+    totals["flexible_budget_remaining"] = _format(flexible_total)
+    return {
+        "available": True, "as_of": as_of, "accounts": result,
+        "totals": totals,
+        "unassigned": unassigned,
+    }
+
+
+def _account_balances(store, as_of, account_ids):
+    """Return balances for selected accounts without unrelated opening-date gates."""
+    if not account_ids:
+        return {}
+    placeholders = ",".join("?" for _ in account_ids)
+    accounts = store.db.execute(
+        f"SELECT id,opening,opening_date FROM accounts WHERE id IN ({placeholders})",
+        account_ids,
+    ).fetchall()
+    if len(accounts) != len(account_ids) or any(
+            date.fromisoformat(row["opening_date"]) > date.fromisoformat(as_of)
+            for row in accounts):
+        return None
+    balances = {row["id"]: money(row["opening"]) for row in accounts}
+    for row in store.db.execute(
+            f"SELECT account_id,amount FROM transactions WHERE date<=? "
+            f"AND account_id IN ({placeholders})",
+            (as_of, *account_ids)):
+        balances[row["account_id"]] += money(row["amount"])
+    return balances
+
+
+def _monthly_account_balance_change(store, month, account_ids, account_owners,
+                                    known_person_ids, person_ids, *, today=None,
+                                    opening_balances=None):
+    """Return opening/end balances and actual daily changes for selected checking accounts."""
+    unavailable = {"available": False, "as_of": None, "by_person": {}}
+    if not account_ids:
+        unavailable["reason"] = "no_liquidity_accounts"
+        return unavailable
+    year, month_number = (int(part) for part in month.split("-"))
+    start = date(year, month_number, 1)
+    end = date(year, month_number, calendar.monthrange(year, month_number)[1])
+    today = today or datetime.now().astimezone().date()
+    as_of = min(today, end)
+    unavailable["as_of"] = as_of.isoformat()
+    if as_of < start:
+        unavailable["reason"] = "future_month"
+        return unavailable
+    placeholders = ",".join("?" for _ in account_ids)
+    accounts = list(store.db.execute(
+        f"SELECT id,kind FROM accounts WHERE id IN ({placeholders})", account_ids))
+    if len(accounts) != len(account_ids) or any(row["kind"] != "CHECKING" for row in accounts):
+        unavailable["reason"] = "checking_account_unavailable"
+        return unavailable
+    opening_date = start.fromordinal(start.toordinal() - 1)
+    start_balances = (opening_balances if opening_balances is not None else
+                      _account_balances(store, opening_date.isoformat(), account_ids))
+    if start_balances is None:
+        unavailable["reason"] = "opening_balance_unavailable"
+        return unavailable
+
+    person_ids = [person for person in person_ids if person != "JOINT"] + ["JOINT"]
+    actual_change = {person: Decimal("0.00") for person in person_ids}
+    start_by_person = actual_change.copy()
+    end_by_person = actual_change.copy()
+    deltas_by_day = {}
+    account_person = {
+        row["id"]: _daily_owner(account_owners.get(row["id"]), known_person_ids)
+        for row in accounts
+    }
+    end_balances = dict(start_balances)
+    for account_id, balance in start_balances.items():
+        start_by_person[account_person[account_id]] += balance
+    for row in store.db.execute(
+            f"SELECT account_id,date,amount FROM transactions WHERE date BETWEEN ? AND ? "
+            f"AND account_id IN ({placeholders}) ORDER BY date,account_id",
+            (start.isoformat(), as_of.isoformat(), *account_ids)):
+        person = account_person[row["account_id"]]
+        day = date.fromisoformat(row["date"])
+        delta = money(row["amount"])
+        actual_change[person] += delta
+        end_balances[row["account_id"]] += delta
+        day_values = deltas_by_day.setdefault(
+            day, {owner: Decimal("0.00") for owner in person_ids})
+        day_values[person] += delta
+    for account_id, balance in end_balances.items():
+        end_by_person[account_person[account_id]] += balance
+
+    values = {"TOTAL": {"start": sum(start_by_person.values(), Decimal("0.00")),
+                        "end": sum(end_by_person.values(), Decimal("0.00")),
+                        "change": sum(actual_change.values(), Decimal("0.00"))}}
+    for person in person_ids:
+        values[person] = {"start": start_by_person[person], "end": end_by_person[person],
+                          "change": actual_change[person]}
+    cumulative = {person: Decimal("0.00") for person in person_ids}
+    points = {person: [] for person in person_ids}
+    for day_number in range(1, as_of.day + 1):
+        current = date(year, month_number, day_number)
+        for person in person_ids:
+            cumulative[person] += deltas_by_day.get(current, {}).get(person, Decimal("0.00"))
+            points[person].append({"date": current.isoformat(),
+                                   "change": _format(cumulative[person])})
+    points["TOTAL"] = [
+        {"date": current["date"],
+         "change": _format(sum((Decimal(points[person][index]["change"])
+                                for person in person_ids), Decimal("0.00")))}
+        for index, current in enumerate(points[person_ids[0]])
+    ] if person_ids else []
+    return {
+        "available": True, "as_of": as_of.isoformat(), "by_person": {
+            person: {key: _format(value) for key, value in summary.items()}
+            | {"points": points[person]}
+            for person, summary in values.items()
+        },
+        "opening_date": opening_date.isoformat(),
+        "_account_end_balances": end_balances,
+        "source": "Rohbuchungen der ausgewählten Girokonten einschließlich Umbuchungen",
+    }
+
+
+def _month_offset(month, offset):
+    index = int(month[:4]) * 12 + int(month[5:]) - 1 + offset
+    year, month_index = divmod(index, 12)
+    return f"{year:04d}-{month_index + 1:02d}"
+
+
+def _trend_snapshot_for_month(snapshot, month, selected_month, *, force=False):
+    """Reuse uniquely configured due/payday days for retrospective months."""
+    if month == selected_month and not force:
+        return snapshot
+    year, month_number = (int(part) for part in month.split("-"))
+    last_day = calendar.monthrange(year, month_number)[1]
+    plan = dict(snapshot["plan"])
+    cycles = []
+    for original in plan.get("payday_cycles", []):
+        cycle = dict(original)
+        cashflows = []
+        for original_flow in cycle.get("cashflows", []):
+            flow = dict(original_flow)
+            try:
+                due = date.fromisoformat(flow["due_date"])
+            except (KeyError, TypeError, ValueError):
+                cashflows.append(flow)
+                continue
+            flow["due_date"] = date(year, month_number, min(due.day, last_day)).isoformat()
+            cashflows.append(flow)
+        cycle["cashflows"] = cashflows
+        salary_values = [cycle.get(key) for key in ("last_salary_date", "next_salary_date")]
+        try:
+            salary_dates = [date.fromisoformat(value) for value in salary_values if value]
+        except (TypeError, ValueError):
+            salary_dates = []
+        if len(salary_dates) == 2 and salary_dates[0].day == salary_dates[1].day:
+            salary_date = date(year, month_number, min(salary_dates[0].day, last_day)).isoformat()
+            cycle["last_salary_date"] = salary_date
+            cycle["next_salary_date"] = salary_date
+        cycles.append(cycle)
+    plan["payday_cycles"] = cycles
+    return dict(snapshot) | {"plan": plan}
+
+
+def _monthly_trend(store, selected_month, snapshot, account_owners,
+                   known_person_ids, person_ids, *, today=None,
+                   selected_ledger_rows=None, selected_daily=None,
+                   selected_balance=None):
+    """Build monthly totals from the selected revision and exact ledger rows."""
+    calendar_year_start = f"{selected_month[:4]}-01"
+    six_month_start = _month_offset(selected_month, -5)
+    first_month = min(calendar_year_start, six_month_start)
+    months = []
+    cursor = first_month
+    while cursor <= selected_month:
+        months.append(cursor)
+        cursor = _month_offset(cursor, 1)
+
+    plan = snapshot["plan"]
+    account_ids = plan.get("liquidity_accounts", [])
+    cash_item_id = plan.get("cash_receipt_item_id")
+    allocations = _allocations(snapshot)
+    saved_rows = {row["period"]: row for row in snapshot.get("calculation", {}).get("rows", [])}
+    calculation_rows = snapshot.get("calculation", {}).get("rows", [])
+    reference_items = (calculation_rows[0].get("items", []) if calculation_rows
+                       and "items" in calculation_rows[0] else plan.get("items", []))
+    # Intentional retrospective reference plan per the newer user specification:
+    # it supersedes the older plan-start boundary for this comparison. Only
+    # monthly recurring positions are projected backward; one-time and longer
+    # interval items stay excluded.
+    historical_template = _retrospective_monthly_items(reference_items)
+    person_ids = [*sorted(set(person_ids) - {"JOINT"}), "JOINT"]
+    rows = []
+    daily_person_ids = ["TOTAL", *person_ids]
+    balance_carry = None
+    daily_points_by_person = {person: [] for person in daily_person_ids}
+    for month in months:
+        planned = {person: {"income": Decimal("0.00"), "expenses": Decimal("0.00")}
+                   for person in person_ids}
+        saved_row = saved_rows.get(month)
+        if saved_row is not None and "items" in saved_row:
+            month_items = saved_row["items"]
+            plan_source = "selected_revision" if month == selected_month else "saved_revision_projection"
+        else:
+            month_items = [item.copy() for item in historical_template]
+            plan_source = "reconstructed_from_selected_revision"
+        for item in month_items:
+            person = _daily_owner(account_owners.get(item.get("account_id")),
+                                  known_person_ids)
+            category = "income" if item["kind"] == "income" else "expenses"
+            planned[person][category] += money(item["amount"])
+
+        actual = {person: {"income": Decimal("0.00"), "expenses": Decimal("0.00")}
+                  for person in person_ids}
+        if month == selected_month and selected_ledger_rows is not None:
+            ledger_rows = selected_ledger_rows
+        else:
+            ledger_rows, _ = _ledger_rows(store, month, allocations, cash_item_id)
+        for transaction in ledger_rows:
+            if transaction["actual_state"] != "classified":
+                continue
+            person = _daily_owner(account_owners.get(transaction.get("account_id")),
+                                  known_person_ids)
+            category = "income" if transaction["transaction_type"] == "income" else "expenses"
+            actual[person][category] += _positive_actual(transaction)
+
+        month_plan = {"items": month_items}
+        planned_by_item = {item["id"]: money(item["amount"]) for item in month_items}
+        month_snapshot = _trend_snapshot_for_month(snapshot, month, selected_month)
+        daily = (selected_daily if month == selected_month and selected_daily is not None
+                 else _daily_series(
+                     month, ledger_rows, month_plan, planned_by_item, month_snapshot,
+                     today=today, account_owners=account_owners,
+                     known_person_ids=known_person_ids, person_ids=person_ids))
+
+        balance = (dict(selected_balance)
+                   if month == selected_month and selected_balance is not None
+                   else _monthly_account_balance_change(
+                       store, month, account_ids, account_owners, known_person_ids,
+                       person_ids, today=today, opening_balances=balance_carry))
+        balance_carry = balance.get("_account_end_balances") if balance["available"] else None
+        daily_sources = {"TOTAL": daily["points"], **daily["points_by_person"]}
+        for person in daily_person_ids:
+            previous = {"cumulative_income": Decimal("0.00"),
+                        "cumulative_expenses": Decimal("0.00"),
+                        "planned_cumulative_income": Decimal("0.00"),
+                        "planned_cumulative_expenses": Decimal("0.00"),
+                        "balance": Decimal("0.00")}
+            balance_points = balance.get("by_person", {}).get(person, {}).get("points", [])
+            for index, point in enumerate(daily_sources[person]):
+                values = {
+                    "actual_income": Decimal(point["cumulative_income"]),
+                    "actual_expenses": Decimal(point["cumulative_expenses"]),
+                    "planned_income": Decimal(point["planned_cumulative_income"]),
+                    "planned_expenses": Decimal(point["planned_cumulative_expenses"]),
+                }
+                balance_value = (Decimal(balance_points[index]["change"])
+                                 if balance["available"] and index < len(balance_points)
+                                 else None)
+                daily_point = {
+                    "date": point["date"],
+                    "actual_income_delta": _format(values["actual_income"] - previous["cumulative_income"]),
+                    "actual_expenses_delta": _format(values["actual_expenses"] - previous["cumulative_expenses"]),
+                    "planned_income_delta": _format(values["planned_income"] - previous["planned_cumulative_income"]),
+                    "planned_expenses_delta": _format(values["planned_expenses"] - previous["planned_cumulative_expenses"]),
+                    "balance_change_delta": (_format(balance_value - previous["balance"])
+                                              if balance_value is not None else None),
+                }
+                daily_points_by_person[person].append(daily_point)
+                previous.update({
+                    "cumulative_income": values["actual_income"],
+                    "cumulative_expenses": values["actual_expenses"],
+                    "planned_cumulative_income": values["planned_income"],
+                    "planned_cumulative_expenses": values["planned_expenses"],
+                })
+                if balance_value is not None:
+                    previous["balance"] = balance_value
+        rows.append({
+            "month": month,
+            "plan": {"TOTAL": {
+                "income": _format(sum((value["income"] for value in planned.values()),
+                                      Decimal("0.00"))),
+                "expenses": _format(sum((value["expenses"] for value in planned.values()),
+                                        Decimal("0.00"))),
+            }, **{person: {key: _format(value) for key, value in values.items()}
+                 for person, values in planned.items()}},
+            "actual": {"TOTAL": {
+                "income": _format(sum((value["income"] for value in actual.values()),
+                                      Decimal("0.00"))),
+                "expenses": _format(sum((value["expenses"] for value in actual.values()),
+                                        Decimal("0.00"))),
+            }, **{person: {key: _format(value) for key, value in values.items()}
+                 for person, values in actual.items()}},
+            "balance_available": balance["available"],
+            "balance_change": {
+                person: summary["change"] for person, summary in balance.get(
+                    "by_person", {}).items()},
+            "plan_source": plan_source,
+        })
+        balance.pop("_account_end_balances", None)
+    balance_availability = {
+        "month": bool(rows and rows[-1]["balance_available"]),
+        "3": all(row["balance_available"] for row in rows[-3:]),
+        "6": all(row["balance_available"] for row in rows[-6:]),
+        "year": all(row["balance_available"] for row in rows
+                    if row["month"].startswith(selected_month[:4] + "-")),
+    }
+    return {
+        "selected_month": selected_month,
+        "revision": snapshot["revision"],
+        "months": rows,
+        "daily_points_by_person": daily_points_by_person,
+        "daily_balance_available": balance_availability["month"],
+        "daily_balance_available_by_range": balance_availability,
+        "available_from_month": _available_from_month(store, selected_month),
+        "historical_plan_source": "reconstructed_from_selected_revision",
+        "note": "Historische Planwerte sind aus der ausgewählten Revision rekonstruiert.",
+    }
+
+
+def _available_from_month(store, selected_month):
+    """Return the first imported month in the selected calendar year."""
+    year = selected_month[:4]
+    first_import = store.db.execute(
+        "SELECT MIN(substr(date,1,7)) FROM transactions WHERE substr(date,1,4)=?",
+        (year,),
+    ).fetchone()[0]
+    return first_import or f"{year}-01"
+
+
+def _payday_view(store, snapshot, month):
+    """Project configured cashflows until each checking account's next salary."""
+    cycles = snapshot["plan"].get("payday_cycles", [])
+    if not cycles:
+        return None
+    year, month_number = (int(part) for part in month.split("-"))
+    period_end = date(year, month_number, calendar.monthrange(year, month_number)[1])
+    as_of_date = min(datetime.now().astimezone().date(), period_end)
+    balances = _account_balances(
+        store, as_of_date.isoformat(), [cycle["account_id"] for cycle in cycles])
+    if balances is None:
+        return None
+    result = []
+    for cycle in cycles:
+        last_salary = date.fromisoformat(cycle["last_salary_date"])
+        next_salary = date.fromisoformat(cycle["next_salary_date"])
+        if not last_salary <= as_of_date <= next_salary:
+            continue
+        upcoming = [flow.copy() for flow in cycle["cashflows"]
+                    if as_of_date <= date.fromisoformat(flow["due_date"]) < next_salary]
+        for transfer in snapshot["plan"].get("pending_transfers", []):
+            transfer_date = date.fromisoformat(transfer["value_date"])
+            if not as_of_date <= transfer_date < next_salary:
+                continue
+            if transfer["from_account_id"] == cycle["account_id"]:
+                upcoming.append({
+                    "label": f"{transfer['label']} · vorgemerkt", "direction": "outflow",
+                    "amount": transfer["amount"], "due_date": transfer["value_date"],
+                    "evidence": transfer["evidence"],
+                })
+            elif transfer["to_account_id"] == cycle["account_id"]:
+                upcoming.append({
+                    "label": f"{transfer['label']} · vorgemerkt", "direction": "inflow",
+                    "amount": transfer["amount"], "due_date": transfer["value_date"],
+                    "evidence": transfer["evidence"],
+                })
+        upcoming.sort(key=lambda flow: (flow["due_date"], flow["label"]))
+        inflows = sum((money(flow["amount"]) for flow in upcoming
+                       if flow["direction"] == "inflow"), Decimal("0.00"))
+        outflows = sum((money(flow["amount"]) for flow in upcoming
+                        if flow["direction"] == "outflow"), Decimal("0.00"))
+        current = balances.get(cycle["account_id"], Decimal("0.00"))
+        target = money(cycle["target_balance"])
+        projected = current + inflows - outflows
+        result.append({
+            "account_id": cycle["account_id"], "owner_label": cycle["owner_label"],
+            "as_of": as_of_date.isoformat(),
+            "last_salary_date": cycle["last_salary_date"],
+            "next_salary_date": cycle["next_salary_date"],
+            "next_salary_basis": cycle["next_salary_basis"],
+            "current_balance": _format(current), "target_balance": _format(target),
+            "upcoming_inflows": _format(inflows), "upcoming_outflows": _format(outflows),
+            "projected_balance": _format(projected),
+            "free_spendable": _format(max(projected - target, Decimal("0.00"))),
+            "shortfall": _format(max(target - projected, Decimal("0.00"))),
+            "cashflows": upcoming,
+        })
+    gross_free = sum((money(cycle["free_spendable"]) for cycle in result), Decimal("0.00"))
+    gross_shortfall = sum((money(cycle["shortfall"]) for cycle in result), Decimal("0.00"))
+    net_headroom = gross_free - gross_shortfall
+    return {
+        "available": bool(result), "as_of": as_of_date.isoformat(), "cycles": result,
+        "total_free_spendable": _format(max(net_headroom, Decimal("0.00"))),
+        "total_shortfall": _format(max(-net_headroom, Decimal("0.00"))),
+    }
+
+
+def _person_item_allocations(parts, item_amounts):
+    """Keep both the booking's person totals and its existing item totals exact.
+
+    Item amounts share one sign. Allocate each item from the remaining person
+    cent budgets; the last item receives exactly the remaining cents.
+    """
+    remaining = {person: abs(value) for person, value in parts.items()}
+    result = {}
+    for item_id, amount in item_amounts:
+        total = sum(remaining.values(), Decimal(0))
+        weights = [{"item_id": person, "weight": value}
+                   for person, value in remaining.items() if value > 0]
+        allocated = (dict(_split_actual(amount, weights))
+                     if total and amount else {})
+        result[item_id] = allocated
+        for person, value in allocated.items():
+            remaining[person] -= abs(value)
+    return result
+
+
+def _person_comparison(store, snapshot, rows, ledger_rows, mapping, allocations,
+                       allocation_history, month_candidates, people):
+    labels = ({person["id"]: person["label"] for person in people}
+              if people is not None else {row["id"]: person_label(row["id"])
+                                          for row in store.db.execute(
+                                              "SELECT id FROM persons ORDER BY id")})
+    labels.pop("JOINT", None)
+    ids = [*labels, 'JOINT']
+    shares = account_allocations(store, labels)
+    empty = lambda: dict.fromkeys(ids, Decimal("0.00"))
+
+    def visible_shares(account_id):
+        account_shares = shares.get(account_id, {None: Decimal(1)})
+        return {person if person in labels or person == "JOINT" else "JOINT": share
+                for person, share in account_shares.items()}
+
+    actuals = {row["item_id"]: empty() for row in rows}
+    unmapped = {"income": empty(), "expenses": empty()}
+    for booking in ledger_rows:
+        if booking["actual_state"] != "classified":
+            continue
+        amount = _positive_actual(booking)
+        parts = split_cents(amount, visible_shares(booking["account_id"]))
+        exact = allocations.get((booking["account_id"], booking["external_id"]))
+        if booking.get("cash_receipt_item_id") is not None:
+            item_amounts = [(booking["cash_receipt_item_id"], amount)]
+        elif exact is not None:
+            item_amounts = _split_actual(amount, exact)
+        else:
+            item_id = _resolved_item(
+                store, mapping, snapshot, booking, allocation_history, month_candidates)[0]
+            item_amounts = [(item_id, amount)] if item_id is not None else []
+        if not item_amounts:
+            kind = "income" if booking["transaction_type"] == "income" else "expenses"
+            for person, part in parts.items():
+                unmapped[kind][person] += part
+            continue
+        for item_id, distributed in _person_item_allocations(parts, item_amounts).items():
+            # A zero-plan/zero-Ist row can be omitted from the existing display,
+            # yet contain expense and refund postings with distinct ownership.
+            bucket = actuals.setdefault(item_id, empty())
+            for person, part in distributed.items():
+                bucket[person] += part
+    item_accounts = {item['id']: item.get('account_id') for item in snapshot['plan']['items']}
+    totals = {name: empty() for name in (
+        "planned_income", "planned_expenses", "actual_income", "actual_expenses")}
+    formatted = lambda values: {person: _format(value) for person, value in values.items()}
+    for row in rows:
+        planned = empty()
+        parts = split_cents(money(row['planned']), visible_shares(
+            item_accounts[row['item_id']]))
+        planned.update(parts)
+        actual = actuals[row["item_id"]]
+        row["planned_by_person"] = formatted(planned)
+        row["actual_by_person"] = formatted(actual)
+        row["variance_by_person"] = formatted({person: actual[person] - planned[person]
+                                               for person in ids})
+        kind = "income" if row["kind"] == "income" else "expenses"
+        for person in ids:
+            totals["planned_" + kind][person] += planned[person]
+    # Aggregate all attributed bookings, including omitted net-zero positions.
+    item_kinds = {item["id"]: item["kind"] for item in snapshot["plan"]["items"]}
+    for item_id, actual in actuals.items():
+        kind = "income" if item_kinds[item_id] == "income" else "expenses"
+        for person in ids:
+            totals["actual_" + kind][person] += actual[person]
+    for kind, bucket in unmapped.items():
+        for person in ids:
+            totals["actual_" + kind][person] += bucket[person]
+    return {
+        "planned_basis": "Zuordnung nach geplantem Konto",
+        "actual_basis": "Zuordnung nach Kontoinhaberschaft",
+        "people": [{"id": person, "label": label} for person, label in labels.items()]
+                  + [{"id": "JOINT", "label": "Gemeinsam"}],
+        "totals": {name: formatted(values) for name, values in totals.items()},
+        "unmapped_by_person": {kind: formatted(values) for kind, values in unmapped.items()},
+    }
+
+
+def compare_actual(store, data, *, people=None):
+    """Compare one selected saved revision and month without mutating either source."""
+    revision, month = _request(data)
+    snapshot, month_plan, basis = _snapshot(store, revision, month)
+    mapping = _mapping(store, snapshot)
+    allocations = _allocations(snapshot)
+    allocation_history = _allocation_history(store, snapshot)
+    month_candidates = _month_plan_candidates(snapshot, month_plan, month)
+    actual_by_item = {item["id"]: Decimal("0.00") for item in snapshot["plan"]["items"]}
+    actual_counts = {item_id: 0 for item_id in actual_by_item}
+    transaction_keys_by_item = {item_id: set() for item_id in actual_by_item}
+    unmapped = {"income": Decimal("0.00"), "expenses": Decimal("0.00"), "count": 0}
+    unmapped_warning_counts = {}
+    unmapped_keys = {"income": set(), "expenses": set()}
+    unclassified = {
+        "net": Decimal("0.00"), "absolute": Decimal("0.00"), "count": 0,
+    }
+    automatic_owner_mapping_count = 0
+    cash_item_id = snapshot["plan"].get("cash_receipt_item_id")
+    ledger_rows, excluded = _ledger_rows(store, month, allocations, cash_item_id)
+    for row in ledger_rows:
+        amount = money(row["amount"])
+        if row["actual_state"] == "unclassified":
+            unclassified["net"] += amount
+            unclassified["absolute"] += abs(amount)
+            unclassified["count"] += 1
+            continue
+        actual = _positive_actual(row)
+        exact_allocations = allocations.get((row["account_id"], row["external_id"]))
+        owner_mapped = False
+        transaction_key = (row["account_id"], row["external_id"])
+        if row.get("cash_receipt_item_id") is not None:
+            item_id = row["cash_receipt_item_id"]
+            actual_by_item[item_id] += actual
+            actual_counts[item_id] += 1
+            transaction_keys_by_item[item_id].add(transaction_key)
+            continue
+        if exact_allocations is not None:
+            for item_id, allocated_actual in _split_actual(actual, exact_allocations):
+                actual_by_item[item_id] += allocated_actual
+                actual_counts[item_id] += 1
+                transaction_keys_by_item[item_id].add(transaction_key)
+            continue
+        item_id, owner_mapped, warning = _resolved_item(
+            store, mapping, snapshot, row, allocation_history, month_candidates)
+        if item_id is None:
+            direction = "income" if row["transaction_type"] == "income" else "expenses"
+            unmapped[direction] += actual
+            unmapped_keys[direction].add(transaction_key)
+            unmapped["count"] += 1
+            if warning is not None:
+                unmapped_warning_counts[warning] = unmapped_warning_counts.get(warning, 0) + 1
+            continue
+        automatic_owner_mapping_count += int(owner_mapped)
+        actual_by_item[item_id] += actual
+        actual_counts[item_id] += 1
+        transaction_keys_by_item[item_id].add(transaction_key)
+
+    planned_by_item = {item["id"]: money(item["amount"])
+                       for item in month_plan.get("items", [])}
+    if "items" not in month_plan:  # Legacy calculations did not persist item details.
+        planned_by_item = {
+            item["id"]: money(item["amount"]) for item in snapshot["plan"]["items"]
+            if _item_active(item, month)
+        }
+    account_owners = {row["id"]: row["owner"] for row in store.db.execute(
+        "SELECT id,owner FROM accounts"
+    )}
+    configured_people = (list(people) if people is not None else [
+        {"id": row["id"], "label": person_label(row["id"])}
+        for row in store.db.execute("SELECT id FROM persons ORDER BY id")
+    ])
+    known_person_ids = {person["id"] for person in configured_people}
+    known_person_ids.discard("JOINT")
+    daily_people = [{"id": "TOTAL", "label": "Gesamt"}, *[
+        {"id": person_id, "label": next((person.get("label") for person in configured_people
+                                           if person["id"] == person_id),
+                                          None) or ("Gemeinsam" if person_id == "JOINT"
+                                                    else person_label(person_id))}
+        for person_id in [*sorted(known_person_ids), "JOINT"]
+    ]]
+    rows = []
+    for item in snapshot["plan"]["items"]:
+        planned = planned_by_item.get(item["id"], Decimal("0.00"))
+        actual = actual_by_item[item["id"]]
+        if planned == 0 and actual == 0:
+            continue
+        rows.append({
+            "item_id": item["id"], "label": item["label"], "kind": item["kind"],
+            "confirmed": item["confirmed"],
+            "owner_group": (
+                account_owners[item.get("account_id")]
+                if account_owners.get(item.get("account_id")) in known_person_ids
+                else "Gemeinsam"),
+            "planned": _format(planned), "actual": _format(actual),
+            "remaining": _format(planned - actual), "variance": _format(actual - planned),
+            "transaction_count": actual_counts[item["id"]],
+            "tree_transaction_keys": transaction_keys_by_item[item["id"]],
+        })
+    planned_income = Decimal(month_plan["income"])
+    planned_expenses = Decimal(month_plan["fixed"]) + Decimal(month_plan["variable"])
+    mapped_income = sum((actual_by_item[i["id"]] for i in snapshot["plan"]["items"]
+                         if i["kind"] == "income"), Decimal("0.00"))
+    mapped_expenses = sum((actual_by_item[i["id"]] for i in snapshot["plan"]["items"]
+                           if i["kind"] != "income"), Decimal("0.00"))
+    actual_income = mapped_income + unmapped["income"]
+    actual_expenses = mapped_expenses + unmapped["expenses"]
+    remaining_fixed = sum(
+        (max(money(row["remaining"]), Decimal("0.00")) for row in rows
+         if row["kind"] == "fixed" and row["confirmed"]), Decimal("0.00"))
+    remaining_variable = sum(
+        (max(money(row["remaining"]), Decimal("0.00")) for row in rows
+         if row["kind"] == "variable"), Decimal("0.00"))
+    remaining_estimated = sum(
+        (max(money(row["remaining"]), Decimal("0.00")) for row in rows
+         if row["kind"] == "fixed" and not row["confirmed"]), Decimal("0.00"))
+    generated_at = datetime.now(UTC).isoformat()
+    comparison = {
+        "revision": revision, "month": month, "generated_at": generated_at,
+        "basis": basis,
+        "audit_watermark": _watermark(store), "rows": rows,
+        "totals": {
+            "planned_income": _format(planned_income),
+            "planned_expenses": _format(planned_expenses),
+            "planned_cashflow": _format(planned_income - planned_expenses),
+            "actual_income": _format(actual_income),
+            "actual_expenses": _format(actual_expenses),
+            "actual_cashflow": _format(actual_income - actual_expenses),
+            "remaining_expense_budget": _format(planned_expenses - actual_expenses),
+            "remaining_fixed_expenses": _format(remaining_fixed),
+            "remaining_variable_budget": _format(remaining_variable),
+            "remaining_estimated_expenses": _format(remaining_estimated),
+        },
+        "unmapped": {"income": _format(unmapped["income"]),
+                     "expenses": _format(unmapped["expenses"]), "count": unmapped["count"]},
+        "unclassified": {"net": _format(unclassified["net"]),
+                         "absolute": _format(unclassified["absolute"]),
+                         "count": unclassified["count"]},
+        "automatic_owner_mapping_count": automatic_owner_mapping_count,
+        "excluded": excluded,
+    }
+    if unmapped_warning_counts:
+        comparison["unmapped_warnings"] = [
+            {"code": code, "count": count}
+            for code, count in sorted(unmapped_warning_counts.items())
+        ]
+    comparison["surplus_bridge"] = _surplus_bridge(
+        rows, unmapped, unclassified, planned_income - planned_expenses,
+        snapshot["plan"].get("household_split"))
+    tree_unmapped = dict(unmapped) | {
+        "income_keys": unmapped_keys["income"],
+        "expense_keys": unmapped_keys["expenses"],
+    }
+    daily_snapshot = _trend_snapshot_for_month(
+        snapshot, month, month, force=basis.get("type") == "retrospective_reference")
+    daily = _daily_series(month, ledger_rows, month_plan, planned_by_item, daily_snapshot,
+                          account_owners=account_owners, known_person_ids=known_person_ids,
+                          person_ids=sorted(known_person_ids))
+    selected_daily = {"points": daily["points"],
+                      "points_by_person": daily["points_by_person"]}
+    selected_balance = _monthly_account_balance_change(
+        store, month, snapshot["plan"].get("liquidity_accounts", []), account_owners,
+        known_person_ids, sorted(known_person_ids))
+    comparison["tree"] = _tree(rows, tree_unmapped, unclassified)
+    for row in rows:
+        row.pop("tree_transaction_keys", None)
+    comparison["daily"] = daily.pop("points")
+    comparison["daily_by_person"] = daily.pop("points_by_person")
+    comparison["daily_people"] = daily_people
+    comparison["daily_metadata"] = daily
+    comparison["account_balance_change"] = {
+        key: value for key, value in selected_balance.items()
+        if not key.startswith("_")
+    }
+    comparison["available_from_month"] = _available_from_month(store, month)
+    if data.get("include_trend"):
+        comparison["monthly_trend"] = _monthly_trend(
+            store, month, snapshot, account_owners, known_person_ids,
+            sorted(known_person_ids), selected_ledger_rows=ledger_rows,
+            selected_daily=selected_daily, selected_balance=selected_balance)
+    comparison["liquidity"] = _liquidity_view(store, snapshot, month, rows)
+    comparison["payday"] = _payday_view(store, snapshot, month)
+    if data.get("person_breakdown"):
+        comparison["person_breakdown"] = _person_comparison(
+            store, snapshot, rows, ledger_rows, mapping, allocations,
+            allocation_history, month_candidates, people)
+    if comparison["payday"] is not None:
+        free = money(comparison["payday"]["total_free_spendable"])
+        comparison["payday"]["flexible_budget_remaining"] = _format(remaining_variable)
+        comparison["payday"]["unallocated_after_budgets"] = _format(
+            max(free - remaining_variable, Decimal("0.00")))
+        comparison["payday"]["budget_shortfall"] = _format(
+            max(remaining_variable - free, Decimal("0.00")))
+    return comparison
+
+
+def actual_details(store, data):
+    """Return only transactions belonging to the requested comparison context."""
+    revision, month, context, page = _request(data, details=True)
+    snapshot, month_plan, _ = _snapshot(store, revision, month)
+    mapping = _mapping(store, snapshot)
+    allocations = _allocations(snapshot)
+    allocation_history = _allocation_history(store, snapshot)
+    month_candidates = _month_plan_candidates(snapshot, month_plan, month)
+    if context["type"] == "item" and context["item_id"] not in {
+            item["id"] for item in snapshot["plan"]["items"]}:
+        raise ValueError("unknown actual detail item")
+    selected = []
+    ledger_rows, _ = _ledger_rows(
+        store, month, allocations, snapshot["plan"].get("cash_receipt_item_id"))
+    for row in ledger_rows:
+        mapped_items = {}
+        if row["actual_state"] == "classified":
+            exact_allocations = allocations.get((row["account_id"], row["external_id"]))
+            if row.get("cash_receipt_item_id") is not None:
+                mapped_items = {
+                    row["cash_receipt_item_id"]: _positive_actual(row),
+                }
+            elif exact_allocations is not None:
+                mapped_items = dict(_split_actual(_positive_actual(row), exact_allocations))
+            else:
+                mapped_item = _resolved_item(
+                    store, mapping, snapshot, row, allocation_history,
+                    month_candidates)[0]
+                if mapped_item is not None:
+                    mapped_items[mapped_item] = _positive_actual(row)
+        include = (
+            (context["type"] == "item" and context["item_id"] in mapped_items)
+            or (context["type"] == "unmapped" and row["actual_state"] == "classified"
+                and not mapped_items)
+            or (context["type"] == "unmapped_income" and row["actual_state"] == "classified"
+                and not mapped_items and row["transaction_type"] == "income")
+            or (context["type"] == "unmapped_expense" and row["actual_state"] == "classified"
+                and not mapped_items and row["transaction_type"] == "expense")
+            or (context["type"] == "unclassified" and row["actual_state"] == "unclassified")
+        )
+        if include:
+            detail = {
+                "account_id": row["account_id"], "external_id": row["external_id"],
+                "date": row["date"], "amount": row["amount"],
+                "counterparty": row["counterparty"] or "",
+                "description": row["description"] or "",
+                "category_id": row["category_id"],
+                "category_label": row["category_label"],
+            }
+            if row.get("bonsy_entry_id") is not None:
+                detail["bonsy_entry_id"] = row["bonsy_entry_id"]
+                detail["bonsy_sources"] = row.get("bonsy_sources", [])
+            if context["type"] == "item":
+                detail["allocated_amount"] = _format(mapped_items[context["item_id"]])
+            selected.append(detail)
+    start = (page - 1) * _PAGE_SIZE
+    total = len(selected)
+    return {
+        "revision": revision, "month": month, "context": context,
+        "generated_at": datetime.now(UTC).isoformat(), "audit_watermark": _watermark(store),
+        "page": page, "page_size": _PAGE_SIZE, "total_count": total,
+        "has_more": start + _PAGE_SIZE < total,
+        "transactions": selected[start:start + _PAGE_SIZE],
+    }

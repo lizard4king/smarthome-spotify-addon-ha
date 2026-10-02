@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "default_profile_id": null,
+  "profiles": [
+    {
+      "profile_id": "person_a",
+      "display_name": "Profil A",
+      "connection_id": "spotify_connection_a",
+      "aliases": [
+        "mein spotify"
+      ],
+      "alexa_person_ids": [
+        "amzn1.ask.person.example-a"
+      ],
+      "allowed_targets": [
+        "kueche"
+      ],
+      "default_target": "kueche",
+      "enabled": true
+    }
+  ]
+}
