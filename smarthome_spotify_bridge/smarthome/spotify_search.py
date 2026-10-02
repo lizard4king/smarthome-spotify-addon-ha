@@ -55,7 +55,7 @@ class SpotifyMediaSearchClient:
             headers={"Accept": "application/json", "Authorization": f"Bearer {access_token}"},
         )
         try:
-            with self._requester(request, self._timeout) as response:
+            with self._requester(request, timeout=self._timeout) as response:
                 raw = response.read(64 * 1024)
         except Exception as exc:
             raise SpotifySearchError(
