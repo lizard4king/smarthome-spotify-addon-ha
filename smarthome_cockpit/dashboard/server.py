@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from smarthome.home_assistant import HomeAssistantAdapter, HomeAssistantConfig, HomeAssistantError
+from dashboard.music_assistant import MusicAssistant, MusicAssistantError
 
 
 ROOT = Path(__file__).resolve().parent
@@ -45,12 +46,16 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        if not urlsplit(self.path).path.startswith("/api/music/"):
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/music/"):
+            self._send_json(405, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
+            return
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
@@ -58,6 +63,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/music/"):
+            self._handle_music_get()
+            return
         if self.path == "/api/capabilities":
             ha_ready = bool(os.getenv("HOME_ASSISTANT_TOKEN"))
             spotify_ready = bool(os.getenv("SPOTIFY_BRIDGE_SECRET"))
@@ -105,7 +113,7 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib API
-        if self.path not in {"/api/action", "/api/alexa/speak", "/api/spotify", "/api/spotify/search"}:
+        if self.path not in {"/api/action", "/api/alexa/speak", "/api/spotify", "/api/spotify/search", "/api/music/play", "/api/music/control"}:
             self._send_json(404, {"error": "Unbekannter Cockpit-Endpunkt."})
             return
         try:
@@ -115,7 +123,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("Die Anfrage muss ein JSON-Objekt sein.")
-            if self.path == "/api/action":
+            if self.path.startswith("/api/music/"):
+                self._handle_music_post(payload)
+            elif self.path == "/api/action":
                 self._handle_action(payload)
             elif self.path == "/api/alexa/speak":
                 self._handle_alexa_speak(payload)
@@ -125,6 +135,56 @@ class CockpitHandler(SimpleHTTPRequestHandler):
                 self._handle_spotify_search(payload)
         except (ValueError, UnicodeError, json.JSONDecodeError) as exc:
             self._send_json(400, {"error": str(exc)})
+
+    def _handle_music_get(self) -> None:
+        client = MusicAssistant()
+        parsed = urlsplit(self.path)
+        query = parse_qs(parsed.query)
+        try:
+            if parsed.path == "/api/music/status":
+                result = client.status()
+            elif parsed.path == "/api/music/players":
+                result = {"players": client.players()}
+            elif parsed.path == "/api/music/tracks":
+                result = client.tracks(query.get("q", [""])[0], int(query.get("offset", ["0"])[0]))
+            elif parsed.path == "/api/music/artwork":
+                body, content_type = client.artwork(query.get("uri", [""])[0])
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Cache-Control", "private, max-age=300")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            else:
+                self._send_json(404, {"error": "Unbekannter Musik-Endpunkt."})
+                return
+            self._send_json(200, result)
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+        except MusicAssistantError as exc:
+            self._send_json(503, {"available": False, "error": str(exc)})
+
+    def _handle_music_post(self, payload: dict[str, object]) -> None:
+        # Reject browser cross-origin writes, including simple form requests.
+        origin = self.headers.get("Origin")
+        if origin:
+            parsed = urlsplit(origin)
+            if parsed.scheme not in {"http", "https"} or parsed.netloc != self.headers.get("Host"):
+                self._send_json(403, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
+                return
+        if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
+            raise ValueError("Musikbefehle benötigen application/json.")
+        client = MusicAssistant()
+        try:
+            if self.path == "/api/music/play":
+                result = client.play(payload.get("uri"), payload.get("player_id"))
+            else:
+                result = client.control(payload.get("player_id"), payload.get("command"))
+            self._send_json(200, result)
+        except MusicAssistantError as exc:
+            self._send_json(503, {"available": False, "error": str(exc)})
 
     def _handle_action(self, payload: dict[str, object]) -> None:
         if os.getenv("HOME_ASSISTANT_ALLOW_WRITES", "").casefold() != "true":
