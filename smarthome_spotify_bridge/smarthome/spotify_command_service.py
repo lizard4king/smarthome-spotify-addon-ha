@@ -15,6 +15,7 @@ from smarthome.alexa_spotify import (
 from smarthome.spotify_alexa_commands import SpotifyAlexaCommand
 from smarthome.spotify_playback import SpotifyPlaybackRequest
 from smarthome.spotify_routing import SpotifyProfileRegistry, SpotifyRoutingStatus
+from smarthome.spotify_search import SpotifySearchResult
 from smarthome.spotify_service import SpotifyPlaybackService, prepare_spotify_playback
 from smarthome.spotify_targets import SpotifyTargetRegistry
 
@@ -24,6 +25,9 @@ class SpotifyMediaResolver(Protocol):
 
     def resolve(self, query: str, *, access_token: str) -> SpotifyPlaybackRequest:
         """Return one explicit Spotify context or track list."""
+
+    def search(self, query: str, *, access_token: str, limit: int = 8) -> tuple[SpotifySearchResult, ...]:
+        """Return bounded display metadata for a search query."""
 
 
 class SpotifyCommandServiceError(RuntimeError):
@@ -108,3 +112,12 @@ class SpotifyCommandService:
             ),
             routing.session,
         )
+
+    def search(self, profile_alias: str, query: str, *, now: datetime) -> tuple[SpotifySearchResult, ...]:
+        """Search one explicitly selected Spotify profile without playback."""
+
+        profile = self._registry.resolve_alias(profile_alias)
+        if profile is None or not profile.enabled:
+            raise SpotifyCommandServiceError("Das Spotify-Profil ist unbekannt oder deaktiviert.")
+        access_token = self._token_provider.access_token(profile.connection_id, now=now)
+        return tuple(self._media_resolver.search(query, access_token=access_token, limit=8))

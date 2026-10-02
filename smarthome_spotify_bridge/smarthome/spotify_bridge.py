@@ -19,6 +19,7 @@ from smarthome.spotify_alexa_commands import parse_spotify_alexa_intent
 MAX_BODY_BYTES = 16 * 1024
 MAX_CLOCK_SKEW_SECONDS = 300
 BRIDGE_PATH = "/api/spotify/command"
+SEARCH_PATH = "/api/spotify/search"
 HEALTH_PATH = "/health"
 
 
@@ -36,6 +37,9 @@ class SpotifyCommandDispatcher(Protocol):
         now: datetime,
     ) -> object:
         """Dispatch one already authenticated command."""
+
+    def search(self, profile_alias: str, query: str, *, now: datetime) -> object:
+        """Search one explicitly selected profile without playback."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +107,40 @@ class SpotifyBridge:
         )
         return _response(result)
 
+    def handle_search(
+        self,
+        *,
+        method: str,
+        path: str,
+        headers: Mapping[str, str],
+        body: bytes,
+    ) -> dict[str, object]:
+        if method.upper() != "POST" or path != SEARCH_PATH:
+            raise SpotifyBridgeError("Der Spotify-Suchendpunkt ist nicht verfügbar.")
+        if len(body) > MAX_BODY_BYTES:
+            raise SpotifyBridgeError("Die Spotify-Suchanfrage ist zu groß.")
+        self._verify_signature(headers, body)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise SpotifyBridgeError("Die Spotify-Suchanfrage ist kein gültiges JSON.") from None
+        if not isinstance(payload, dict) or set(payload) != {"profile_alias", "query"}:
+            raise SpotifyBridgeError("Die Spotify-Suchanfrage enthält unerwartete Felder.")
+        profile_alias = payload.get("profile_alias")
+        query = payload.get("query")
+        if not isinstance(profile_alias, str) or not profile_alias.strip() or not isinstance(query, str) or not query.strip():
+            raise SpotifyBridgeError("Spotify-Profil und Suchtext sind erforderlich.")
+        result = self._dispatcher.search(profile_alias.strip(), query.strip(), now=datetime.now(UTC))
+        results = []
+        for item in result:
+            results.append({
+                "uri": getattr(item, "uri", None),
+                "title": getattr(item, "title", None),
+                "subtitle": getattr(item, "subtitle", None),
+                "image_url": getattr(item, "image_url", None),
+            })
+        return {"status": "ok", "results": results}
+
     def _verify_signature(self, headers: Mapping[str, str], body: bytes) -> None:
         signature = headers.get("X-SmartHome-Signature", "")
         timestamp = headers.get("X-SmartHome-Timestamp", "")
@@ -164,8 +202,8 @@ def make_server(
     """Create, but do not start, the local bridge server."""
 
     # The add-on runs in an isolated Home Assistant container network. It may
-    # bind to all interfaces there so Cloudflared can reach it; arbitrary
-    # public binds remain rejected.
+    # bind to all interfaces there so the caller can reach the published port;
+    # arbitrary public binds remain rejected.
     if host not in {"127.0.0.1", "0.0.0.0"}:
         raise SpotifyBridgeError("Die Bridge darf nur lokal oder im Add-on-Netz gebunden werden.")
     if not isinstance(port, int) or isinstance(port, bool) or not 1024 <= port <= 65535:
@@ -187,18 +225,22 @@ def make_server(
             length = int(self.headers.get("Content-Length", "-1"))
             body = self.rfile.read(max(0, min(length, MAX_BODY_BYTES + 1)))
             try:
-                response = bridge.handle(
-                    method="POST", path=self.path, headers=self.headers, body=body
-                )
-                payload = response.as_mapping()
+                if self.path == SEARCH_PATH:
+                    payload = bridge.handle_search(method="POST", path=self.path, headers=self.headers, body=body)
+                else:
+                    response = bridge.handle(
+                        method="POST", path=self.path, headers=self.headers, body=body
+                    )
+                    payload = response.as_mapping()
                 status = 200
             except SpotifyBridgeError as exc:
                 payload = {"error": str(exc)}
                 status = 400
             except RuntimeError:
                 # Playback/provider failures must not tear down the HTTP
-                # connection. Return a stable application-level result so
-                # callers do not receive a proxy timeout such as Cloudflare 524.
+                # connection.  Return a stable application-level result so
+                # callers can report the failure instead of seeing a proxy
+                # timeout (for example Cloudflare 524).
                 payload = {"status": "failed"}
                 status = 200
             encoded = json.dumps(payload, ensure_ascii=True).encode("utf-8")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -18,6 +18,16 @@ class SpotifySearchError(RuntimeError):
     """Raised when a spoken query cannot be resolved safely."""
 
 
+@dataclass(frozen=True, slots=True)
+class SpotifySearchResult:
+    """Safe, display-ready Spotify metadata without access tokens."""
+
+    uri: str
+    title: str
+    subtitle: str
+    image_url: str | None = None
+
+
 class SpotifyMediaSearchClient:
     """Resolve a query to one bounded artist/album/playlist/track context."""
 
@@ -26,17 +36,26 @@ class SpotifyMediaSearchClient:
         self._timeout = timeout_seconds
 
     def resolve(self, query: str, *, access_token: str) -> SpotifyPlaybackRequest:
+        results = self.search(query, access_token=access_token, limit=1)
+        if not results:
+            raise SpotifySearchError("Spotify hat keinen passenden Inhalt gefunden.")
+        uri = results[0].uri
+        return SpotifyPlaybackRequest(context_uri=uri) if ":track:" not in uri else SpotifyPlaybackRequest(track_uris=(uri,))
+
+    def search(self, query: str, *, access_token: str, limit: int = 8) -> tuple[SpotifySearchResult, ...]:
         if not isinstance(query, str) or not query.strip() or len(query) > 256:
             raise SpotifySearchError("Die Spotify-Suche ist ungültig.")
         if not isinstance(access_token, str) or not access_token:
             raise SpotifySearchError("Für Spotify fehlt ein Zugriffstoken.")
-        params = urlencode({"q": query.strip(), "type": "artist,album,playlist,track", "limit": 1})
+        if not isinstance(limit, int) or not 1 <= limit <= 20:
+            raise SpotifySearchError("Die Anzahl der Spotify-Treffer ist ungültig.")
+        params = urlencode({"q": query.strip(), "type": "artist,album,playlist,track", "limit": limit})
         request = Request(
             f"{SEARCH_URL}?{params}",
             headers={"Accept": "application/json", "Authorization": f"Bearer {access_token}"},
         )
         try:
-            with self._requester(request, timeout=self._timeout) as response:
+            with self._requester(request, self._timeout) as response:
                 raw = response.read(64 * 1024)
         except Exception as exc:
             raise SpotifySearchError("Die Spotify-Suche ist nicht erreichbar.") from exc
@@ -44,13 +63,25 @@ class SpotifyMediaSearchClient:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SpotifySearchError("Spotify lieferte keine gültige Suche.") from exc
-        for key in ("artists", "albums", "playlists", "tracks"):
-            item = _first_item(payload, key)
-            if item is not None:
-                uri = item.get("uri")
-                if isinstance(uri, str):
-                    return SpotifyPlaybackRequest(context_uri=uri) if ":track:" not in uri else SpotifyPlaybackRequest(track_uris=(uri,))
-        raise SpotifySearchError("Spotify hat keinen passenden Inhalt gefunden.")
+        results: list[SpotifySearchResult] = []
+        for key in ("tracks", "albums", "playlists", "artists"):
+            section = payload.get(key) if isinstance(payload, dict) else None
+            items = section.get("items") if isinstance(section, dict) else None
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict) or not isinstance(item.get("uri"), str):
+                    continue
+                title = item.get("name") or item.get("title")
+                if not isinstance(title, str):
+                    continue
+                artists = item.get("artists")
+                artist_names = ', '.join(str(a.get("name")) for a in artists if isinstance(a, dict) and isinstance(a.get("name"), str)) if isinstance(artists, list) else ''
+                subtitle = artist_names or key.rstrip('s').capitalize()
+                images = item.get("album", {}).get("images") if isinstance(item.get("album"), dict) else item.get("images")
+                image_url = images[0].get("url") if isinstance(images, list) and images and isinstance(images[0], dict) and isinstance(images[0].get("url"), str) else None
+                results.append(SpotifySearchResult(item["uri"], title, subtitle, image_url))
+        return tuple(results[:limit])
 
 
 def _first_item(payload: object, key: str) -> Mapping[str, object] | None:

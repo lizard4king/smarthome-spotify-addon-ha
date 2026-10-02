@@ -46,20 +46,6 @@ def main() -> None:
         SpotifyMediaSearchClient(),
         SpotifyPlaybackService(token_provider, SpotifyConnectClient(), SpotifyPlaybackClient()),
     )
-    connect = SpotifyConnectClient()
-    for profile in profiles.profiles.values():
-        try:
-            token = token_provider.access_token(
-                profile.connection_id, now=datetime.now().astimezone()
-            )
-            catalog = connect.devices(token)
-            names = ", ".join(device.name for device in catalog.devices) or "keine"
-            print(f"Spotify-Geräte für {profile.display_name}: {names}", flush=True)
-        except Exception as exc:
-            print(
-                f"Spotify-Geräte für {profile.display_name} konnten nicht geladen werden: {exc}",
-                flush=True,
-            )
 
     class Dispatcher:
         def dispatch(self, command, *, voice_identity, session, now):
@@ -69,6 +55,9 @@ def main() -> None:
                 session=session,
                 now=now,
             )[0]
+
+        def search(self, profile_alias, query, *, now):
+            return service.search(profile_alias, query, now=now)
 
     # Bind inside the isolated add-on network so Cloudflared can proxy the
     # authenticated endpoint. The bridge is not exposed directly to the LAN.
