@@ -1,0 +1,46 @@
+name: Own Music Alexa
+slug: music_alexa
+version: 0.1.1
+description: Explicit Echo mappings and narrow signed-request and MP3-stream endpoints.
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: manual
+init: true
+stage: experimental
+apparmor: true
+host_network: false
+ingress: false
+ports:
+  5000/tcp: null
+  5001/tcp: null
+ports_description:
+  5000/tcp: Private administration and MA companion API; never route publicly.
+  5001/tcp: Dedicated public Alexa gateway behind HTTPS; only skill and granted streams.
+map: []
+options:
+  skill_id: ""
+  app_username: music_alexa
+  app_password: ""
+  ma_api_url: http://homeassistant.local:8095
+  ma_api_token: ""
+  ma_stream_origin: http://homeassistant.local:8097
+  public_base_url: ""
+  stream_grant_ttl: 900
+  locale: de-DE
+  device_mappings: []
+schema:
+  skill_id: str
+  app_username: str
+  app_password: password
+  ma_api_url: str
+  ma_api_token: password
+  ma_stream_origin: str
+  public_base_url: str
+  stream_grant_ttl: int(60,3600)
+  locale: list(de-DE)
+  device_mappings:
+    - device_id: str
+      user_id: str
+      player_id: str

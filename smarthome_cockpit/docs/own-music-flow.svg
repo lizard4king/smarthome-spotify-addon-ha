@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="430" viewBox="0 0 1000 430">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#47627d"/></marker></defs>
+<rect width="1000" height="430" rx="18" fill="#f7f9fc"/>
+<g font-family="Arial,sans-serif" fill="#142b42"><text x="40" y="44" font-size="25" font-weight="bold">Eigene Musik · Betrieb auf dem Home-Assistant-Server</text>
+<text x="40" y="73" font-size="15">Sollaufbau. Installation ist nicht gleich bestätigte Wiedergabe.</text>
+<g stroke="#c7d4e2" fill="#fff" stroke-width="2"><rect x="40" y="112" width="235" height="100" rx="13"/><rect x="355" y="112" width="275" height="100" rx="13"/><rect x="710" y="112" width="250" height="100" rx="13"/><rect x="355" y="284" width="275" height="105" rx="13"/><rect x="710" y="284" width="250" height="105" rx="13"/></g>
+<g font-size="19" font-weight="bold"><text x="60" y="145">USB · Elements</text><text x="375" y="145">Music Assistant</text><text x="730" y="145">Cockpit · Eigene Musik</text><text x="375" y="316">Alexa-Dienst</text><text x="730" y="316">Echo im Zielzimmer</text></g>
+<g font-size="15"><text x="60" y="172">Nur lesend über Samba</text><text x="60" y="194">Keine Formatierung / Reparatur</text><text x="375" y="172">Titel, Alben, Bibliothek, Player</text><text x="375" y="194">Verwaltung und API bleiben privat</text><text x="730" y="172">Titelauswahl und Zielraum</text><text x="730" y="194">Bestehender Zugangsschutz</text><text x="375" y="344">Signatur · Skill-ID · Gerätebindung</text><text x="375" y="367">Zeitlich begrenzte HTTPS-Streams</text><text x="730" y="344">MP3-Wiedergabe per AudioPlayer</text><text x="730" y="367">Nur zugeordnetes Echo</text></g>
+<g fill="none" stroke="#47627d" stroke-width="3" marker-end="url(#arrow)"><path d="M275 163H348"/><path d="M703 163H637"/><path d="M493 212V277"/><path d="M630 337H703"/></g>
+<g font-size="13" fill="#47627d"><text x="291" y="149">MP3s</text><text x="640" y="149">intern</text><text x="509" y="254">intern</text><text x="644" y="326">HTTPS</text></g></g></svg>

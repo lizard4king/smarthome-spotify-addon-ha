@@ -1,0 +1,2 @@
+music_alexa/run.sh text eol=lf
+smarthome_cockpit/run.sh text eol=lf
