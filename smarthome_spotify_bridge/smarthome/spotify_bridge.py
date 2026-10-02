@@ -236,12 +236,12 @@ def make_server(
             except SpotifyBridgeError as exc:
                 payload = {"error": str(exc)}
                 status = 400
-            except RuntimeError:
+            except RuntimeError as exc:
                 # Playback/provider failures must not tear down the HTTP
                 # connection.  Return a stable application-level result so
                 # callers can report the failure instead of seeing a proxy
                 # timeout (for example Cloudflare 524).
-                payload = {"status": "failed"}
+                payload = {"status": "failed", "error": str(exc)}
                 status = 200
             encoded = json.dumps(payload, ensure_ascii=True).encode("utf-8")
             self.send_response(status)

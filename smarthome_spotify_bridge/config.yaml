@@ -1,5 +1,5 @@
 name: SmartHome Spotify Bridge
-version: "0.1.13"
+version: "0.1.14"
 slug: smarthome_spotify_bridge
 description: Lokale, signierte Spotify-Steuerung für SmartHome
 arch:
