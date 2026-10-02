@@ -25,6 +25,15 @@ def _load_options_fallback() -> None:
 
 def main() -> None:
     _load_options_fallback()
+    print(
+        "Cockpit-Python: HA-Token=%s, Bridge-Secret=%s, Schreibzugriff=%s"
+        % (
+            "gesetzt" if os.environ.get("HOME_ASSISTANT_TOKEN") else "fehlt",
+            "gesetzt" if os.environ.get("SPOTIFY_BRIDGE_SECRET") else "fehlt",
+            os.environ.get("HOME_ASSISTANT_ALLOW_WRITES", ""),
+        ),
+        flush=True,
+    )
     os.environ.setdefault("HOME_ASSISTANT_URL", "http://192.168.178.20")
     os.environ.setdefault("SPOTIFY_BRIDGE_URL", "http://7b071411-smarthome-spotify-bridge:8766")
     os.environ.setdefault("COCKPIT_HOST", "0.0.0.0")

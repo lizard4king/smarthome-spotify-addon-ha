@@ -1,5 +1,5 @@
 name: Smart Home Cockpit
-version: "0.1.4"
+version: "0.1.5"
 slug: smarthome_cockpit
 description: Privates Smart-Home-Cockpit auf Home Assistant
 arch:
