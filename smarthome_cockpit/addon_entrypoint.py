@@ -18,14 +18,14 @@ def _load_options_fallback() -> None:
         ("bridge_secret", "SPOTIFY_BRIDGE_SECRET"),
     ):
         value = options.get(key)
-        if isinstance(value, str) and value and not os.environ.get(env_name):
+        if isinstance(value, str) and value:
             os.environ[env_name] = value
-    if "allow_writes" in options and not os.environ.get("HOME_ASSISTANT_ALLOW_WRITES"):
+    if "allow_writes" in options:
         os.environ["HOME_ASSISTANT_ALLOW_WRITES"] = str(options["allow_writes"]).lower()
 
 def main() -> None:
     _load_options_fallback()
-    os.environ.setdefault("HOME_ASSISTANT_URL", "http://homeassistant:8123")
+    os.environ.setdefault("HOME_ASSISTANT_URL", "http://192.168.178.20")
     os.environ.setdefault("SPOTIFY_BRIDGE_URL", "http://7b071411-smarthome-spotify-bridge:8766")
     os.environ.setdefault("COCKPIT_HOST", "0.0.0.0")
     os.environ.setdefault("COCKPIT_PORT", "8767")
