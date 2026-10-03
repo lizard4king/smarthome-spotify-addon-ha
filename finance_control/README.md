@@ -1,6 +1,6 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.0` runs the current `src/finance_control` package inside a Home
+Version `0.2.1` runs the current `src/finance_control` package inside a Home
 Assistant add-on. Build an installable add-on context from the repository with
 `scripts/build_homeassistant_addon.py`; the resulting `.tar.gz` is written outside
 the repository and includes a source manifest. The package keeps source provenance in `build-manifest.json`; no private data
@@ -13,8 +13,9 @@ mounts to work around this. Install or update this repository through the
 Home Assistant add-on store so Supervisor uses its supported app path.
 
 The add-on listens on port `8785` inside Home Assistant's add-on network. No host
-port is published. Its `/data` mount is persistent and included in cold Home
-Assistant backups. The active database is under `/data/FinanceControl/data`.
+port is published. Home Assistant automatically mounts private persistent app
+data at `/data` and includes it in cold backups. Finance Control uses
+`/data/FinanceControl/data` and does not map the separate `addon_config` directory.
 On first start without a database, the add-on waits for one JSON line on
 Home Assistant's add-on stdin and restores a verified backup package. This
 one-time bootstrap is scoped to `/data/FinanceControl/data`; it rejects an

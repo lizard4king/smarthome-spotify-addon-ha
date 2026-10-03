@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.0",
+  "addon_version": "0.2.1",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -126,6 +126,6 @@
     "web.py": "20295c653d04477c064b49b79c9e31f4e67bb7551fd0a76db2c26d13645d5abf"
   },
   "schema_version": 1,
-  "source_commit": "886a75c8597d8be8bd6405616a5c1af76c3b0fb2",
+  "source_commit": "8f7f6861c71a820f1a6cd172f27270a758989478",
   "source_tree_sha256": "4e2f0555762d603211c669f013733c78c74d78c13457e94d2c592a3dcdd663c4"
 }
