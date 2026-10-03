@@ -656,7 +656,9 @@ def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key):
                 if item['counterparty'] and item['counterparty'].strip() else None)
             rule = rules_by_key.get((normalized_counterparty, item['direction']))
             model = models_by_key.get((item['account_id'], item['external_id']))
-            if rule is not None and item['source_context_complete']:
+            if (rule is not None and item['source_context_complete']
+                    and _safe_exact_rule(store, rule['category_id'],
+                                         item['counterparty'], item['description'])):
                 item['category_proposal'] = {
                     'category': rule['category_id'], 'parent_category': rule['parent_id'],
                     'confidence': 'high',
@@ -1006,7 +1008,8 @@ def suggestions(store, data):
          'reason': 'exact_counterparty_and_direction',
          'provenance': 'local_rule_exact_counterparty_and_direction',
          'confidence': 'high'}
-        for row in rows)
+        for row in rows if _safe_exact_rule(
+            store, row['category_id'], context['counterparty'], context['description']))
     if not rows:
         merchant = _merchant_family_match(
             store, context['counterparty'], context['description'], direction)
@@ -1019,6 +1022,14 @@ def suggestions(store, data):
                 'confidence': 'high',
             })
     return {'suggestions': result}
+
+
+def _safe_exact_rule(store, category_id, counterparty, description):
+    """A learned cash rule needs cash evidence; a bank name also describes loans."""
+    if canonical_category_id(store, category_id) != 'AUSGABEN_BARGELD':
+        return True
+    from .cash_components import is_cash_withdrawal
+    return is_cash_withdrawal({'counterparty': counterparty, 'description': description})
 
 
 def exact_rule_match(store, counterparty, description, direction):
@@ -1034,6 +1045,8 @@ def exact_rule_match(store, counterparty, description, direction):
         (normalize_counterparty(counterparty), direction)).fetchone()
     if row is None:
         return _merchant_family_match(store, counterparty, description, direction)
+    if not _safe_exact_rule(store, row['category_id'], counterparty, description):
+        return None
     return {'rule_id': row['id'], 'category': row['category_id'],
             'parent_category': row['parent_id'], 'label': row['label'],
             'provenance': 'local_rule_exact_counterparty_and_direction'}

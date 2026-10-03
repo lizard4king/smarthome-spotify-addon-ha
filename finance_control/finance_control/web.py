@@ -37,13 +37,21 @@ def label(value):
 
 
 class Cockpit:
-    def __init__(self, database, *, demo=False, profile=None):
+    def __init__(self, database, *, demo=False, profile=None, reporting_history=None):
         self.database = outside_repository(database)
         self.demo = demo
         default_profile = (template_profile('household-shared', 'Synthetischer Haushalt')
                            if demo else None)
         raw_profile = profile if profile is not None else default_profile
         self.profile = normalize_profile(raw_profile) if raw_profile is not None else None
+        from .reporting_history import validate
+        history_path = self.database.parent / 'reporting-history.json'
+        if reporting_history is None and not demo and history_path.is_file():
+            if history_path.resolve().parent != self.database.parent:
+                raise ValueError('Reporting history must remain in the local data directory')
+            reporting_history = json.loads(history_path.read_text(encoding='utf-8'))
+        self.reporting_history = (validate(reporting_history)
+                                  if reporting_history is not None else None)
         self.token = secrets.token_urlsafe(32)
         self.database.parent.mkdir(parents=True, exist_ok=True)
         store = Store(self.database)
@@ -120,12 +128,17 @@ class Cockpit:
                 if action not in actions:
                     raise ValueError('unknown_payment_policy_action')
                 return actions[action](store, data)
-            if route in {'/api/budget-actual', '/api/budget-actual-details'}:
+            if route in {'/api/budget-actual', '/api/budget-actual-details',
+                         '/api/budget-actual-metadata'}:
                 from . import plan_actual
+                if route == '/api/budget-actual-metadata':
+                    return plan_actual.metadata(store, reporting_history=self.reporting_history)
                 if route == '/api/budget-actual':
                     people = (self.profile['people'] if self.profile is not None else None)
-                    return plan_actual.compare_actual(store, data, people=people)
-                return plan_actual.actual_details(store, data)
+                    return plan_actual.compare_actual(
+                        store, data, people=people, reporting_history=self.reporting_history)
+                return plan_actual.actual_details(
+                    store, data, reporting_history=self.reporting_history)
             if route == '/api/analytics-summary':
                 from .analytics import category_summary
                 return category_summary(store, data, people=(self.profile['people']
@@ -428,7 +441,24 @@ def _normalized_http_host(value, default_port):
     return f'{hostname}:{parsed_port if parsed_port is not None else default_port}'
 
 
-def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1'):
+def _normalized_origin(value):
+    try:
+        parsed = urlsplit(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('Ungültiger Origin') from exc
+    if (parsed.scheme not in {'http', 'https'} or not parsed.netloc or parsed.path
+            or parsed.query or parsed.fragment or '?' in value or '#' in value or '*' in value):
+        raise ValueError('Ungültiger Origin')
+    try:
+        origin_host = _normalized_http_host(parsed.netloc, 443 if parsed.scheme == 'https' else 80)
+    except ValueError as exc:
+        raise ValueError('Ungültiger Origin') from exc
+    # Compare origins using URL semantics: host names are case-insensitive and
+    # omitted ports equal the protocol's default port.
+    return f'{parsed.scheme}://{origin_host}'
+
+
+def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_origins=None):
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -436,6 +466,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1'):
         trusted_hosts.add(trusted)
         if trusted.endswith(f':{port}'):
             auto_port_hosts.add(trusted)
+    trusted_origins = {_normalized_origin(origin) for origin in (allowed_origins or [])}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -466,6 +497,14 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1'):
                 parsed = urlsplit(origin)
             except ValueError:
                 return False
+            if parsed.scheme == 'https':
+                try:
+                    normalized = _normalized_origin(origin)
+                    origin_host = _normalized_http_host(parsed.netloc, 443)
+                except ValueError:
+                    return False
+                trusted_hostnames = {host.rsplit(':', 1)[0].strip('[]') for host in trusted_hosts}
+                return normalized in trusted_origins and origin_host.rsplit(':', 1)[0].strip('[]') in trusted_hostnames
             try:
                 host = _normalized_http_host(parsed.netloc, self.server.server_port)
             except ValueError:
@@ -498,6 +537,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1'):
                     self.connection.settimeout(previous_timeout)
 
         def do_GET(self):
+            if urlsplit(self.path).path == '/health':
+                return self.reply(200, {'status': 'ok'})
             if not self.trusted_host():
                 return self.reply(403, {'error': 'Lokaler Zugriff erforderlich.'})
             url = urlsplit(self.path)
@@ -541,6 +582,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1'):
                     return self.reply(200, app.state(as_of))
                 except (ValueError, sqlite3.Error):
                     return self.reply(400, {'error': 'Stichtag liegt vor einem Eröffnungssaldo oder ist ungültig.'})
+            if url.path == '/api/budget-actual-metadata':
+                return self.reply(200, app.action(url.path, {}))
             return self.reply(404, {'error': 'Nicht gefunden.'})
 
         def do_POST(self):
@@ -614,6 +657,8 @@ def main():
     parser = argparse.ArgumentParser(description='Lokales Finance-Control-Cockpit')
     parser.add_argument('--allowed-host', action='append', default=[], dest='allowed_hosts',
                         help='Zusätzlicher Host-Header eines lokalen Reverse-Proxys; mehrfach möglich')
+    parser.add_argument('--allowed-origin', action='append', default=[], dest='allowed_origins',
+                        help='Explizit erlaubter HTTP(S)-Origin ohne Pfad; mehrfach möglich')
     parser.add_argument('--host', default='127.0.0.1',
                         help='Bind-Adresse; standardmäßig nur lokal, für einen geschützten Reverse-Proxy z. B. 0.0.0.0')
     parser.add_argument('--port', type=int, default=8785)
@@ -658,7 +703,7 @@ def main():
     app = Cockpit(database, demo=args.demo, profile=profile)
     if args.demo:
         seed_demo(app)
-    server = make_server(app, args.port, args.allowed_hosts, args.host)
+    server = make_server(app, args.port, args.allowed_hosts, args.host, args.allowed_origins)
     print(f'Finance Control: http://{args.host}:{server.server_port}', flush=True)
     try:
         server.serve_forever()

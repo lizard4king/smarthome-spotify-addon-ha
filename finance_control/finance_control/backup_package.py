@@ -22,6 +22,7 @@ def create_backup_package(store, database):
     documents = outside_repository(parent / (database.stem + '-documents'))
     if any(not path.is_relative_to(parent) for path in (backups, exports, sources, documents)):
         raise ValueError('redirected_backup_directory')
+    reporting_history = _reporting_history_file(parent)
     backups.mkdir(exist_ok=True)
     exports.mkdir(exist_ok=True)
     identity = secrets.token_hex(16)
@@ -31,6 +32,8 @@ def create_backup_package(store, database):
     partial = exports / (identity + '.partial')
     manifest = {'version': 1, 'database_integrity': 'ok', 'cloud_upload': False, 'files': {}}
     paths = [(snapshot, 'database.sqlite')]
+    if reporting_history is not None:
+        paths.append((reporting_history, 'reporting-history.json'))
     if sources.exists():
         for path in sorted(sources.glob('*/*')):
             if not (re.fullmatch('[0-9a-f]{32}', path.parent.name)
@@ -159,6 +162,30 @@ def _database_signature(database):
             continue
         signature[suffix or 'database'] = {'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns}
     return signature
+
+
+def _reporting_history_file(parent):
+    """Return the validated optional reporting policy under this data directory."""
+    candidate = parent / 'reporting-history.json'
+    if not candidate.exists() and not candidate.is_symlink():
+        return None
+    resolved = outside_repository(candidate)
+    if resolved.parent != parent or resolved.name != 'reporting-history.json':
+        raise ValueError('redirected_reporting_history')
+    if not resolved.is_file():
+        raise ValueError('invalid_reporting_history_file')
+    try:
+        value = json.loads(resolved.read_text(encoding='utf-8'))
+        from .reporting_history import validate
+        validate(value)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+        raise ValueError('invalid_reporting_history_file') from error
+    return resolved
+
+
+def _reporting_history_signature(parent):
+    path = _reporting_history_file(parent)
+    return _checksum(path) if path is not None else None
 
 
 def mark_backup_needed(database):
@@ -430,10 +457,13 @@ def maintain_backup(store, database, target_directory=None, environ=None):
     database = outside_repository(database)
     state = _read_sync_state(database)
     signature = _database_signature(database)
+    reporting_history_signature = _reporting_history_signature(database.parent)
     created = False
     package = None
     dirty = state.get('dirty_generation') != state.get('backed_up_generation')
-    if dirty or state.get('database_signature') != signature or not _local_packages(database):
+    if (dirty or state.get('database_signature') != signature
+            or state.get('reporting_history_signature') != reporting_history_signature
+            or not _local_packages(database)):
         package = create_backup_package(store, database)
         verified = verify_backup_package(
             outside_repository(database.parent / package['download_url'].lstrip('/')),
@@ -442,6 +472,7 @@ def maintain_backup(store, database, target_directory=None, environ=None):
         # SQLite backup may checkpoint a WAL file. Persist the post-backup state so
         # the next maintenance pass does not create a duplicate package.
         state['database_signature'] = _database_signature(database)
+        state['reporting_history_signature'] = _reporting_history_signature(database.parent)
         state['backed_up_generation'] = state.get('dirty_generation')
         state['last_local_backup'] = datetime.now(UTC).isoformat()
         state['last_local_package'] = package['download_url'].rsplit('/', 1)[-1]

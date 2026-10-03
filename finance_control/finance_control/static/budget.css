@@ -107,6 +107,7 @@
 #plan-actual-daily-chart{min-width:0;min-height:220px;background:white}
 #plan-actual-daily-chart text{fill:#526b79;font-size:12px}
 .plan-actual-daily-controls{display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin:8px 0}.plan-actual-daily-controls label{display:flex;align-items:center;gap:10px;margin:0;font-size:14px}.plan-actual-daily-controls select{width:auto;min-width:150px;margin:0}
+.plan-actual-trend-comparison{margin-top:18px}.plan-actual-trend-comparison h4{margin:0 0 8px}.plan-actual-trend-comparison-table{min-width:980px}.plan-actual-trend-comparison-table th,.plan-actual-trend-comparison-table td{white-space:nowrap}
 .plan-actual-daily-balance{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin:8px 0 14px}.plan-actual-daily-balance-value{display:flex;flex-direction:column;min-width:130px;padding:9px 12px;border:1px solid #dbe5e9;border-radius:8px;background:#f8fafb}.plan-actual-daily-balance-value span{font-size:12px;color:#526b79}.plan-actual-daily-balance-value strong{font-size:18px;font-variant-numeric:tabular-nums}.plan-actual-daily-balance>p{flex-basis:100%;margin:0}
 .plan-actual-daily-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin:14px 0 6px;padding:10px 12px;border:1px solid #dbe5e9;border-radius:8px;background:#f8fafb}
 .plan-actual-daily-legend-item{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;font-size:14px;font-weight:600;color:#173143}
