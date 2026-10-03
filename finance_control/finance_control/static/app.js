@@ -113,7 +113,7 @@ async function refresh() {
   state=await api('/api/state'+query); $('cutoff').value=state.as_of;renderAccountOwnerControls();
   $('backup-package-drive').hidden=!state.drive_backup_configured;
   renderBackupStatus(state.backup_sync);
-  $('mode').textContent=state.demo?'Synthetische Demo · getrennte Daten':'Deine lokale Datenbank';
+  $('mode').textContent=state.demo?'Synthetische Demo · getrennte Daten':'Dein Finanzbestand';
   $('empty').hidden=state.accounts.length>0; $('status-date').textContent='Angezeigter Stand: '+state.as_of;
   $('liquidity').textContent=state.status?eur(state.status.liquidity):'—';
   $('income-total').textContent=state.status?eur(state.status.income):'—';

@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.1",
+  "addon_version": "0.2.2",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -105,7 +105,7 @@
     "security/interactive.py": "d45303cca74e46a98d147a6e7613b91fd1f1f6b3cc329461e18d28743ce819eb",
     "split_preview.py": "f49bb7a27592b1183dbb9cb6565917f495ad445d2d2134aa71ea4377d2344e61",
     "static/analytics.js": "c5f2309bba6f3d2c26d9bb4ab28a5776c120cd26f4f5c5a0eb0045473d3de2af",
-    "static/app.js": "9fbbd42f840a4225b10345785a91bd5ba26044c8233ac227e466307a0ecaecb1",
+    "static/app.js": "6711b059d762d06c764f6c5817c3bb24e2e9b4a3b8c5b81a16d8e1eebc4b238c",
     "static/approvals.js": "b2ae174b568681202a90312f91a0509771052044b4164ae213ad37609dee8029",
     "static/bonsy.js": "58542e9f778697f4bf856317ad125d65bcfc6c622ff44626569fea529413ed59",
     "static/budget-section.html": "434132ef28f6ee4d14957dcc12aa042b54e27127101ca1d2e058f66cc731eb78",
@@ -113,7 +113,7 @@
     "static/budget.js": "ea3023482093ef21eba12b4ecb97b9e0bf81e9d4c85853fe4f857b38b3906502",
     "static/classification.js": "06b4dfbfd5253d7ee8f534b3821fbd745c909711a3b62182dcaf78ab39eef9af",
     "static/finanzguru.js": "93be375aba7e94f8952b0fde451d130db36e6ff815dbffcc560438ae3ca8c5fb",
-    "static/index.html": "9d5a2304e7670f64475bb5acf5593faef75816f861ea7b64d533e6f61af92193",
+    "static/index.html": "0a746bb1ca7b93f4b7f682d6759e863fa34203b3ccc2ed8e3857ae557540a753",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/monthly.js": "1d339cf392ec69c3186c4c06a726c0c6c497ce842a393d086306397360b4f97b",
     "static/plan_actual.js": "e903717105c8829cf0a1d9091a48430ecea71272ecde7b93fea70c9ef95898cc",
@@ -126,6 +126,6 @@
     "web.py": "20295c653d04477c064b49b79c9e31f4e67bb7551fd0a76db2c26d13645d5abf"
   },
   "schema_version": 1,
-  "source_commit": "8f7f6861c71a820f1a6cd172f27270a758989478",
-  "source_tree_sha256": "4e2f0555762d603211c669f013733c78c74d78c13457e94d2c592a3dcdd663c4"
+  "source_commit": "5c97bdb3f9b91e15bcc728cb30972063a712cff3",
+  "source_tree_sha256": "a19f17a137971ec6f84deacff6d627706443f85482fd8db65aa1ba7cebb470a2"
 }
