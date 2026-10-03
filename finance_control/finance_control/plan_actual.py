@@ -1880,8 +1880,11 @@ def _person_comparison(store, snapshot, rows, ledger_rows, mapping, allocations,
     for kind, bucket in unmapped.items():
         for person in ids:
             totals["actual_" + kind][person] += bucket[person]
-            if retrospective_actual_plan:
-                totals["planned_" + kind][person] += bucket[person]
+    if retrospective_actual_plan:
+        # Net-zero items can be absent from rows while their bookings still
+        # affect different people. The retrospective plan follows every actual.
+        for kind in ("income", "expenses"):
+            totals["planned_" + kind] = totals["actual_" + kind].copy()
     return {
         "planned_basis": ("Rückblick aus den importierten Ist-Buchungen" if retrospective_actual_plan
                           else "Zuordnung nach geplantem Konto"),

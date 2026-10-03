@@ -1,6 +1,6 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.2` runs the current `src/finance_control` package inside a Home
+Version `0.2.3` runs the current `src/finance_control` package inside a Home
 Assistant add-on. Build an installable add-on context from the repository with
 `scripts/build_homeassistant_addon.py`; the resulting `.tar.gz` is written outside
 the repository and includes a source manifest. The package keeps source provenance in `build-manifest.json`; no private data

@@ -1090,15 +1090,14 @@ function planActualRenderCockpit(result) {
   const payday = historical ? null : result.payday;
   const freeCard = $('plan-actual-free-title').closest('.plan-actual-free-card');
   freeCard.querySelector('.eyebrow').textContent = historical ? 'RÜCKBLICK' : 'BIS ZUM NÄCHSTEN GEHALT';
-  $('plan-actual-free-title').textContent = historical ? 'Historischer Monatsrahmen' : 'Kurzfristig frei ausgebbar';
+  $('plan-actual-free-title').textContent = historical ? 'Ist-Cashflow (Monatsüberschuss)' : 'Kurzfristig frei ausgebbar';
   $('plan-actual-free-value').textContent = payday?.available
     ? planActualAvailable(payday.total_free_spendable)
-    : historical ? eur(result.surplus_bridge?.confirmed?.still_unallocated
-      ?? result.surplus_bridge?.original_planned_surplus ?? 0) : 'Nicht verfügbar';
+    : historical ? planActualSignedEur(result.totals?.actual_cashflow ?? 0) : 'Nicht verfügbar';
   const salaryDates = [...new Set((payday?.cycles || []).map(cycle => cycle.next_salary_date).filter(Boolean))];
   $('plan-actual-free-period').textContent = payday?.available
     ? `Nach erfassten Fälligkeiten bis zum Gehalt am ${salaryDates.map(planActualDate).join(' und ')}. Zeitraum: heute bis zu diesem Termin.`
-    : historical ? 'Rückblick auf den ausgewählten Monat. Keine heutige Verfügbarkeit oder Gehaltsprognose.'
+    : historical ? 'Monatsüberschuss aus Ist-Einnahmen minus Ist-Ausgaben, kein Kontostand. Personenzuordnung nach Inhaberschaft der Buchungskonten.'
       : 'Für diesen Zeitraum liegen keine bestätigten Gehaltsdaten vor.';
   planActualRenderDataQuality(result.data_quality);
   const split = $('plan-actual-free-split'); split.replaceChildren();
@@ -1119,7 +1118,7 @@ function planActualRenderCockpit(result) {
     split.append(cap);
   }
   window.planActualLatestResult = result;
-  planActualRenderSurplusBridge(result.surplus_bridge, historical);
+  planActualRenderSurplusBridge(result.surplus_bridge, historical, result);
   planActualRenderDue(payday);
   $('plan-actual-due-list').closest('.plan-actual-due').hidden = historical;
   $('plan-actual-tab-accounts').textContent = historical ? 'Konten-Rückblick' : 'Konten bis Gehalt';
@@ -1164,15 +1163,57 @@ function planActualRenderDataQuality(quality) {
   }
 }
 
-function planActualRenderSurplusBridge(bridge, historical = false) {
+function planActualHistoricalCashflow(result) {
+  const totals = result?.totals || {};
+  const people = (result?.daily_people || []).filter(person => person.id !== 'TOTAL');
+  return {
+    actualCashflow: totals.actual_cashflow ?? '0.00',
+    plannedIncome: totals.planned_income ?? '0.00',
+    plannedExpenses: totals.planned_expenses ?? '0.00',
+    actualIncome: totals.actual_income ?? '0.00',
+    actualExpenses: totals.actual_expenses ?? '0.00',
+    people: people.flatMap(person => {
+      const points = result?.daily_by_person?.[person.id] || [];
+      const last = points.at(-1);
+      if (!last) return [];
+      return [{label: person.label || person.id,
+        cashflow: (Number(last.cumulative_income || 0)
+          - Number(last.cumulative_expenses || 0)).toFixed(2)}];
+    }),
+  };
+}
+
+function planActualRenderSurplusBridge(bridge, historical = false, result = null) {
   const section = $('plan-actual-surplus-bridge');
+  if (historical) {
+    const summary = planActualHistoricalCashflow(result);
+    section.hidden = false;
+    $('plan-actual-surplus-title').textContent = 'Ist- und Planwerte des Monats';
+    $('plan-actual-surplus-note').textContent = 'Ist-Cashflow bedeutet Monatsüberschuss aus Ist-Einnahmen minus Ist-Ausgaben, kein Kontostand. Personensummen folgen der Inhaberschaft der Buchungskonten.';
+    $('plan-actual-surplus-remaining').textContent = planActualSignedEur(summary.actualCashflow);
+    const steps = $('plan-actual-surplus-steps'); steps.replaceChildren();
+    const values = [
+      ['Ist-Einnahmen gesamt', summary.actualIncome],
+      ['Ist-Ausgaben gesamt', summary.actualExpenses, 'expense'],
+      ['Plan-Einnahmen', summary.plannedIncome],
+      ['Plan-Ausgaben', summary.plannedExpenses, 'expense'],
+      ...summary.people.map(person => [`${person.label} · Ist-Cashflow`, person.cashflow, 'signed']),
+    ];
+    for (const [label, value, direction] of values) {
+      const article = document.createElement('article');
+      const caption = document.createElement('span'); caption.textContent = label;
+      const amount = document.createElement('strong');
+      amount.textContent = direction === 'expense' ? planActualSignedEur(value, 'expense')
+        : direction === 'signed' ? planActualSignedEur(value) : eur(value);
+      article.append(caption, amount); steps.append(article);
+    }
+    $('plan-actual-surplus-pending').textContent = '';
+    return;
+  }
   if (!bridge?.confirmed) { section.hidden = true; return; }
   section.hidden = false;
-  $('plan-actual-surplus-title').textContent = historical
-    ? 'Historischer Monatssaldo' : 'Geplanter Monatssaldo';
-  $('plan-actual-surplus-note').textContent = historical
-    ? 'Rückblick auf den ausgewählten Monat; daraus folgt keine heutige Verfügbarkeit.'
-    : 'Unverplanter Rest einschließlich verfügbarer Budgets. Dieser Rahmen ist nicht vollständig sofort auf den Konten verfügbar.';
+  $('plan-actual-surplus-title').textContent = 'Geplanter Monatssaldo';
+  $('plan-actual-surplus-note').textContent = 'Unverplanter Rest einschließlich verfügbarer Budgets. Dieser Rahmen ist nicht vollständig sofort auf den Konten verfügbar.';
   const spendable = bridge.household_split?.spendable;
   $('plan-actual-surplus-remaining').textContent = eur(
     spendable?.confirmed?.total ?? bridge.confirmed.still_unallocated);
