@@ -27,6 +27,15 @@ function runNodeFile(source, args = []) {
   }
 }
 
+test('Finanzcockpit-Link nutzt öffentliche HTTPS-Adresse und neutralen Tooltip', () => {
+  const link = html.match(/<a\b[^>]*>Finanzcockpit ↗<\/a>/)?.[0];
+  assert.ok(link, 'Finanzcockpit-Quicklink muss vorhanden sein.');
+  assert.equal(link.match(/\bhref="([^"]+)"/)?.[1], 'https://finance.pistelok.de/');
+  assert.equal(link.match(/\btitle="([^"]+)"/)?.[1], 'Finanzcockpit öffnen');
+  assert.doesNotMatch(link, /HAL9000|tailscale|\.ts\.net|:8785/i);
+  assert.match(link, /\brel="noopener"/);
+});
+
 test('Dashboard-JavaScript besteht node --check', () => {
   const result = runNodeFile(scriptMatch[1], ['--check']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
