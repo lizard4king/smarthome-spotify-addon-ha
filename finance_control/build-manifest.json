@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.9",
+  "addon_version": "0.2.10",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -33,6 +33,7 @@
     "drive_api.py": "c728c4ffaad59e866fbec1c629846d186e2f36e09daf92f1f4bb144e8288fb04",
     "finanzguru_import.py": "d8e87a53e1c64c1844c56b78de70873cc53ed44ed763bc71bb71b9d1062aaab3",
     "finanzguru_snapshot.py": "170c9d58033728cb09f1df66776d7d97bb0b3c509966a44df949774f34fdd7a2",
+    "historical_positions.py": "39ce60a69315c54f54abd0c63d82d4ca1e189392f3e7501c02d999f037641270",
     "household.py": "e8e4f84d25c9fe3aad6d8b44ecccac5d59b16a1b3fdc7136bea7cd1a1483ebee",
     "import_preview.py": "71e3e619f79e15adaffa2cff18e93c7034ac231c7ba6f0f0ef85921218e41138",
     "intake_draft.py": "d65cdee2974a0cc75bc644c989e3d1e371dae0ac58f21d6f5667160e390ad566",
@@ -91,7 +92,7 @@
     "payment_status.py": "a5b618b67d96d05a0c0025bc7a40ecf849aed3b9e45c0f5b01f33cc51dfbaefc",
     "payment_status_sync.py": "72d3c22909c57e5540ddd6cb440ece90188a17a53fece5e7102547bdc00b58af",
     "person_attribution.py": "5a2f895f2b4fb54daef9459103a9c4c3b8e27c9fd23bd1a57f0ef68be70ef1d1",
-    "plan_actual.py": "8f17df0c4d4866b03d648e309f045c0ca14bf3a130ed0f58fd6b6fcabc0dcda3",
+    "plan_actual.py": "39a92238995303ff9dcfcf8f263bb49696c41c908ee651175e7a866b5505f343",
     "planning.py": "ed9e7ac506108e0bab36327a153040f6510993ece89c8c519f4b721b797e6fb4",
     "providers.py": "55025deb5dba67e64b7f12849a64da144da9bc722b699c89eec1cd3781cbc4ef",
     "read_api.py": "9b768baeca1987803ea64d4f2d758c9ca169ba61bebd037d7b6ea0151cc6f89e",
@@ -109,15 +110,15 @@
     "static/approvals.js": "b2ae174b568681202a90312f91a0509771052044b4164ae213ad37609dee8029",
     "static/bonsy.js": "19bb8e7a11b3f55f79d17dddacab3c6bc1e5d5c00ca9f6b4fc3a720365915cb6",
     "static/budget-section.html": "434132ef28f6ee4d14957dcc12aa042b54e27127101ca1d2e058f66cc731eb78",
-    "static/budget.css": "d670b24ff362b3cb9de4a556248742af035f32c01289242df476a48b8d533d94",
+    "static/budget.css": "5b41a31dbeaa0e9f68c39b0ca26c9ce98b289cfcf30a276dcb6816bef0ea397d",
     "static/budget.js": "ea3023482093ef21eba12b4ecb97b9e0bf81e9d4c85853fe4f857b38b3906502",
     "static/classification.js": "d1a4103b552bd0b10c0d9ddab7d96854e4a99fc3345d37c53bba0c7319d796d2",
     "static/classification_mobile.css": "92aaed4162272f0daa49cb8f433c0aa7f2beef669e98d5b42de52cc265ae148b",
     "static/finanzguru.js": "93be375aba7e94f8952b0fde451d130db36e6ff815dbffcc560438ae3ca8c5fb",
-    "static/index.html": "558e6d42db329b4dcbbf97828f38d9d4e16ad5691a6822c10a6d61f3b23c99b9",
+    "static/index.html": "050cf1e22f4856a67b48ca6fa7928846533e9a0c31e96556609aa944e5b5d91a",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
-    "static/plan_actual.js": "1736fface369911ab90233edc7ff359d8cc052bed3510ce20de54b6f78f86ea5",
+    "static/plan_actual.js": "e587c6600c497f499f4f32f60fbcd263b2793c0eabb560823d8addea67ae31cd",
     "static/style.css": "304021207199a5a1cdd209bd7774a6fc332667ab78a758317c83a454bdd738fc",
     "static/tabs.js": "8f60c5de5b324f29d0a396092edfb1b5c8f75e74b55568b00bae9d7a4a8aec3c",
     "static/wealth.js": "1cde9495ca1e03fdbcd81f91007cbd297a3f8fdf870887da21ec8cad678301f7",
@@ -127,6 +128,6 @@
     "web.py": "382ad69f98ad44dfce0cf07da4ae16a9df0dcf6e7a207bfcaa3d9bdc733b23b2"
   },
   "schema_version": 1,
-  "source_commit": "f30974e95ca2dd1ae1bb5b68f5cc970dd2ba7427",
-  "source_tree_sha256": "a161cdb6ac1c298077dcb88151d3d5a70fdddfec8eadffd6732391b830c29845"
+  "source_commit": "af27633d8d2069ba6f13818d5fcd198e45294daf",
+  "source_tree_sha256": "620e2db3bac293e3df408f13f6e4f9521cd4111372f5e78a029a93b08a1f7d52"
 }

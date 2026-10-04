@@ -99,10 +99,60 @@ function planActualPersonDetailRows(result, personId) {
   ]) {
     const unmapped = convert(result.person_breakdown?.unmapped_by_person?.[key]?.[personId]);
     if (unmapped) rows.push({kind, row: {label: `Ist-${category} ohne zugeordnete Planposition`},
-      planned: 0, actual: unmapped});
+      planned: result.basis?.type === 'retrospective_reference' ? unmapped : 0, actual: unmapped});
   }
   return rows.sort((left, right) => Math.abs(planActualVariance(right.actual, right.planned))
     - Math.abs(planActualVariance(left.actual, left.planned)));
+}
+
+function planActualRenderRetrospectivePositions(card, positions, personId) {
+  const selected = (positions || []).filter(position => position.person_id === personId);
+  if (!selected.length) {
+    const heading = document.createElement('h5'); heading.textContent = 'Tatsächliche Monatspositionen';
+    heading.className = 'plan-actual-retrospective-heading'; card.append(heading);
+    const list = document.createElement('div'); list.className = 'plan-actual-retrospective-list';
+    const empty = document.createElement('p'); empty.className = 'muted';
+    empty.textContent = 'Keine tatsächlichen Monatspositionen zugeordnet.'; list.append(empty);
+    card.append(list);
+    return true;
+  }
+  const disclosure = document.createElement('details');
+  disclosure.className = 'plan-actual-retrospective-disclosure';
+  const summary = document.createElement('summary');
+  const transactionCount = selected.reduce((total, position) =>
+    total + Number(position.transaction_count || 0), 0);
+  const positionLabel = selected.length === 1 ? 'tatsächliche Position' : 'tatsächliche Positionen';
+  const transactionLabel = transactionCount === 1 ? 'Buchung' : 'Buchungen';
+  summary.textContent = `${selected.length} ${positionLabel} · ${transactionCount} ${transactionLabel}`;
+  const list = document.createElement('div'); list.className = 'plan-actual-retrospective-list';
+  for (const position of selected) {
+    const entry = document.createElement('article'); entry.className = 'plan-actual-retrospective-position';
+    const top = document.createElement('div'); top.className = 'plan-actual-retrospective-position-head';
+    const label = document.createElement('strong'); label.textContent = position.label || 'Ohne Empfänger oder Zweck';
+    const amount = document.createElement('strong');
+    amount.textContent = planActualSignedEur(position.signed_amount);
+    top.append(label, amount); entry.append(top);
+    const metadata = document.createElement('p'); metadata.className = 'muted';
+    const account = position.account_id ? accountDisplayById(position.account_id) : '';
+    metadata.textContent = [position.category_label, account,
+      `${Number(position.transaction_count || 0)} Buchungen`].filter(Boolean).join(' · ');
+    entry.append(metadata);
+    const transactions = Array.isArray(position.transactions) ? position.transactions : [];
+    if (transactions.length) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = `Originalbuchungen ansehen (${transactions.length})`;
+      details.append(summary, planActualDetailTable({
+        total_count: transactions.length, page_size: transactions.length, page: 1,
+        context: {type: 'retrospective_position'}, transactions,
+      }, null));
+      entry.append(details);
+    }
+    list.append(entry);
+  }
+  disclosure.append(summary, list);
+  card.append(disclosure);
+  return true;
 }
 
 function planActualDate(value) {
@@ -1603,7 +1653,11 @@ function planActualRenderPeople(result) {
     const heading = document.createElement('h4'); heading.textContent = person.label;
     card.append(heading);
     planActualAppendMetricGroups(card, planActualPersonTotals(breakdown, [person.id]), result.plan_available !== false);
-    const rows = planActualPersonDetailRows(result, person.id);
+    const retrospective = result.basis?.type === 'retrospective_reference'
+      && Array.isArray(result.retrospective_positions);
+    if (retrospective)
+      planActualRenderRetrospectivePositions(card, result.retrospective_positions, person.id);
+    const rows = retrospective ? [] : planActualPersonDetailRows(result, person.id);
     if (rows.length) {
       const details = document.createElement('details'), summary = document.createElement('summary'),
         tableWrap = document.createElement('div'), table = document.createElement('table'), head = document.createElement('thead'),

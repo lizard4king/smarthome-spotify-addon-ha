@@ -17,6 +17,7 @@ from .cash_components import cash_principal as _cash_principal
 from .cash_components import cash_receipt_key
 from .classification import normalize_counterparty
 from .core import money
+from .historical_positions import historical_positions
 from .person_attribution import account_allocations, person_label, split_cents
 from .reporting_history import month_quality, scope_for_month
 from .reporting_history import validate as validate_reporting_history
@@ -2353,6 +2354,8 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
             store, cash_withdrawals, ledger_rows, cash_receipt_by_item, known_person_ids),
     }
     if retrospective_actual_plan:
+        comparison["retrospective_positions"] = historical_positions(
+            ledger_rows, known_person_ids=known_person_ids)
         fixed_income = Decimal("0.00")
         fixed_expenses = Decimal("0.00")
         for row in ledger_rows:

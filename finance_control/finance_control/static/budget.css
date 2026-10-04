@@ -146,3 +146,14 @@
 @media(max-width:650px){.plan-actual-month-control,.plan-actual-controls #plan-actual-load{grid-column:1/-1}}
 
 #plan-actual-total-metrics .plan-actual-person-metric-group{margin:0}
+.plan-actual-retrospective-heading{margin:14px 0 8px;font-size:.9rem;color:#34495e}
+.plan-actual-retrospective-disclosure>summary{min-height:40px;display:flex;align-items:center;cursor:pointer;font-weight:700}
+.plan-actual-retrospective-list{display:grid;gap:8px}
+.plan-actual-retrospective-position{min-width:0;padding:10px 12px;border:1px solid #dbe5e9;border-radius:8px;background:#fff}
+.plan-actual-retrospective-position-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.plan-actual-retrospective-position-head strong:first-child{min-width:0;overflow-wrap:anywhere}
+.plan-actual-retrospective-position-head strong:last-child{flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+.plan-actual-retrospective-position>p{margin:4px 0;font-size:.8rem;overflow-wrap:anywhere}
+.plan-actual-retrospective-position details{margin-top:6px}
+.plan-actual-retrospective-position summary{cursor:pointer;min-height:36px;display:flex;align-items:center}
+@media(max-width:600px){.plan-actual-retrospective-disclosure>summary,.plan-actual-retrospective-position summary{min-height:44px}.plan-actual-retrospective-position{padding:9px}.plan-actual-retrospective-position-head{gap:8px;flex-wrap:wrap}}
