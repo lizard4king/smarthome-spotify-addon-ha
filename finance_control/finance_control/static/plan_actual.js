@@ -1183,17 +1183,18 @@ function planActualRenderCockpit(result) {
       : 'Für diesen Zeitraum liegen keine bestätigten Gehaltsdaten vor.';
   planActualRenderDataQuality(result.data_quality);
   const split = $('plan-actual-free-split'); split.replaceChildren();
-  for (const cycle of payday?.cycles || []) {
+  split.hidden = !payday?.available;
+  for (const cycle of payday?.available ? payday.cycles || [] : []) {
     const span = document.createElement('span');
     span.textContent = `${cycle.owner_label}: ${planActualAvailable(cycle.free_spendable)} bis ${planActualDate(cycle.next_salary_date)}`;
     split.append(span);
   }
   for (const [label, value] of [['Offene Budgets im Monatsrahmen · nicht zusätzlich', payday?.flexible_budget_remaining], ['Nicht verplant · nach Budgets bis Gehalt', payday?.unallocated_after_budgets]]) {
-    if (payday) {
+    if (payday?.available) {
       const span = document.createElement('span'); span.textContent = `${label}: ${eur(value || 0)}`; split.append(span);
     }
   }
-  if (payday) {
+  if (payday?.available) {
     const cap = document.createElement('span');
     cap.className = 'plan-actual-free-cap';
     cap.textContent = `${planActualAvailable(payday.total_free_spendable)} sind die Obergrenze bis zum nächsten Gehalt; offene Monatsbudgets kommen nicht oben drauf.`;
