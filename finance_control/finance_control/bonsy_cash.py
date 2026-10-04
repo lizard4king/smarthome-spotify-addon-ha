@@ -1,16 +1,27 @@
 """Assess whether unlinked Bonsy receipts likely represent cash payments."""
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 
+from .cash_components import cash_principal
 from .classification import (
     _cash_withdrawal_evidence,
     _document_link_rejected,
     document_match_suggestions,
 )
 from .core import money
-from .cash_components import cash_principal
+
+_EXCLUDED_BONSY_WARNING = 'source_excluded_bonsy'
+
+
+def _source_excluded(warnings):
+    try:
+        values = json.loads(warnings or '[]')
+    except (TypeError, ValueError):
+        return False
+    return isinstance(values, list) and _EXCLUDED_BONSY_WARNING in values
 
 
 def _withdrawals(store):
@@ -108,7 +119,7 @@ def _period(data, *, require_confirmation=False):
     for key in ('date_from', 'date_to'):
         value = data[key]
         if not isinstance(value, str):
-            raise ValueError('invalid_bonsy_cash_period')
+            raise ValueError('invalid_bonsy_cash_period')  # noqa: TRY004 -- API validation contract.
         try:
             parsed = date.fromisoformat(value)
         except ValueError as error:
@@ -183,7 +194,7 @@ def _build_allocation_preview(store, date_from, date_to, *, today=None):
     people = {row['id'] for row in store.db.execute('SELECT id FROM persons')}
     receipts = store.db.execute(
         """SELECT r.entry_id,r.document_id,substr(r.occurred_at,1,10) AS date,
-                  r.vendor,r.total
+                  r.vendor,r.total,d.warnings
            FROM bonsy_receipts r
            JOIN classification_documents d ON d.id=r.document_id
            WHERE d.kind='invoice' AND d.status='confirmed'
@@ -192,6 +203,7 @@ def _build_allocation_preview(store, date_from, date_to, *, today=None):
            ORDER BY r.occurred_at,r.entry_id""",
         (date_from.isoformat(), date_to.isoformat()),
     ).fetchall()
+    receipts = [row for row in receipts if not _source_excluded(row['warnings'])]
     planned = []
     for receipt in receipts:
         amount = money(receipt['total'])
@@ -369,10 +381,13 @@ def overview(store, _data=None, *, _today=None):
     }
     receipts = store.db.execute(
         """SELECT r.entry_id,r.document_id,
-                  substr(r.occurred_at,1,10) AS date,r.vendor,r.total
+                  substr(r.occurred_at,1,10) AS date,r.vendor,r.total,d.warnings
            FROM bonsy_receipts r
-           WHERE CAST(r.total AS REAL)>0
+           JOIN classification_documents d ON d.id=r.document_id
+           WHERE d.kind='invoice' AND d.status='confirmed'
+             AND CAST(r.total AS REAL)>0
            ORDER BY r.occurred_at,r.entry_id""").fetchall()
+    receipts = [row for row in receipts if not _source_excluded(row['warnings'])]
     unresolved, confirmed = [], []
     for row in receipts:
         amount = money(row['total'])

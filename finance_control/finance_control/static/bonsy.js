@@ -45,15 +45,34 @@ async function bonsyCashLoad(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   const form=$('bonsy-form');if(!form)return;
+  const exclusionLabel=document.createElement('label');
+  exclusionLabel.className='check';
+  const exclusionControl=document.createElement('input');
+  exclusionControl.type='checkbox';
+  exclusionControl.id='bonsy-confirm-exclusions';
+  const exclusionText=document.createElement('span');
+  exclusionText.textContent='Ausschlüsse aus diesem Export übernehmen; vorhandene Bons und Zahlungszuordnungen werden entsprechend bereinigt.';
+  exclusionLabel.append(exclusionControl,exclusionText);
+  form.insertBefore(exclusionLabel,$('bonsy-import'));
   form.addEventListener('submit',event=>{event.preventDefault();run(async()=>{
     const file=$('bonsy-file').files[0];if(!file)throw new Error('Bitte eine Bonsy-XLSX auswählen.');
     const button=$('bonsy-import'),status=$('bonsy-status');button.disabled=true;status.textContent='Bonsy-Belege werden lokal geprüft und übernommen …';
     try{
-      const result=await api('/api/bonsy-import',{content:await bonsyBase64(file)});
-      status.textContent=result.status==='duplicate'?`Dieser Export war bereits importiert: ${result.receipts} geprüfte Belege, ${result.products} Positionen. ${result.auto_links.linked.length} inzwischen eindeutige Zahlungen wurden nachträglich verknüpft.`:`${result.new_receipts} neue, bereits geprüfte Belege und ${result.products} Produktpositionen übernommen. ${result.auto_links.linked.length} eindeutige Zahlungen automatisch verknüpft; bei ${result.unlinked_receipts} Belegen ist noch keine eindeutige Zahlung zugeordnet. Die Einschätzung steht im Zahlungsabgleich.`;
+      const confirmExclusions=exclusionControl.checked;
+      const result=await api('/api/bonsy-import',{content:await bonsyBase64(file),confirm_exclusions:confirmExclusions});
+      const base=result.status==='duplicate'?`Dieser Export war bereits importiert: ${result.receipts} geprüfte Belege, ${result.products} Positionen. ${result.auto_links.linked.length} inzwischen eindeutige Zahlungen wurden nachträglich verknüpft.`:`${result.new_receipts} neue, bereits geprüfte Belege und ${result.products} Produktpositionen übernommen. ${result.auto_links.linked.length} eindeutige Zahlungen automatisch verknüpft; bei ${result.unlinked_receipts} Belegen ist noch keine eindeutige Zahlung zugeordnet. Die Einschätzung steht im Zahlungsabgleich.`;
+      const report=result.exclusion_report||{},reconciliation=result.reconciliation||{};
+      const excludedReceipts=(report.excluded_receipt_ids||[]).length,excludedProducts=(report.excluded_product_ids||[]).length;
+      const reconciled=(reconciliation.reconciled_receipt_ids||[]).length;
+      const unchanged=(reconciliation.unchanged_receipt_ids||[]).length;
+      const missing=(reconciliation.missing_receipt_ids||[]).length;
+      const exclusionSummary=`Aus Quelle ausgeschlossen: ${excludedReceipts} Bons, ${excludedProducts} Positionen.`;
+      const decisionSummary=confirmExclusions
+        ?` Ausschlüsse übernommen: ${reconciled} bestehende Bons bereinigt, ${unchanged} bereits markiert, ${missing} im bisherigen Importbestand nicht gefunden.`
+        :' Ausschlüsse wurden nicht auf vorhandene Belege angewendet.';
+      status.textContent=`${base} ${exclusionSummary}${decisionSummary}`;
+      exclusionControl.checked=false;
       await documentCoverageLoad();await classificationLoadDocuments();await bonsyCashLoad();
     }finally{button.disabled=false;}
   });});
-  void bonsyCashLoad();
 });
-document.addEventListener('finance-refreshed',bonsyCashLoad);

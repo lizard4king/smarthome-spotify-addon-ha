@@ -1,7 +1,6 @@
 'use strict';
 
 let monthlyRequest = 0;
-let monthlyAutoLoaded = false;
 let monthlyTransactions = [];
 const monthlyKinds = {CHECKING:'Girokonto', SAVINGS:'Sparkonto', CREDIT_CARD:'Kreditkarte', DEPOT:'Depot'};
 
@@ -78,16 +77,6 @@ function monthlyRender(snapshot) {
   chart('monthly-chart', [{name:'Liquidität', values:[snapshot.liquidity.opening, snapshot.liquidity.closing]}], ['Anfang', 'Ende']);
   monthlySetStatus(`${snapshot.period} · Vorschau geladen.`);
 }
-function monthlyRefresh() {
-  monthlyReset();
-  if (!$('monthly-period').value && state && state.as_of) $('monthly-period').value = state.as_of.slice(0, 7);
-  if (!monthlyAutoLoaded && monthlyPeriod()) {
-    monthlyAutoLoaded = true;
-    run(async () => {
-      try { await monthlyPreview(); } catch (error) { monthlySetError(error.message); throw error; }
-    });
-  }
-}
 async function monthlyPreview() {
   const period = monthlyPeriod();
   if (!/^\d{4}-\d{2}$/.test(period)) throw new Error('Bitte einen Kalendermonat auswählen.');
@@ -113,5 +102,3 @@ $('monthly-transaction-query').addEventListener('input', monthlyRenderTransactio
 $('monthly-preview-button').addEventListener('click', () => run(async () => {
   try { await monthlyPreview(); } catch (error) { monthlySetError(error.message); throw error; }
 }));
-
-if (typeof state !== 'undefined' && state) monthlyRefresh();

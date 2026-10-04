@@ -1,6 +1,80 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let state;
+let cockpitDataGeneration = 0;
+let cockpitFeaturesReady = document.readyState === 'complete';
+const cockpitAreaLoaded = new Map();
+const cockpitAreaLoading = new Map();
+
+function cockpitAreaKey(id) {
+  return ['planning', 'scenarios'].includes(id) ? 'planning' : id;
+}
+
+async function cockpitLoadArea(id, {force = false} = {}) {
+  if (!state?.csrf || !cockpitFeaturesReady) return false;
+  const key = cockpitAreaKey(id);
+  if (cockpitAreaLoading.has(key)) return cockpitAreaLoading.get(key);
+  if (!force && cockpitAreaLoaded.get(key) === cockpitDataGeneration) return true;
+  const loaders = {
+    'plan-actual': async reload => {
+      if (typeof planActualEnsureLoaded !== 'function') return;
+      await planActualEnsureLoaded(reload);
+    },
+    classification: async () => { if (typeof classificationLoad === 'function') await classificationLoad(); },
+    documents: async reload => {
+      if (typeof classificationCatalog !== 'undefined' && (!classificationCatalog.length || reload)) {
+        const catalog = await api('/api/classification-catalog', {});
+        classificationCatalog = catalog.categories || [];
+        classificationCatalogParents = catalog.parents || [];
+      }
+      await Promise.all([
+        typeof classificationLoadDocuments === 'function' ? classificationLoadDocuments() : undefined,
+        typeof bonsyCashLoad === 'function' ? bonsyCashLoad() : undefined,
+      ]);
+    },
+    planning: async reload => {
+      if (typeof budgetLoad === 'function') await budgetLoad(reload && !(typeof budgetDirty !== 'undefined' && budgetDirty));
+    },
+    intake: async () => { if (typeof intakeRefresh === 'function') await intakeRefresh(); },
+    analytics: async () => { if (typeof analyticsLoad === 'function') await analyticsLoad(); },
+    approvals: async () => { if (typeof approvalsLoad === 'function') await approvalsLoad(); },
+    finanzguru: async () => { if (typeof fgRefreshAccounts === 'function') fgRefreshAccounts(); },
+    monthly: async () => {
+      if (typeof monthlyPreview !== 'function') return;
+      if (!$('monthly-period').value) $('monthly-period').value = state.as_of.slice(0, 7);
+      await monthlyPreview();
+    },
+    wealth: async () => {
+      if (typeof wealthLoadLatest === 'function' && !(typeof wealthInitialized !== 'undefined' && wealthInitialized))
+        await wealthLoadLatest();
+    },
+  };
+  const promise = Promise.resolve().then(async () => {
+    let reload = cockpitAreaLoaded.has(key);
+    do {
+      const generation = cockpitDataGeneration;
+      if (loaders[key]) await loaders[key](reload);
+      cockpitAreaLoaded.set(key, generation);
+      if (generation === cockpitDataGeneration || cockpitAreaKey(location.hash.slice(1)) !== key) return true;
+      reload = true;
+    } while (state?.csrf);
+    return false;
+  }).catch(error => {
+    if (cockpitAreaKey(location.hash.slice(1)) === key)
+      message(`Dieser Bereich konnte nicht geladen werden: ${error.message}`, true);
+    return false;
+  }).finally(() => cockpitAreaLoading.delete(key));
+  cockpitAreaLoading.set(key, promise);
+  return promise;
+}
+
+document.addEventListener('cockpit-area-changed', event => {
+  void cockpitLoadArea(event.detail.id);
+});
+document.addEventListener('DOMContentLoaded', () => {
+  cockpitFeaturesReady = true;
+  void cockpitLoadArea(location.hash.slice(1) || 'plan-actual');
+});
 const accountSaveMessages = new Map();
 const eur = value => new Intl.NumberFormat('de-DE', {style:'currency', currency:'EUR'}).format(Number(value));
 const amount = value => new Intl.NumberFormat('de-DE', {minimumFractionDigits:2, maximumFractionDigits:2}).format(Number(value));
@@ -59,6 +133,14 @@ async function run(action) { try { await action(); } catch(error) { message(erro
 function download(url) {const link=document.createElement('a');link.href=url;link.download='';document.body.append(link);link.click();link.remove();}
 function invalidate() { $('projection').hidden=true; }
 function renderOverview(overview) {
+  const actuals=overview?.actuals;
+  if(actuals){
+    const incomeLabel=$('overview-income-label'), expenseLabel=$('overview-expenses-label');
+    if(incomeLabel)incomeLabel.textContent=`Kontenzuflüsse ${actuals.year}`;
+    if(expenseLabel)expenseLabel.textContent=`Kontenabflüsse ${actuals.year}`;
+    $('income-total').textContent=eur(actuals.income);
+    $('expense-total').textContent=eur(actuals.expenses);
+  }
   const plan=overview?.plan||null, values=$('overview-plan-values');
   const primaryAction=overview?.primary_action||null, primary=$('overview-primary-action'), primaryOpen=$('overview-primary-action-open');
   primary.classList.toggle('done',!primaryAction);
@@ -116,8 +198,6 @@ async function refresh() {
   $('mode').textContent=state.demo?'Synthetische Demo · getrennte Daten':'Dein Finanzbestand';
   $('empty').hidden=state.accounts.length>0; $('status-date').textContent='Angezeigter Stand: '+state.as_of;
   $('liquidity').textContent=state.status?eur(state.status.liquidity):'—';
-  $('income-total').textContent=state.status?eur(state.status.income):'—';
-  $('expense-total').textContent=state.status?eur(state.status.expenses):'—';
   renderProfileGoals(state.profile_goals);
   renderOverview(state.overview);
   const kinds={CHECKING:'Girokonto',SAVINGS:'Sparkonto',CREDIT_CARD:'Kreditkarte',DEPOT:'Depot'};
@@ -131,7 +211,11 @@ async function refresh() {
     button(actions,'CSV',async()=>{const result=await api('/api/export-scenario',{name:s.name});download(result.download_url);});
     button(actions,'JSON',async()=>{const result=await api('/api/export-scenario',{name:s.name});download(result.snapshot_url);});
     $('scenario-rows').append(tr);for(const id of ['first','second']){const o=document.createElement('option');o.value=s.name;o.textContent=s.name;$(id).append(o);}}
-  if(state.scenarios.length>1)$('second').selectedIndex=1; $('comparison').hidden=true;if(typeof fgRefreshAccounts==='function')fgRefreshAccounts();if(typeof monthlyRefresh==='function')monthlyRefresh();if(typeof intakeRefresh==='function')await intakeRefresh();if(typeof analyticsLoad==='function')await analyticsLoad();if(typeof classificationLoad==='function'){await classificationLoad();await classificationLoadDocuments();}if(typeof budgetLoad==='function')await budgetLoad();if(typeof approvalsLoad==='function')await approvalsLoad();document.dispatchEvent(new Event('finance-refreshed'));
+  if(state.scenarios.length>1)$('second').selectedIndex=1;
+  $('comparison').hidden=true;
+  cockpitDataGeneration += 1;
+  document.dispatchEvent(new Event('finance-refreshed'));
+  await cockpitLoadArea(location.hash.slice(1) || 'plan-actual', {force: true});
 }
 function planInput(){const f=$('plan-form');if(!f.reportValidity())throw new Error('Bitte alle Planbeträge angeben.');const one_offs=[];for(const line of f.elements.one_offs.value.split('\n').filter(x=>x.trim())){const parts=line.split(';');if(parts.length!==2||!/^\s*\d+\s*$/.test(parts[0]))throw new Error('Einmalzahlungen: je Zeile Planmonat; Betrag.');one_offs.push({month:Number(parts[0]),amount:parts[1].trim()});}return {as_of:$('cutoff').value,plan:{income:f.elements.income.value,expenses:f.elements.expenses.value,reserve:f.elements.reserve.value,one_offs}};}
 const ns='http://www.w3.org/2000/svg';

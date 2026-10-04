@@ -14,6 +14,7 @@ from .budget import (
 )
 from .budget import _shift_month as _budget_shift_month
 from .cash_components import cash_principal as _cash_principal
+from .cash_components import cash_receipt_key
 from .classification import normalize_counterparty
 from .core import money
 from .person_attribution import account_allocations, person_label, split_cents
@@ -76,25 +77,31 @@ def _monthly_reference(snapshot, month, reporting_history=None):
                        else [item for item in snapshot["plan"].get("items", [])
                              if _item_active(item, rows[0]["period"])])
     items = _retrospective_monthly_items(reference_items)
-    buckets = {kind: sum((money(item["amount"]) for item in items
-                          if item["kind"] == kind), Decimal("0.00"))
-               for kind in ("income", "fixed", "variable")}
     retrospective = (reporting_history is None
                      or "retrospective_actual_years" not in reporting_history
                      or int(month[:4]) in reporting_history["retrospective_actual_years"])
-    # These positions remain useful for classifying actual bookings. A revision
-    # starting later does not establish a budget for this earlier month.
+    plan_source = ("reconstructed_from_monthly_actuals" if retrospective else
+                   "monthly_budget_projection")
+    if not retrospective:
+        if rows[0]["period"][:4] != month[:4]:
+            # A later year's monthly revision is not an earlier year's budget.
+            plan_source = "no_saved_budget"
+        else:
+            items = _projected_monthly_items(snapshot["plan"], items, month)
+    buckets = {kind: sum((money(item["amount"]) for item in items
+                          if item["kind"] == kind), Decimal("0.00"))
+               for kind in ("income", "fixed", "variable")}
     return {
         "period": month, "income": _format(buckets["income"]),
         "fixed": _format(buckets["fixed"]), "variable": _format(buckets["variable"]),
         "cashflow": _format(buckets["income"] - buckets["fixed"] - buckets["variable"]),
         "items": items,
     }, {
-        "type": ("retrospective_reference" if retrospective else "no_saved_budget"),
+        "type": ("retrospective_reference" if retrospective else plan_source),
         "label": ("Rückblick aus den importierten Ist-Buchungen" if retrospective else
-                  "Kein gespeicherter Monatsplan"),
-        "plan_source": ("reconstructed_from_monthly_actuals" if retrospective else
-                        "no_saved_budget"),
+                  "Kein gespeicherter Monatsplan" if plan_source == "no_saved_budget" else
+                  "Monatsbudget der gewählten Revision"),
+        "plan_source": plan_source,
         "derived_from_month": rows[0]["period"],
         "excluded_nonmonthly_items": sum(
             (item.get("interval_months") or 1) != 1 for item in reference_items),
@@ -125,8 +132,46 @@ def _retrospective_monthly_items(reference_items):
             and item.get("start_month") != item.get("end_month")]
 
 
+def _projected_monthly_items(plan, reference_items, month):
+    """Use the chosen monthly reference, preferring explicitly dated older rules.
+
+    The horizon start does not invalidate the user's monthly comparison reference.
+    A monthly rule still active in the target month can, however, replace its
+    later successor; do not count both income/expense rules for that position.
+    """
+    active = _retrospective_monthly_items(
+        [item for item in plan.get("items", []) if _item_active(item, month)])
+    categories = {}
+    for mapping in plan.get("actual_mappings", []):
+        categories.setdefault(mapping["item_id"], set()).add(mapping["category_id"])
+
+    def possible_successor(first, second):
+        if first["start_month"] <= month:
+            return False
+        if (first["kind"], first.get("account_id")) != (
+                second["kind"], second.get("account_id")):
+            return False
+        return (" ".join(first["label"].split()).casefold()
+                == " ".join(second["label"].split()).casefold()
+                or bool(categories.get(first["id"], set())
+                        & categories.get(second["id"], set())))
+
+    active_ids = {item["id"] for item in active}
+    later = [item for item in reference_items if item["id"] not in active_ids]
+    candidates = {item["id"]: [older["id"] for older in active
+                                if possible_successor(item, older)]
+                  for item in later}
+    predecessor_counts = {}
+    for predecessors in candidates.values():
+        for predecessor in predecessors:
+            predecessor_counts[predecessor] = predecessor_counts.get(predecessor, 0) + 1
+    replaced = {item_id for item_id, predecessors in candidates.items()
+                if len(predecessors) == 1 and predecessor_counts[predecessors[0]] == 1}
+    return active + [item.copy() for item in later if item["id"] not in replaced]
+
+
 def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=None,
-                 *, reporting_scope=None):
+                 *, reporting_scope=None, cash_withdrawals=None):
     rows = store.db.execute(
         "SELECT t.*,c.counterparty,c.description,o.category_id,o.confirmed,"
         "cat.label AS category_label,cat.transaction_type,a.kind AS account_kind,"
@@ -213,7 +258,14 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
         )
         if cash_withdrawal:
             cash_withdrawal_count += 1
-            noncash = -money(item["amount"]) - _cash_principal(item)
+            principal = _cash_principal(item)
+            gross = -money(item["amount"])
+            noncash = gross - principal
+            if cash_withdrawals is not None:
+                cash_withdrawals.append({
+                    "account_id": item["account_id"], "principal": principal,
+                    "gross": gross, "noncash": noncash,
+                })
             if noncash == 0:
                 continue
             item["amount"] = _format(-noncash)
@@ -286,11 +338,12 @@ def _cash_receipt_rows(store, month, item_id):
         "a.kind AS account_kind,a.owner AS account_owner "
         "FROM bonsy_cash_allocations ca "
         "JOIN bonsy_receipts r USING(entry_id) "
+        "JOIN classification_documents d ON d.id=r.document_id "
         "JOIN transactions t USING(account_id,external_id) "
         "JOIN accounts a ON a.id=ca.account_id "
         "LEFT JOIN transaction_context c USING(account_id,external_id) "
         "LEFT JOIN classification_overrides o USING(account_id,external_id) "
-        "WHERE substr(r.occurred_at,1,7)<=? "
+        "WHERE substr(r.occurred_at,1,7)<=? AND d.status='confirmed' "
         "ORDER BY r.occurred_at,ca.entry_id,ca.account_id,ca.external_id",
         (month,),
     ).fetchall()
@@ -337,7 +390,7 @@ def _cash_receipt_rows(store, month, item_id):
         if synthetic is None:
             synthetic = {
             "account_id": row["account_id"],
-            "external_id": f"bonsy-cash:{row['entry_id']}:{row['account_id']}",
+            "external_id": cash_receipt_key(row["entry_id"], row["account_id"]),
             "date": occurred_date, "amount": _format(-amount), "currency": "EUR",
             "counterparty": row["vendor"] or "", "description": "Bonsy cash receipt",
             "category_id": "AUSGABEN_BARGELD", "category_label": "Bargeldbeleg",
@@ -360,6 +413,53 @@ def _cash_receipt_rows(store, month, item_id):
 def _positive_actual(row):
     amount = money(row["amount"])
     return amount if row["transaction_type"] == "income" else -amount
+
+
+def _cash_activity(store, withdrawals, ledger_rows, receipt_by_item, people):
+    """Separate cash funding in the booking month from receipt consumption.
+
+    Receipt spending is already included in actual expenses. Neither withdrawal
+    principal nor a difference between these monthly flows is an expense or a
+    known wallet balance; receipts can use withdrawals from earlier months.
+    Person attribution follows the source account, as in the actual comparison.
+    """
+    shares = account_allocations(store, people)
+    withdrawal_accounts = {}
+    withdrawal_people = {}
+    receipt_people = {}
+
+    def add_person(bucket, account_id, amount):
+        parts = split_cents(amount, shares.get(account_id, {None: Decimal(1)}))
+        for person, part in parts.items():
+            person = person or "JOINT"
+            bucket[person] = bucket.get(person, Decimal("0.00")) + part
+
+    for withdrawal in withdrawals:
+        account_id = withdrawal["account_id"]
+        principal = withdrawal["principal"]
+        withdrawal_accounts[account_id] = (
+            withdrawal_accounts.get(account_id, Decimal("0.00")) + principal)
+        add_person(withdrawal_people, account_id, principal)
+    receipt_rows = [row for row in ledger_rows if row.get("bonsy_entry_id") is not None]
+    for row in receipt_rows:
+        add_person(receipt_people, row["account_id"], _positive_actual(row))
+    formatted = lambda amounts: {key: _format(value) for key, value in amounts.items()}
+    return {
+        "withdrawals": {
+            "total": _format(sum((row["principal"] for row in withdrawals), Decimal(0))),
+            "gross_total": _format(sum((row["gross"] for row in withdrawals), Decimal(0))),
+            "noncash_expenses": _format(sum((row["noncash"] for row in withdrawals), Decimal(0))),
+            "count": len(withdrawals),
+            "by_account": formatted(withdrawal_accounts),
+            "by_person": formatted(withdrawal_people),
+        },
+        "receipt_spending": {
+            "total": _format(sum((_positive_actual(row) for row in receipt_rows), Decimal(0))),
+            "count": len({row["bonsy_entry_id"] for row in receipt_rows}),
+            "by_person": formatted(receipt_people),
+            "by_item": formatted(receipt_by_item),
+        },
+    }
 
 
 def _mapping(store, snapshot):
@@ -506,11 +606,11 @@ def _actual_item_allocations(store, mapping, snapshot, row, history, month_candi
                              allocations):
     """Resolve one classified booking using the comparison's shared precedence."""
     amount = _positive_actual(row)
-    if row.get("cash_receipt_item_id") is not None:
-        return [(row["cash_receipt_item_id"], amount)], False, None
     exact = allocations.get((row["account_id"], row["external_id"]))
     if exact is not None:
         return _split_actual(amount, exact), False, None
+    if row.get("cash_receipt_item_id") is not None:
+        return [(row["cash_receipt_item_id"], amount)], False, None
     item_id, owner_mapped, warning = _resolved_item(
         store, mapping, snapshot, row, history, month_candidates)
     return ([(item_id, amount)] if item_id is not None else []), owner_mapped, warning
@@ -2075,8 +2175,11 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
     open_classification_keys = {"income": set(), "expenses": set()}
     automatic_owner_mapping_count = 0
     cash_item_id = snapshot["plan"].get("cash_receipt_item_id")
+    cash_withdrawals = []
+    cash_receipt_by_item = {}
     ledger_rows, excluded = _ledger_rows(
-        store, month, allocations, cash_item_id, reporting_scope=scope)
+        store, month, allocations, cash_item_id, reporting_scope=scope,
+        cash_withdrawals=cash_withdrawals)
     ledger_rows_by_key = {}
     for ordinal, row in enumerate(ledger_rows):
         key = (row["account_id"], row["external_id"])
@@ -2115,6 +2218,9 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
             continue
         automatic_owner_mapping_count += int(owner_mapped)
         for item_id, allocated_actual in item_allocations:
+            if row.get("bonsy_entry_id") is not None:
+                cash_receipt_by_item[item_id] = (
+                    cash_receipt_by_item.get(item_id, Decimal("0.00")) + allocated_actual)
             actual_by_item[item_id] += allocated_actual
             actual_counts[item_id] += 1
             transaction_keys_by_item[item_id].add(transaction_key)
@@ -2243,6 +2349,8 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
                          "count": unclassified["count"]},
         "automatic_owner_mapping_count": automatic_owner_mapping_count,
         "excluded": excluded,
+        "cash_activity": _cash_activity(
+            store, cash_withdrawals, ledger_rows, cash_receipt_by_item, known_person_ids),
     }
     if retrospective_actual_plan:
         fixed_income = Decimal("0.00")
@@ -2383,19 +2491,9 @@ def actual_details(store, data, *, reporting_history=None):
     for row in ledger_rows:
         mapped_items = {}
         if row["actual_state"] == "classified":
-            exact_allocations = allocations.get((row["account_id"], row["external_id"]))
-            if row.get("cash_receipt_item_id") is not None:
-                mapped_items = {
-                    row["cash_receipt_item_id"]: _positive_actual(row),
-                }
-            elif exact_allocations is not None:
-                mapped_items = dict(_split_actual(_positive_actual(row), exact_allocations))
-            else:
-                mapped_item = _resolved_item(
-                    store, mapping, snapshot, row, allocation_history,
-                    month_candidates)[0]
-                if mapped_item is not None:
-                    mapped_items[mapped_item] = _positive_actual(row)
+            mapped_items = dict(_actual_item_allocations(
+                store, mapping, snapshot, row, allocation_history,
+                month_candidates, allocations)[0])
         include = (
             (context["type"] == "item" and context["item_id"] in mapped_items)
             or (context["type"] == "unmapped" and row["actual_state"] == "classified"

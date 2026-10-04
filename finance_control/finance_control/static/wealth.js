@@ -321,6 +321,3 @@ $('wealth-history').addEventListener('change', () => {
 $('wealth-history-load').addEventListener('click', () => run(wealthLoadRevision));
 $('wealth-preview').addEventListener('click', () => run(wealthPreview));
 $('wealth-save').addEventListener('click', () => run(wealthSave));
-document.addEventListener('finance-refreshed', () => {
-  if (!wealthInitialized) run(wealthLoadLatest);
-});

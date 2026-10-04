@@ -17,6 +17,11 @@ _CASH_FEE = re.compile(
 _VALID_AMOUNT = re.compile(r"(?:\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2}|\d+)")
 
 
+def cash_receipt_key(entry_id, account_id):
+    """Build a cash receipt key; callers compare it whole rather than split it."""
+    return f"bonsy-cash:{entry_id}:{account_id}"
+
+
 def cash_principal(row):
     """Return cash principal of a confirmed withdrawal, retaining explicit noncash debit.
 
@@ -25,9 +30,10 @@ def cash_principal(row):
     does not hide the posting. An explicit principal takes precedence over fees.
     """
     debit = max(-money(row["amount"]), Decimal("0.00"))
+    columns = row.keys()  # sqlite3.Row membership checks values, not column names.
     text = " ".join(str(row[key] or "") for key in
                     ("category", "source_category", "counterparty", "description")
-                    if key in row.keys())
+                    if key in columns)
 
     def amounts(pattern):
         values = set()
@@ -63,15 +69,16 @@ def cash_principal(row):
 
 def is_cash_withdrawal(row):
     """Recognize an explicit withdrawal purpose; a bank name alone is insufficient."""
+    columns = row.keys()
     text = " ".join(str(row[key] or "") for key in
                     ("category", "source_category", "counterparty", "description")
-                    if key in row.keys())
+                    if key in columns)
     if re.search(r"\b(?:Baufinanzierung|Kreditkarte|f(?:ä|ae)lliger\s+Belastungsbetrag)\b",
                  text, re.IGNORECASE):
         return False
     if any(str(row[key] or "").rsplit("/", 1)[-1].strip().casefold() in
            {"bargeld", "bargeldabhebung", "cash withdrawal", "cash_withdrawal"}
-           for key in ("category", "source_category") if key in row.keys()):
+           for key in ("category", "source_category") if key in columns):
         return True
     if re.search(r"\bGA\s+Nr\.?(?:\s|\d|$)", text, re.IGNORECASE):
         return True

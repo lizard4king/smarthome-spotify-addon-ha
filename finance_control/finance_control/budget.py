@@ -7,6 +7,7 @@ import re
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
+from .cash_components import cash_receipt_key
 from .transfer_corrections import effective_transfer_id
 
 _PLAN_FIELDS = {"title", "start_month", "notes", "items"}
@@ -350,6 +351,8 @@ def _validate_plan(value, store=None):
         allocation_groups = {}
         item_by_id = {item["id"]: item for item in plan["items"]}
         transaction_types = {}
+        cash_rows_by_month = {}
+        cash_receipt_months_by_account = {}
         validated = []
         for raw in allocations:
             fields = set(raw) if isinstance(raw, dict) else set()
@@ -372,9 +375,36 @@ def _validate_plan(value, store=None):
                         "LEFT JOIN category_catalog cat ON cat.id=o.category_id "
                         "WHERE t.account_id=? AND t.external_id=?", key
                     ).fetchone()
+                    if (transaction is None and external_id.startswith("bonsy-cash:")
+                            and plan.get("cash_receipt_item_id") is not None):
+                        # Resolve only a real, confirmed, positive cash receipt row.
+                        # The local import avoids a module initialization cycle.
+                        from .plan_actual import _cash_receipt_rows
+
+                        if account_id not in cash_receipt_months_by_account:
+                            cash_receipt_months_by_account[account_id] = {
+                                cash_receipt_key(row["entry_id"], account_id): row["occurred_at"][:7]
+                                for row in store.db.execute(
+                                    "SELECT ca.entry_id,r.occurred_at FROM bonsy_cash_allocations ca "
+                                    "JOIN bonsy_receipts r USING(entry_id) WHERE ca.account_id=?",
+                                    (account_id,),
+                                )
+                            }
+                        receipt_month = cash_receipt_months_by_account[account_id].get(external_id)
+                        if receipt_month is not None:
+                            if receipt_month not in cash_rows_by_month:
+                                cash_rows_by_month[receipt_month] = {
+                                    (row["account_id"], row["external_id"]): row
+                                    for row in _cash_receipt_rows(
+                                        store, receipt_month, plan["cash_receipt_item_id"])
+                                }
+                            transaction = cash_rows_by_month[receipt_month].get(key)
                     if transaction is None:
                         raise ValueError("actual allocation must reference a classified transaction")
-                    if effective_transfer_id(store, transaction):
+                    if (isinstance(transaction, dict)
+                            and transaction.get("bonsy_entry_id") is not None):
+                        transaction_type = "expense"
+                    elif effective_transfer_id(store, transaction):
                         amount = Decimal(transaction["amount"])
                         transaction_type = (
                             "income" if amount > 0 else "expense" if amount < 0 else None)

@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from .classification import (
+    _audit,
     _cash_withdrawal_evidence,
     _document_link_rejected,
     auto_link_documents,
@@ -21,6 +23,7 @@ from .import_preview import MAX_BYTES, _headers, inspect_workbook, outside_repos
 from .transfer_corrections import effective_transfer_id, source_declares_transfer
 
 MAX_ROWS = 20_000
+_EXCLUDED_BONSY_WARNING = 'source_excluded_bonsy'
 
 
 def _booking_minutes(value):
@@ -177,17 +180,41 @@ def _decimal(value, name, *, optional=False):
     return format(result, 'f')
 
 
+def _blank_source_value(value):
+    return value is None or isinstance(value, str) and not value.strip()
+
+
+def _valid_preview_date(value):
+    if isinstance(value, (datetime, date)):
+        return True
+    if not isinstance(value, str) or value.startswith('='):
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_preview_amount(value):
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        money(str(value))
+    except (ValueError, TypeError, ArithmeticError):
+        return False
+    return True
+
+
 def _rows(path):
     from openpyxl import load_workbook
 
     report = inspect_workbook(path)
-    if any(sheet['issue_count'] for sheet in report['sheets']
-           if sheet['profile'] in {'bonsy', 'products'}):
-        raise ValueError('invalid_bonsy_source_rows')
     receipts, products = [], []
+    source_rows = []
     book = load_workbook(path, read_only=True, data_only=False, keep_links=False)
     try:
-        for sheet in book:
+        for sheet_index, sheet in enumerate(book, 1):
             sheet.reset_dimensions()
             values = sheet.iter_rows(values_only=True)
             headers = _headers(next(values, ()))
@@ -196,6 +223,9 @@ def _rows(path):
                        else None)
             if profile is None:
                 continue
+            nonempty_headers = [header for header in headers if header]
+            if len(nonempty_headers) != len(set(nonempty_headers)):
+                raise ValueError('invalid_bonsy_source_rows')
             for number, cells in enumerate(values, 2):
                 if not any(value is not None for value in cells):
                     continue
@@ -203,9 +233,48 @@ def _rows(path):
                     raise ValueError('too_many_bonsy_rows')
                 row = dict(zip(headers, cells))
                 row['_line'] = number
+                row['_sheet_index'] = sheet_index
+                source_rows.append((profile, row))
                 (receipts if profile == 'bonsy' else products).append(row)
     finally:
         book.close()
+    excluded_receipt_ids = {
+        str(row.get('Eintrags-ID')).strip() for row in receipts
+        if not _blank_source_value(row.get('Eintrags-ID'))
+        and _text(row.get('Statistik-Info'), 'statistic_flag', 40, optional=True) == 'Exkludiert'
+    }
+    allowed_missing_excluded_fields = set()
+    for profile, row in source_rows:
+        is_excluded_receipt = (
+            profile == 'bonsy'
+            and _text(row.get('Statistik-Info'), 'statistic_flag', 40, optional=True) == 'Exkludiert')
+        if is_excluded_receipt:
+            missing_date = _blank_source_value(row.get('Datum & Uhrzeit'))
+            missing_total = _blank_source_value(row.get('Summe'))
+            if (missing_date or missing_total) and (
+                    missing_date or _valid_preview_date(row.get('Datum & Uhrzeit'))) and (
+                    missing_total or _valid_preview_amount(row.get('Summe'))):
+                allowed_missing_excluded_fields.add((row['_sheet_index'], row['_line']))
+            continue
+        if profile == 'products':
+            entry_id = str(row.get('Eintrags-ID')).strip() if not _blank_source_value(
+                row.get('Eintrags-ID')) else ''
+            product_excluded = (
+                entry_id in excluded_receipt_ids
+                or _text(row.get('Statistik-Info'), 'statistic_flag', 40, optional=True) == 'Exkludiert')
+            if product_excluded and _blank_source_value(row.get('bezahlter Preis')):
+                allowed_missing_excluded_fields.add((row['_sheet_index'], row['_line']))
+    for sheet in report['sheets']:
+        if sheet['profile'] not in {'bonsy', 'products'}:
+            continue
+        issues = sheet['issues']
+        # A truncated preview cannot prove that every issue is the narrow exception below.
+        if sheet['issue_count'] != len(issues):
+            raise ValueError('invalid_bonsy_source_rows')
+        for issue in issues:
+            if (issue['code'] != 'invalid_required_value'
+                    or (sheet['sheet_index'], issue['row']) not in allowed_missing_excluded_fields):
+                raise ValueError('invalid_bonsy_source_rows')
     if not receipts:
         raise ValueError('no_bonsy_receipts')
     return receipts, products
@@ -213,12 +282,15 @@ def _rows(path):
 
 def _normalize(path):
     receipt_rows, product_rows = _rows(path)
-    receipts, seen = [], set()
+    receipts, seen, excluded_receipts = [], set(), set()
     for row in receipt_rows:
         entry = _text(row.get('Eintrags-ID'), 'entry_id', 240)
         if entry in seen:
             raise ValueError('duplicate_bonsy_entry')
         seen.add(entry)
+        if _text(row.get('Statistik-Info'), 'statistic_flag', 40, optional=True) == 'Exkludiert':
+            excluded_receipts.add(entry)
+            continue
         source_currency = _text(row.get('Währung') or 'EUR', 'currency', 3)
         if source_currency not in {'EUR', '€'}:
             raise ValueError('unsupported_bonsy_currency')
@@ -234,12 +306,21 @@ def _normalize(path):
             'total': total, 'currency': currency, 'is_refund': total_value < 0,
         })
     products = defaultdict(list)
+    excluded_products = []
+    imported_receipt_ids = {receipt['entry_id'] for receipt in receipts}
     for row in product_rows:
         entry = _text(row.get('Eintrags-ID'), 'entry_id', 240)
         if entry not in seen:
             raise ValueError('orphan_bonsy_product')
+        line_number = len(products[entry]) + 1
+        if (entry in excluded_receipts
+                or _text(row.get('Statistik-Info'), 'statistic_flag', 40, optional=True) == 'Exkludiert'):
+            excluded_products.append(f'{entry}:{row["_line"]}')
+            continue
+        if entry not in imported_receipt_ids:
+            continue
         products[entry].append({
-            'line_number': len(products[entry]) + 1,
+            'line_number': line_number,
             'product_name': _text(row.get('Produktname/Pfand'), 'product_name', 500),
             'source_category': _text(row.get('Kategorie'), 'product_category', 240, optional=True),
             'paid_price': _decimal(row.get('bezahlter Preis'), 'paid_price', optional=True),
@@ -249,7 +330,11 @@ def _normalize(path):
             'discount': _decimal(row.get('Rabatt'), 'discount', optional=True),
             'discount_name': _text(row.get('Name des Rabatts'), 'discount_name', 240, optional=True),
         })
-    return receipts, products
+    return receipts, products, {
+        'excluded_receipt_ids': sorted(excluded_receipts),
+        'excluded_product_ids': excluded_products,
+        'source_inspected': True,
+    }
 
 
 def _title(receipt, products):
@@ -275,24 +360,103 @@ def _source_text(receipt, products):
     return '\n'.join(lines)
 
 
-def import_workbook(store, database, path):
+def _reconcile_excluded_receipts(store, entry_ids):
+    """Withdraw local Bonsy annotations only for exclusions parsed from this source."""
+    result = {'reconciled_receipt_ids': [], 'unchanged_receipt_ids': [],
+              'missing_receipt_ids': []}
+    for entry_id in sorted(set(entry_ids)):
+        document = store.db.execute(
+            'SELECT d.* FROM bonsy_receipts r '
+            'JOIN classification_documents d ON d.id=r.document_id '
+            'WHERE r.entry_id=?', (entry_id,)).fetchone()
+        if document is None:
+            result['missing_receipt_ids'].append(entry_id)
+            continue
+        if document['source_reference'] != 'bonsy:' + entry_id:
+            raise ValueError('bonsy_receipt_document_mismatch')
+        links = store.db.execute(
+            'SELECT account_id,external_id,document_id,allocated_amount,allocation_type '
+            'FROM classification_document_links WHERE document_id=? ORDER BY account_id,external_id',
+            (document['id'],)).fetchall()
+        allocations = store.db.execute(
+            'SELECT entry_id,account_id,external_id,allocated_amount,confirmed_at '
+            'FROM bonsy_cash_allocations WHERE entry_id=? ORDER BY account_id,external_id',
+            (entry_id,)).fetchall()
+        warnings = json.loads(document['warnings'])
+        if not isinstance(warnings, list) or any(not isinstance(item, str) for item in warnings):
+            raise ValueError('invalid_bonsy_document_warnings')
+        if (document['status'] == 'unreviewed' and _EXCLUDED_BONSY_WARNING in warnings
+                and not links and not allocations):
+            result['unchanged_receipt_ids'].append(entry_id)
+            continue
+
+        previous = dict(document)
+        current = previous | {
+            'status': 'unreviewed',
+            'warnings': json.dumps(sorted(set(warnings) | {_EXCLUDED_BONSY_WARNING})),
+            'revision': previous['revision'] + 1,
+        }
+        _audit(store, 'bonsy_source_excluded', current, document_id=document['id'],
+               previous=previous)
+        store.db.execute(
+            'UPDATE classification_documents SET status=?,warnings=?,revision=? WHERE id=?',
+            (current['status'], current['warnings'], current['revision'], document['id']))
+        for link in links:
+            link = dict(link)
+            _audit(store, 'bonsy_excluded_link_removed', {'removed': True},
+                   account_id=link['account_id'], external_id=link['external_id'],
+                   document_id=document['id'], previous=link)
+            store.db.execute(
+                'DELETE FROM classification_document_links '
+                'WHERE account_id=? AND external_id=? AND document_id=?',
+                (link['account_id'], link['external_id'], document['id']))
+        for allocation in allocations:
+            allocation = dict(allocation)
+            _audit(store, 'bonsy_excluded_cash_allocation_removed', {'removed': True},
+                   account_id=allocation['account_id'], external_id=allocation['external_id'],
+                   document_id=document['id'], previous=allocation)
+            store.db.execute(
+                'DELETE FROM bonsy_cash_allocations WHERE entry_id=? AND account_id=? AND external_id=?',
+                (entry_id, allocation['account_id'], allocation['external_id']))
+        result['reconciled_receipt_ids'].append(entry_id)
+    return result
+
+
+def import_workbook(store, database, path, *, confirm_exclusions=False):
     """Import structured receipts and products, then link only unique direct matches."""
+    if type(confirm_exclusions) is not bool:
+        raise ValueError('invalid_confirm_exclusions')
     path = outside_repository(path)
     if not path.is_file() or path.stat().st_size > MAX_BYTES:
         raise ValueError('invalid_bonsy_workbook')
     source_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    receipts, products, exclusion_report = _normalize(path)
     previous = store.db.execute('SELECT * FROM bonsy_imports WHERE source_sha256=?',
                                 (source_hash,)).fetchone()
     if previous is not None:
-        source_document_ids = [row[0] for row in store.db.execute(
-            'SELECT document_id FROM bonsy_receipts WHERE source_sha256=? ORDER BY document_id',
-            (source_hash,))]
+        reconciliation = {'reconciled_receipt_ids': [], 'unchanged_receipt_ids': [],
+                          'missing_receipt_ids': []}
+        if confirm_exclusions:
+            store.db.execute('BEGIN IMMEDIATE')
+            try:
+                reconciliation = _reconcile_excluded_receipts(
+                    store, exclusion_report['excluded_receipt_ids'])
+                store.db.commit()
+            except Exception:
+                store.db.rollback()
+                raise
+        excluded_ids = set(exclusion_report['excluded_receipt_ids'])
+        source_document_ids = [row['document_id'] for row in store.db.execute(
+            'SELECT entry_id,document_id FROM bonsy_receipts WHERE source_sha256=? ORDER BY document_id',
+            (source_hash,)) if row['entry_id'] not in excluded_ids]
         repaired = auto_link_timestamped_receipts(store, source_document_ids)
         return {'status': 'duplicate', 'source_sha256': source_hash,
                 'receipts': previous['receipt_count'], 'products': previous['product_count'],
                 'new_receipts': 0, 'confirmed_receipts': 0,
-                'auto_links': repaired}
-    receipts, products = _normalize(path)
+                'auto_links': repaired, 'exclusion_report': exclusion_report,
+                'reconciliation': reconciliation}
+    reconciliation = {'reconciled_receipt_ids': [], 'unchanged_receipt_ids': [],
+                      'missing_receipt_ids': []}
     new_documents = []
     store.db.execute('BEGIN IMMEDIATE')
     try:
@@ -330,6 +494,9 @@ def import_workbook(store, database, path):
                  for item in item_products])
             new_documents.append((document_id, _source_text(receipt, item_products),
                                   receipt['is_refund']))
+        if confirm_exclusions:
+            reconciliation = _reconcile_excluded_receipts(
+                store, exclusion_report['excluded_receipt_ids'])
         store.db.commit()
     except Exception:
         store.db.rollback()
@@ -349,4 +516,5 @@ def import_workbook(store, database, path):
             'products': sum(len(items) for items in products.values()),
             'new_receipts': len(new_documents), 'confirmed_receipts': len(new_documents),
             'auto_links': auto_links,
-            'unlinked_receipts': len(new_documents) - len(auto_links['linked'])}
+            'unlinked_receipts': len(new_documents) - len(auto_links['linked']),
+            'exclusion_report': exclusion_report, 'reconciliation': reconciliation}

@@ -293,6 +293,9 @@ class Cockpit:
                 return commit_batch(store, root, data['batch'], data['choices'], data['review_token'])
             if route == '/api/bonsy-import':
                 from .bonsy_import import import_workbook
+                confirm_exclusions = data.get('confirm_exclusions', False)
+                if type(confirm_exclusions) is not bool:
+                    raise ValueError('invalid_confirm_exclusions')
                 root = outside_repository(self.database.parent / (self.database.stem + '-imports'))
                 if not root.is_relative_to(self.database.parent):
                     raise ValueError('Import directory redirected')
@@ -306,7 +309,8 @@ class Cockpit:
                 temporary = root / ('bonsy-' + secrets.token_hex(16) + '.xlsx')
                 try:
                     temporary.write_bytes(raw)
-                    return import_workbook(store, self.database, temporary)
+                    return import_workbook(store, self.database, temporary,
+                                           confirm_exclusions=confirm_exclusions)
                 finally:
                     temporary.unlink(missing_ok=True)
             if route == '/api/bonsy-cash':
@@ -551,6 +555,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/approvals.js': ('approvals.js', 'text/javascript; charset=utf-8'),
                       '/analytics.js': ('analytics.js', 'text/javascript; charset=utf-8'),
                       '/classification.js': ('classification.js', 'text/javascript; charset=utf-8'),
+                      '/classification_mobile.css': ('classification_mobile.css', 'text/css; charset=utf-8'),
                       '/bonsy.js': ('bonsy.js', 'text/javascript; charset=utf-8'),
                       '/budget.js': ('budget.js', 'text/javascript; charset=utf-8'),
                       '/plan_actual.js': ('plan_actual.js', 'text/javascript; charset=utf-8'),

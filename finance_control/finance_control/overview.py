@@ -51,6 +51,34 @@ def _document_task(store):
                  f'{count} Buchungen haben einen passenden Belegvorschlag.')
 
 
+def _year_actuals(store, cutoff, year):
+    """Sum non-transfer cash flows in the current calendar year through cutoff.
+
+    Store.status validates lifetime opening balances, so it cannot supply this
+    independent year window. Transfer semantics still use the shared resolver.
+    """
+    start = date(year, 1, 1)
+    end = min(cutoff, date(year, 12, 31))
+    income = expenses = money(0)
+    if end >= start:
+        from .transfer_corrections import effective_transfer_id
+        rows = store.db.execute(
+            'SELECT t.*,m.pair_id AS correction_pair_id,c.description FROM transactions t '
+            'LEFT JOIN transfer_correction_members m '
+            'ON m.account_id=t.account_id AND m.external_id=t.external_id '
+            'LEFT JOIN transaction_context c '
+            'ON c.account_id=t.account_id AND c.external_id=t.external_id '
+            'WHERE t.date >= ? AND t.date <= ?', (start.isoformat(), end.isoformat()))
+        for row in rows:
+            if effective_transfer_id(store, row):
+                continue
+            amount = money(row['amount'])
+            income += max(amount, money(0))
+            expenses += max(-amount, money(0))
+    return {'year': year, 'income': _text(income), 'expenses': _text(expenses),
+            'balance': _text(income - expenses)}
+
+
 def _estimated_total(calculation, kind):
     """Read one persisted estimate without reconstructing missing legacy data."""
     totals = calculation.get('totals')
@@ -160,11 +188,13 @@ def _primary_action(plan, tasks):
     return None
 
 
-def build(store, as_of, status):
+def build(store, as_of, status, *, _today=None):
     """Return stable, read-only overview data for one cockpit state."""
     cutoff = date.fromisoformat(as_of)
+    today = datetime.now().astimezone().date() if _today is None else _today
     plan, tasks = _plan_overview(store, cutoff, status)
     for task in (_classification_task(store, cutoff), _document_task(store)):
         if task is not None:
             tasks.append(task)
-    return {'plan': plan, 'tasks': tasks, 'primary_action': _primary_action(plan, tasks)}
+    return {'plan': plan, 'tasks': tasks, 'primary_action': _primary_action(plan, tasks),
+            'actuals': _year_actuals(store, cutoff, today.year)}

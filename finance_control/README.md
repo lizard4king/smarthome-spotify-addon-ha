@@ -1,10 +1,16 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.7` runs the current `src/finance_control` package inside a Home
+Version `0.2.8` runs the current `src/finance_control` package inside a Home
 Assistant add-on. Build an installable add-on context from the repository with
 `scripts/build_homeassistant_addon.py`; the resulting `.tar.gz` is written outside
 the repository and includes a source manifest. The package keeps source provenance in `build-manifest.json`; no private data
 is included.
+
+The cockpit now has two main workspaces: Plan & Ist and bookings. Tool buttons
+open planning, accounts, import and receipts. Mobile bookings use compact cards.
+Selected 2026 monthly budgets remain independent of the 2025 retrospective.
+Cash withdrawals and receipt spending are separate; explicit Bonsy exclusions
+can be reconciled while preserving their source records and audit history.
 
 For the current Home Assistant 2026.10 store, local apps are loaded from
 `/data/apps/local`. A separate SSH add-on's `/addons` mount points at
