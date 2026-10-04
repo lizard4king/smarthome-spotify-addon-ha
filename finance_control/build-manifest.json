@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.5",
+  "addon_version": "0.2.6",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -116,7 +116,7 @@
     "static/index.html": "1d4d60830282eb6dbb23e0cb6233a781684fcba8fb9436b91d754ef6d734e03c",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/monthly.js": "1d339cf392ec69c3186c4c06a726c0c6c497ce842a393d086306397360b4f97b",
-    "static/plan_actual.js": "ffdaf89ffc2fb2e17e8b92787ec652be92c70e99a70993fcf7104e9a3d63c7fd",
+    "static/plan_actual.js": "e80bd160c7caaf41fa1d35887bcef48c8d7b28df582dfe4e694b178f639f11af",
     "static/style.css": "ab3a72e8d95f80b8ab483dea6bb36103d217b69416286e42a1c0b860617a4e36",
     "static/tabs.js": "515f60582b198fbdcbe892725840c88a6a5bc73cca9aa1fa8ad1f2b575d36e1b",
     "static/wealth.js": "5853064d6054f5f695c9bb38872a96c2429385bd0c8009af2e615f256db6ac34",
@@ -126,6 +126,6 @@
     "web.py": "af565ff9d27ac296bce356a134bf6be0503f98165f126bd68bccb613947424f8"
   },
   "schema_version": 1,
-  "source_commit": "bfd75412c8197493a728d239bacd85f96799855a",
-  "source_tree_sha256": "490e9de8dffc845d05cc611040611c192a38b237e2c282cdd98488108ac48261"
+  "source_commit": "62b112e2e276f27fb339b012837c0754b33dfebd",
+  "source_tree_sha256": "e27da86e1c60e1079578b1e424ac367952d0550d3a6fad5c65a5ad43def3173b"
 }

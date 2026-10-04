@@ -459,6 +459,17 @@ function planActualMonthDateTicks(days, plotWidth) {
     label: String(days[index].date || '').slice(plotWidth < 80 ? 8 : 5)}));
 }
 
+function planActualBalanceEndLabel(asOf) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(String(asOf || ''));
+  if (!match) return 'Stand zum Auswertungsschnitt';
+  const [, year, month, day] = match.map(Number);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > lastDay)
+    return 'Stand zum Auswertungsschnitt';
+  return day === lastDay ? 'Monatsende'
+    : `Stand am ${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.`;
+}
+
 function planActualRenderDaily(daily, metadata = null, views = null, accountBalance = null) {
   const svg = $('plan-actual-daily-chart'); svg.replaceChildren();
   svg.setAttribute('viewBox', '0 0 900 300');
@@ -560,7 +571,8 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
     unavailable.textContent = 'Kontostände nicht verfügbar: Für den Monatsanfang fehlt ein belastbarer Anfangsbestand der ausgewählten Girokonten.';
     balanceSummary.append(unavailable);
   } else {
-    for (const [label, key] of [['Monatsanfang', 'start'], ['Monatsende', 'end'],
+    for (const [label, key] of [['Monatsanfang', 'start'],
+      [planActualBalanceEndLabel(accountBalance.as_of), 'end'],
       ['Veränderung', 'change']]) {
       const value = document.createElement('div'); value.className = 'plan-actual-daily-balance-value';
       const caption = document.createElement('span'); caption.textContent = label;
@@ -615,7 +627,7 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
   if (heading) heading.textContent = planActualTrendCumulative
     ? 'Kumulierter Verlauf im Monat' : 'Tageswerte im Monat';
   const reconstructed = result?.basis?.plan_source === 'reconstructed_from_monthly_actuals';
-  note.textContent = `Gebucht bis ${metadata?.as_of || daily.at(-1).date}. ${result?.plan_available === false
+  note.textContent = `${metadata?.as_of ? `Auswertung bis ${metadata.as_of}` : 'Auswertungsschnitt nicht angegeben'}. ${result?.plan_available === false
     ? 'Kein gespeicherter Monatsplan; gezeigt werden nur Ist-Buchungen.' : reconstructed
     ? 'Der historische Plan entspricht den Ist-Buchungen dieses Monats, einschließlich der Buchungstage. Die Nullabweichung folgt aus dieser Rekonstruktion und ist kein unabhängiger Plan-Ist-Nachweis.'
     : planActualTrendCumulative
