@@ -157,3 +157,20 @@
 .plan-actual-retrospective-position details{margin-top:6px}
 .plan-actual-retrospective-position summary{cursor:pointer;min-height:36px;display:flex;align-items:center}
 @media(max-width:600px){.plan-actual-retrospective-disclosure>summary,.plan-actual-retrospective-position summary{min-height:44px}.plan-actual-retrospective-position{padding:9px}.plan-actual-retrospective-position-head{gap:8px;flex-wrap:wrap}}
+.plan-actual-details button{min-height:44px;white-space:normal}
+@media(max-width:600px){
+  .plan-actual-details .table-wrap{overflow:visible}
+  .plan-actual-details table,.plan-actual-details tbody{display:block;min-width:0;width:100%}
+  .plan-actual-details thead{display:none}
+  .plan-actual-details tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;padding:12px 0;border-bottom:1px solid #dbe5e9}
+  .plan-actual-details td{padding:0;border:0;min-width:0;overflow-wrap:anywhere}
+  .plan-actual-details td:nth-child(1){grid-column:1;grid-row:1;font-size:.8rem;color:#5c7484}
+  .plan-actual-details td:nth-child(2){grid-column:1 / -1;grid-row:3;font-size:.8rem;color:#5c7484}
+  .plan-actual-details td:nth-child(3){grid-column:1 / -1;grid-row:2;font-weight:600}
+  .plan-actual-details td:nth-child(4){grid-column:1 / -1;grid-row:4;font-size:.85rem}
+  .plan-actual-details td:nth-child(5){grid-column:2;grid-row:1;font-weight:700;white-space:nowrap}
+  .plan-actual-details td[data-label="Davon angerechnet EUR"]{grid-column:1 / -1;text-align:left;font-size:.8rem}
+  .plan-actual-details td[data-label="Davon angerechnet EUR"]::before{content:"Davon angerechnet: ";font-weight:400}
+  .plan-actual-details td[data-label="Bearbeiten"]{grid-column:1 / -1}
+  .plan-actual-details td[data-label="Bearbeiten"] button{width:100%}
+}

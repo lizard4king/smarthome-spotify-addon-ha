@@ -118,6 +118,7 @@ function planActualRenderRetrospectivePositions(card, positions, personId) {
   }
   const disclosure = document.createElement('details');
   disclosure.className = 'plan-actual-retrospective-disclosure';
+  disclosure.dataset.planActualDisclosure = `person:${personId}`;
   const summary = document.createElement('summary');
   const transactionCount = selected.reduce((total, position) =>
     total + Number(position.transaction_count || 0), 0);
@@ -140,6 +141,7 @@ function planActualRenderRetrospectivePositions(card, positions, personId) {
     const transactions = Array.isArray(position.transactions) ? position.transactions : [];
     if (transactions.length) {
       const details = document.createElement('details');
+      details.dataset.planActualDisclosure = `position:${position.id}`;
       const summary = document.createElement('summary');
       summary.textContent = `Originalbuchungen ansehen (${transactions.length})`;
       details.append(summary, planActualDetailTable({
@@ -205,6 +207,73 @@ function planActualContext(type, itemId = null) {
   return {type, item_id: itemId};
 }
 
+async function planActualEditorSaved(report, key) {
+  // Other workspaces must reload their cached list after this inline edit.
+  cockpitDataGeneration += 1;
+  const sameReport = () => $('plan-actual-revision').value === report.revision
+    && $('plan-actual-month').value === report.month;
+  if (!sameReport()) return;
+  const result = $('plan-actual-result');
+  const disclosures = Array.from(result.querySelectorAll('details[data-plan-actual-disclosure]'))
+    .filter(element => element.open).map(element => element.dataset.planActualDisclosure);
+  const opened = Array.from(result.querySelectorAll('button[aria-controls][aria-expanded="true"]'))
+    .map(control => document.getElementById(control.getAttribute('aria-controls')))
+    .filter(element => element?.dataset.planActualContext)
+    .map(element => ({id: element.id, context: element.dataset.planActualContext,
+      scope: element.closest('#plan-actual-classic,#plan-actual-cockpit')?.id,
+      direction: element.dataset.planActualDirection || null,
+      page: Number(element.dataset.planActualPage || 1)}));
+  if (!await planActualCompare() || !sameReport()) return;
+  cockpitAreaLoaded.set('plan-actual', cockpitDataGeneration);
+  for (const element of result.querySelectorAll('details[data-plan-actual-disclosure]')) {
+    element.open = disclosures.includes(element.dataset.planActualDisclosure);
+  }
+  for (const previous of opened) {
+    const candidates = Array.from(result.querySelectorAll('[data-plan-actual-context]'))
+      .filter(element => element.dataset.planActualContext === previous.context
+        && element.closest('#plan-actual-classic,#plan-actual-cockpit')?.id === previous.scope);
+    const target = candidates.find(element => element.id === previous.id) || candidates[0];
+    if (!target || !sameReport()) continue;
+    target.hidden = false;
+    const control = document.getElementById(target.id)?.previousElementSibling;
+    // Controls may live in a table cell; resolve by their explicit target.
+    const actualControl = control?.getAttribute('aria-controls') === target.id ? control
+      : Array.from(result.querySelectorAll('button[aria-controls]'))
+        .find(button => button.getAttribute('aria-controls') === target.id);
+    actualControl?.setAttribute('aria-expanded', 'true');
+    for (let ancestor = target.parentElement; ancestor && ancestor !== result; ancestor = ancestor.parentElement) {
+      if (ancestor.tagName === 'DETAILS') ancestor.open = true;
+      if (ancestor.classList.contains('plan-actual-detail-row')) ancestor.hidden = false;
+    }
+    await planActualLoadDetails(JSON.parse(previous.context), target, previous.page, previous.direction);
+  }
+  // A category change may move a historical booking into a different position.
+  const row = Array.from(result.querySelectorAll('[data-plan-actual-booking]'))
+    .find(element => element.dataset.planActualBooking === JSON.stringify(key));
+  for (let ancestor = row?.parentElement; ancestor && ancestor !== result; ancestor = ancestor.parentElement) {
+    if (ancestor.tagName === 'DETAILS') ancestor.open = true;
+  }
+}
+
+function planActualBookingAction(row, booking) {
+  const action = document.createElement('td'); action.dataset.label = 'Bearbeiten';
+  if (!booking.account_id || !booking.external_id || booking.bonsy_entry_id
+      || String(booking.external_id).startsWith('bonsy-cash:')) {
+    const note = document.createElement('span'); note.className = 'muted';
+    note.textContent = booking.bonsy_entry_id ? 'Barbeleg · keine Kontobuchung' : 'Keine Kontobuchung';
+    action.append(note); row.append(action); return;
+  }
+  const key = {account_id: booking.account_id, external_id: booking.external_id};
+  row.dataset.planActualBooking = JSON.stringify(key);
+  const control = document.createElement('button'); control.type = 'button'; control.className = 'secondary';
+  control.textContent = 'Kategorie und Belege bearbeiten';
+  control.addEventListener('click', () => {
+    const report = {revision: $('plan-actual-revision').value, month: $('plan-actual-month').value};
+    run(() => bookingEditorOpen(key, {onSaved: () => planActualEditorSaved(report, key)}));
+  });
+  action.append(control); row.append(action);
+}
+
 function planActualDetailTable(result, direction = null) {
   const wrapper = document.createElement('div');
   wrapper.className = 'plan-actual-details';
@@ -220,6 +289,7 @@ function planActualDetailTable(result, direction = null) {
   const itemDetails = result.context && result.context.type === 'item';
   const labels = ['Datum', 'Konto', 'Empfänger und Zweck', 'Eigene Kategorie', 'Betrag EUR'];
   if (itemDetails) labels.push('Davon angerechnet EUR');
+  labels.push('Bearbeiten');
   for (const label of labels) {
     const th = document.createElement('th'); th.textContent = label;
     if (label === 'Betrag EUR') th.className = 'numeric';
@@ -236,12 +306,14 @@ function planActualDetailTable(result, direction = null) {
     cell(row, planActualSignedEur(booking.amount), true);
     if (itemDetails) cell(row, planActualSignedEur(
       booking.allocated_amount, direction || (Number(booking.amount) >= 0 ? 'income' : 'expense')), true);
+    Array.from(row.children).forEach((element, index) => { element.dataset.label = labels[index]; });
+    planActualBookingAction(row, booking);
     body.append(row);
   }
   if (!body.children.length) {
     const row = document.createElement('tr');
     const empty = cell(row, 'Für diesen Posten gibt es keine Buchungen.');
-    empty.colSpan = itemDetails ? 6 : 5;
+    empty.colSpan = labels.length;
     body.append(row);
   }
   table.append(body); scroll.append(table); wrapper.append(scroll);
@@ -253,6 +325,8 @@ function planActualDetailTable(result, direction = null) {
 }
 
 async function planActualLoadDetails(context, target, page = 1, direction = null) {
+  const revision = $('plan-actual-revision').value, month = $('plan-actual-month').value;
+  target.dataset.planActualPage = String(page);
   target.replaceChildren();
   const result = await api('/api/budget-actual-details', {
     revision: Number($('plan-actual-revision').value),
@@ -260,6 +334,8 @@ async function planActualLoadDetails(context, target, page = 1, direction = null
     context,
     page,
   });
+  if (revision !== $('plan-actual-revision').value || month !== $('plan-actual-month').value
+      || !target.isConnected) return;
   const content = planActualDetailTable(result, direction);
   if ((result.total_count || 0) > (result.page_size || 25)) {
     const actions = content.querySelector('.actions');
@@ -273,6 +349,8 @@ function planActualDetailsButton(label, context, target, controlsId, direction =
   const control = document.createElement('button');
   control.type = 'button'; control.className = 'secondary'; control.textContent = label;
   target.id = controlsId;
+  target.dataset.planActualContext = JSON.stringify(context);
+  target.dataset.planActualDirection = direction || '';
   control.setAttribute('aria-expanded', 'false'); control.setAttribute('aria-controls', controlsId);
   control.addEventListener('click', () => run(async () => {
     const open = control.getAttribute('aria-expanded') === 'true';

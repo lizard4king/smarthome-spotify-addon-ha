@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.10",
+  "addon_version": "0.2.11",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -109,25 +109,27 @@
     "static/app.js": "c4cb72969134d822a6d10b3b44683ba661fdde68881bf60b384c753a9c142349",
     "static/approvals.js": "b2ae174b568681202a90312f91a0509771052044b4164ae213ad37609dee8029",
     "static/bonsy.js": "19bb8e7a11b3f55f79d17dddacab3c6bc1e5d5c00ca9f6b4fc3a720365915cb6",
+    "static/booking_editor.css": "f13e76007fd1bba5c27e1192a56f43897988d1857961254a03caeb747feb3d8a",
+    "static/booking_editor.js": "a0eee6b8e2ac16f737ea39681e72a19ae4920f3a12f11efc7f27396f89d3f518",
     "static/budget-section.html": "434132ef28f6ee4d14957dcc12aa042b54e27127101ca1d2e058f66cc731eb78",
-    "static/budget.css": "5b41a31dbeaa0e9f68c39b0ca26c9ce98b289cfcf30a276dcb6816bef0ea397d",
+    "static/budget.css": "42797c222bdab61d1e66d92318ac6deb1b7905ed6b69711ab844e8548ab9e52a",
     "static/budget.js": "ea3023482093ef21eba12b4ecb97b9e0bf81e9d4c85853fe4f857b38b3906502",
-    "static/classification.js": "d1a4103b552bd0b10c0d9ddab7d96854e4a99fc3345d37c53bba0c7319d796d2",
-    "static/classification_mobile.css": "92aaed4162272f0daa49cb8f433c0aa7f2beef669e98d5b42de52cc265ae148b",
+    "static/classification.js": "d527801655acf59904c5807eebb459c02fc84ba461bf5cc69970e3e7647865d2",
+    "static/classification_mobile.css": "b5aa35f4a1cbfa496ea24b0651f4a19fad35c3b780151c466ce3b33708477e6f",
     "static/finanzguru.js": "93be375aba7e94f8952b0fde451d130db36e6ff815dbffcc560438ae3ca8c5fb",
-    "static/index.html": "050cf1e22f4856a67b48ca6fa7928846533e9a0c31e96556609aa944e5b5d91a",
+    "static/index.html": "96e95c73232c601140efff32ac7b2a2647000d5968022c73c961fd33722220a1",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
-    "static/plan_actual.js": "e587c6600c497f499f4f32f60fbcd263b2793c0eabb560823d8addea67ae31cd",
+    "static/plan_actual.js": "5bf0d1381027ad9b8ce94d9479dca98b6be172b58bdef01ada60dfdbb93a00fe",
     "static/style.css": "304021207199a5a1cdd209bd7774a6fc332667ab78a758317c83a454bdd738fc",
     "static/tabs.js": "8f60c5de5b324f29d0a396092edfb1b5c8f75e74b55568b00bae9d7a4a8aec3c",
     "static/wealth.js": "1cde9495ca1e03fdbcd81f91007cbd297a3f8fdf870887da21ec8cad678301f7",
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "1eb55db0d79e7cdbf2d069a204cdd784c097cec7e4c1f76b072ded7b32dc51c9",
     "wealth.py": "3c420811efd92f40a97de2a0f1f570f5fe358c17c245c9f65b197871d7cf7179",
-    "web.py": "382ad69f98ad44dfce0cf07da4ae16a9df0dcf6e7a207bfcaa3d9bdc733b23b2"
+    "web.py": "da4786ff5717257eadbfd7797b025eab4936c67b0e9ed60b564f0dfef8ccbc35"
   },
   "schema_version": 1,
-  "source_commit": "af27633d8d2069ba6f13818d5fcd198e45294daf",
-  "source_tree_sha256": "620e2db3bac293e3df408f13f6e4f9521cd4111372f5e78a029a93b08a1f7d52"
+  "source_commit": "63d3fbd4ee631faba5dcd1a231fc5cc30d69574f",
+  "source_tree_sha256": "3c80e479bb8c9446486e49e731bb8f6da75baf32323f7f385005edba4573c886"
 }

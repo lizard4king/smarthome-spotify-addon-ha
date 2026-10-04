@@ -1,6 +1,6 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.10` runs the current `src/finance_control` package inside a Home
+Version `0.2.11` runs the current `src/finance_control` package inside a Home
 Assistant add-on. Build an installable add-on context from the repository with
 `scripts/build_homeassistant_addon.py`; the resulting `.tar.gz` is written outside
 the repository and includes a source manifest. The package keeps source provenance in `build-manifest.json`; no private data
@@ -55,3 +55,5 @@ Version 0.2.7 fits the single-month chart to Android panels and redraws it after
 Version 0.2.7 labels a partial-month bank balance by its evaluation date and distinguishes the evaluation cutoff from import completeness.
 
 Version `0.2.7` hides payday spending caps and remainder amounts when salary-cycle data is unavailable; the monthly budget remains visible separately.
+
+Original bookings in Plan & Ist now support direct category and document editing. Mobile booking cards use compact SVG pictograms and labeled actions.

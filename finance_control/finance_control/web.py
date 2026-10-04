@@ -555,6 +555,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/approvals.js': ('approvals.js', 'text/javascript; charset=utf-8'),
                       '/analytics.js': ('analytics.js', 'text/javascript; charset=utf-8'),
                       '/classification.js': ('classification.js', 'text/javascript; charset=utf-8'),
+                      '/booking_editor.js': ('booking_editor.js', 'text/javascript; charset=utf-8'),
+                      '/booking_editor.css': ('booking_editor.css', 'text/css; charset=utf-8'),
                       '/classification_mobile.css': ('classification_mobile.css', 'text/css; charset=utf-8'),
                       '/bonsy.js': ('bonsy.js', 'text/javascript; charset=utf-8'),
                       '/budget.js': ('budget.js', 'text/javascript; charset=utf-8'),
@@ -613,8 +615,11 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             except DriveApiError:
                 return self.reply(503, {
                     'error': 'Drive-Sicherung derzeit nicht erreichbar. Das lokale Sicherungspaket bleibt erhalten.'})
-            except (ValueError, KeyError, TypeError, ArithmeticError, StopIteration):
+            except (ValueError, KeyError, TypeError, ArithmeticError, StopIteration) as error:
                 if urlsplit(self.path).path.startswith('/api/classification-'):
+                    if isinstance(error, ValueError) and str(error) == 'stale_revision':
+                        return self.reply(409, {
+                            'error': 'Buchung oder Beleg wurde inzwischen geändert. Bitte neu laden.'})
                     return self.reply(400, {'error': 'Zuordnung prüfen und neu laden. Kategorie muss zur Buchungsrichtung passen. Rechnungen erst anhand der Quelle bestätigen; Betrag muss genau zur Ausgabe passen. Bereits verknüpfte Rechnungswerte sind gesperrt.'})
                 if urlsplit(self.path).path.startswith('/api/intake-'):
                     return self.reply(400, {'error': 'Importentwurf prüfen: Salden müssen centgenau und ausdrücklich bestätigt sein. Bei geändertem Entwurf neu laden; Quellen und bestehende Konten werden nicht überschrieben.'})

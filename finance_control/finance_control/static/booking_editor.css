@@ -1,0 +1,23 @@
+.booking-editor { box-sizing: border-box; width: min(920px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 24px; border: 1px solid #cad2dc; border-radius: 12px; overflow-y: auto; color: var(--text, #172535); background: var(--surface, #fff); }
+.booking-editor::backdrop { background: rgb(15 25 40 / 55%); }
+.booking-editor-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.booking-editor h2, .booking-editor h3 { margin: 0 0 12px; }
+.booking-editor section { margin-top: 24px; padding-top: 20px; border-top: 1px solid #dce2e9; }
+.booking-editor p, .booking-editor strong { overflow-wrap: anywhere; }
+.booking-editor label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.booking-editor button, .booking-editor input, .booking-editor select { min-height: 44px; max-width: 100%; box-sizing: border-box; }
+.booking-editor button { margin: 4px 8px 4px 0; }
+.booking-editor-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.booking-editor-actions label { flex: 1; min-width: min(250px, 100%); }
+.booking-editor-document { padding: 12px 0; border-bottom: 1px solid #e5e9ef; }
+.booking-editor-document p { margin: 0 0 8px; }
+.booking-editor pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; background: #f3f5f8; color: #172535; border-radius: 6px; }
+.booking-editor [hidden] { display: none; }
+.booking-editor-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.booking-editor-fields p, .booking-editor-fields button { grid-column: 1 / -1; }
+.booking-editor-fields input { width: 100%; }
+.booking-editor summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+.booking-editor-search { margin-top: 24px; padding-top: 20px; border-top: 1px solid #dce2e9; }
+.booking-editor .booking-editor-icon { display: inline-block; box-sizing: content-box; width: 18px; min-width: 0; max-width: 18px; height: 18px; min-height: 0; max-height: 18px; flex: 0 0 18px; vertical-align: middle; margin: 0 7px 0 0; border: 0; background: transparent; padding: 0; }
+@media (max-width: 600px) { .booking-editor-fields { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .booking-editor { padding: 16px; } .booking-editor-header { align-items: start; } .booking-editor h2 { font-size: 1.3rem; } .booking-editor-actions { align-items: stretch; } .booking-editor select, .booking-editor input { width: 100%; } }
