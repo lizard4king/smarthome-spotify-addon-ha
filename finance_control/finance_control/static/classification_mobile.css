@@ -18,7 +18,7 @@
   .classification-mobile-controls>summary{display:none}
   .classification-mobile-control-grid{display:grid;grid-template-columns:1fr;gap:8px;padding:0}
   .classification-mobile-control-grid label{margin:0}
-  .classification-mobile-control-grid input{min-height:44px}
+  .classification-mobile-control-grid input,.classification-mobile-control-grid select{min-height:44px}
   .classification-scope-details>p{margin:0;padding:0 12px 10px}
   .classification-summary-details>.cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px;padding:0 0 8px}
   .classification-summary-details .cards article{min-width:0;padding:10px;border:1px solid #dbe5e9}

@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.8",
+  "addon_version": "0.2.9",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -111,10 +111,10 @@
     "static/budget-section.html": "434132ef28f6ee4d14957dcc12aa042b54e27127101ca1d2e058f66cc731eb78",
     "static/budget.css": "d670b24ff362b3cb9de4a556248742af035f32c01289242df476a48b8d533d94",
     "static/budget.js": "ea3023482093ef21eba12b4ecb97b9e0bf81e9d4c85853fe4f857b38b3906502",
-    "static/classification.js": "8a14c59d96d1662026377b1a4ff150593c116edc1d716c5f85f5b2ac2f8ab9b0",
-    "static/classification_mobile.css": "fa3f8639ec22e7dbce83e83278ed8db83ebd17479afcf3d81fe4f247f33b9b98",
+    "static/classification.js": "d1a4103b552bd0b10c0d9ddab7d96854e4a99fc3345d37c53bba0c7319d796d2",
+    "static/classification_mobile.css": "92aaed4162272f0daa49cb8f433c0aa7f2beef669e98d5b42de52cc265ae148b",
     "static/finanzguru.js": "93be375aba7e94f8952b0fde451d130db36e6ff815dbffcc560438ae3ca8c5fb",
-    "static/index.html": "9c4f9e9abe6d447216d9d971b3af55ac1f8b5477cd1752905f2e40d51a0f7610",
+    "static/index.html": "558e6d42db329b4dcbbf97828f38d9d4e16ad5691a6822c10a6d61f3b23c99b9",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
     "static/plan_actual.js": "1736fface369911ab90233edc7ff359d8cc052bed3510ce20de54b6f78f86ea5",
@@ -127,6 +127,6 @@
     "web.py": "382ad69f98ad44dfce0cf07da4ae16a9df0dcf6e7a207bfcaa3d9bdc733b23b2"
   },
   "schema_version": 1,
-  "source_commit": "8798c8575381dc8d835d5cfec067e6eb5ba8fda8",
-  "source_tree_sha256": "63e0a76fc03431cdce91ee0408bceef9e054c5139fd1755e9934e1b0db0141f6"
+  "source_commit": "f30974e95ca2dd1ae1bb5b68f5cc970dd2ba7427",
+  "source_tree_sha256": "a161cdb6ac1c298077dcb88151d3d5a70fdddfec8eadffd6732391b830c29845"
 }

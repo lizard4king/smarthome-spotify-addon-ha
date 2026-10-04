@@ -1,7 +1,7 @@
 name: Finance Control
 slug: finance_control
 description: Privates Finance-Control-Cockpit als Home-Assistant-Add-on
-version: "0.2.8"
+version: "0.2.9"
 arch:
   - amd64
   - aarch64

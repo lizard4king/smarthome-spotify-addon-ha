@@ -30,6 +30,14 @@ function classificationSyncMobileControls(){
     const desktop=document.querySelector(`#classification-table [data-column-filter="${input.dataset.mobileColumnFilter}"]`);
     if(desktop&&input.value!==desktop.value)input.value=desktop.value;
   }
+  const sortColumn=$('classification-mobile-sort-column'),sortDirection=$('classification-mobile-sort-direction');
+  if(sortColumn){
+    sortColumn.value=classificationSortColumn||'';
+    const standard=sortColumn.querySelector('option[value=""]');
+    if(standard)standard.textContent=$('classification-order').value==='amount_desc'
+      ?'Standardsortierung: größter Betrag zuerst':'Standardsortierung: neueste zuerst';
+  }
+  if(sortDirection){sortDirection.value=classificationSortDirection;sortDirection.disabled=!classificationSortColumn;}
 }
 function classificationCreateMobileControls(){
   // Card mode hides the table header; generate accessible controls from the same column map.
@@ -38,6 +46,17 @@ function classificationCreateMobileControls(){
   const details=document.createElement('details');details.id='classification-mobile-controls';details.className='classification-mobile-controls';details.open=true;
   const summary=document.createElement('summary');summary.textContent='Spaltenfilter';details.append(summary);
   const content=document.createElement('div');content.className='classification-mobile-control-grid';
+  const sortLabel=document.createElement('label');sortLabel.textContent='Sortierung nach';
+  const sortColumn=document.createElement('select');sortColumn.id='classification-mobile-sort-column';
+  sortColumn.setAttribute('aria-label','Buchungen nach Spalte sortieren');
+  sortColumn.append(new Option('Standardsortierung: neueste zuerst',''));
+  for(const [key,label] of Object.entries(classificationColumns))sortColumn.append(new Option(label,key));
+  sortLabel.append(sortColumn);content.append(sortLabel);
+  const directionLabel=document.createElement('label');directionLabel.textContent='Reihenfolge';
+  const sortDirection=document.createElement('select');sortDirection.id='classification-mobile-sort-direction';
+  sortDirection.setAttribute('aria-label','Sortierreihenfolge');
+  sortDirection.append(new Option('Aufsteigend','asc'),new Option('Absteigend','desc'));
+  directionLabel.append(sortDirection);content.append(directionLabel);
   for(const [key,label] of Object.entries(classificationColumns)){
     const field=document.createElement('label');field.textContent=`${label} filtern`;
     const input=document.createElement('input');input.type='search';input.dataset.mobileColumnFilter=key;input.setAttribute('aria-label',`${label} filtern`);field.append(input);content.append(field);
@@ -48,6 +67,12 @@ function classificationCreateMobileControls(){
   for(const input of content.querySelectorAll('[data-mobile-column-filter]'))input.addEventListener('change',()=>run(async()=>{
     const desktop=document.querySelector(`#classification-table [data-column-filter="${input.dataset.mobileColumnFilter}"]`);if(desktop)desktop.value=input.value;
     classificationPage=0;await classificationLoad();
+  }));
+  sortColumn.addEventListener('change',()=>run(async()=>{
+    classificationSortColumn=sortColumn.value||null;classificationPage=0;classificationUpdateSortButtons();await classificationLoad();
+  }));
+  sortDirection.addEventListener('change',()=>run(async()=>{
+    classificationSortDirection=sortDirection.value;classificationPage=0;classificationUpdateSortButtons();await classificationLoad();
   }));
   classificationSyncMobileControls();
 }
