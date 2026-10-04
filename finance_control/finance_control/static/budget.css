@@ -115,6 +115,7 @@
 .plan-actual-daily-legend-line.is-plan{border-top-style:dashed}
 .plan-actual-chart-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
 .plan-actual-chart-scroll #plan-actual-daily-chart{width:100%;min-width:640px}
+.plan-actual-chart-scroll #plan-actual-daily-chart:not(.is-monthly){min-width:0}
 .plan-actual-chart-scroll #plan-actual-daily-chart.is-monthly{min-width:900px}
 .plan-actual-chart-scroll #plan-actual-daily-chart.is-daily-range{min-width:1200px}
 #plan-actual-daily-chart .plan-actual-month-label{font-size:10px}

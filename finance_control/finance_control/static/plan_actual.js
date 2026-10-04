@@ -400,6 +400,7 @@ function planActualSetView(mode, persist = true) {
   $('plan-actual-cockpit-mode').classList.toggle('secondary', !cockpit);
   $('plan-actual-classic-mode').classList.toggle('secondary', cockpit);
   if (persist) sessionStorage.setItem('finance-control-plan-actual-view', cockpit ? 'cockpit' : 'classic');
+  if (cockpit) planActualScheduleMonthChartResize();
 }
 
 function planActualRenderDue(payday) {
@@ -417,6 +418,45 @@ function planActualRenderDue(payday) {
   if (!flows.length) {
     const empty = document.createElement('li'); empty.textContent = 'Keine kommenden Fälligkeiten verfügbar.'; list.append(empty);
   }
+}
+
+function planActualMonthChartLayout(svg, min, max) {
+  // The single-month SVG fits its panel; range charts keep their wider scrollable canvas.
+  const viewport = document.documentElement?.clientWidth || 900;
+  const available = svg.parentNode?.clientWidth || svg.clientWidth || Math.max(1, viewport - 100);
+  const width = Math.min(900, Math.max(1, Math.floor(available)));
+  const compact = width < 440
+    ? new Intl.NumberFormat('de-DE', {style: 'currency', currency: 'EUR',
+      notation: 'compact', maximumFractionDigits: 1}) : null;
+  let formatTick = value => compact ? compact.format(value) : eur(value);
+  let tickFontSize = width < 240 ? 10 : 12;
+  const canvas = document.createElement?.('canvas');
+  const context = canvas?.getContext?.('2d');
+  const measuredWidth = () => {
+    const labels = [min, (min + max) / 2, max].map(formatTick);
+    if (context) context.font = `${tickFontSize}px Segoe UI, Arial, sans-serif`;
+    return Math.ceil(Math.max(...labels.map(label => context
+      ? context.measureText(label).width : label.length * tickFontSize * .65)));
+  };
+  const right = 16, minPlot = Math.max(32, Math.floor(width * .25));
+  const maxLabelWidth = width - right - minPlot - 10;
+  let labelWidth = measuredWidth();
+  if (width < 440 && labelWidth > maxLabelWidth) {
+    formatTick = value => `${Number(value).toExponential(1)} €`;
+    tickFontSize = 8;
+    labelWidth = measuredWidth();
+  }
+  const pad = {left: Math.max(width < 240 ? 58 : 72, labelWidth + 10),
+    right, top: 24, bottom: 44};
+  return {width, pad, formatTick, tickFontSize, labelWidth};
+}
+
+function planActualMonthDateTicks(days, plotWidth) {
+  const last = days.length - 1;
+  const middle = Math.floor(last / 2);
+  const indices = plotWidth < 140 ? [0, last] : [0, middle, last];
+  return [...new Set(indices)].map(index => ({index,
+    label: String(days[index].date || '').slice(plotWidth < 80 ? 8 : 5)}));
 }
 
 function planActualRenderDaily(daily, metadata = null, views = null, accountBalance = null) {
@@ -582,7 +622,7 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
     ? 'Eindeutig datierte Planbeträge sind als Stufen enthalten; der übrige Monatsplan wird zeitanteilig verteilt.'
     : 'Angezeigt werden die Buchungen und Plananteile des jeweiligen Tages.'}`;
   planActualAppendReportingHistoryNote(note, result);
-  const width = 900, height = 300, pad = {left: 72, right: 20, top: 24, bottom: 44};
+  const height = 300;
   const series = [
     {key: 'cumulative_expenses', label: 'Ist-Ausgaben (Betrag)', color: '#b34435'},
     {key: 'planned_cumulative_expenses', label: 'Plan-Ausgaben (Betrag)', color: '#b34435', planned: true},
@@ -607,6 +647,8 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
   }
   const values = daily.flatMap((day, index) => series.map(item => valueFor(day, item, index)));
   const min = Math.min(0, ...values), max = Math.max(0, ...values), span = max - min || 1;
+  const {width, pad, formatTick, tickFontSize} = planActualMonthChartLayout(svg, min, max);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   const x = index => planActualDailyX(index, daily.length, pad.left, width - pad.right);
   const y = value => height - pad.bottom - (Number(value || 0) - min) * (height - pad.top - pad.bottom) / span;
   const ns = 'http://www.w3.org/2000/svg';
@@ -620,7 +662,8 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
     grid.setAttribute('y2', String(gridY)); grid.setAttribute('stroke', '#dbe5e9'); svg.append(grid);
     const label = document.createElementNS(ns, 'text'); label.setAttribute('x', String(pad.left-8));
     label.setAttribute('y', String(gridY+4)); label.setAttribute('text-anchor', 'end');
-    label.textContent = eur(value); svg.append(label);
+    label.style.fontSize = `${tickFontSize}px`;
+    label.textContent = formatTick(value); svg.append(label);
   }
   for (const item of series) {
     const path = document.createElementNS(ns, 'path');
@@ -633,8 +676,8 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
     if (item.planned) path.setAttribute('stroke-dasharray', '8 6');
     path.setAttribute('aria-label', item.label); svg.append(path);
   }
-  [0, Math.floor((daily.length - 1) / 2), daily.length - 1].filter((value, index, all) => all.indexOf(value) === index).forEach(index => {
-    const label = document.createElementNS(ns, 'text'); label.setAttribute('x', String(x(index))); label.setAttribute('y', String(height - 12)); label.setAttribute('text-anchor', index === 0 ? 'start' : index === daily.length - 1 ? 'end' : 'middle'); label.textContent = String(daily[index].date || '').slice(5); svg.append(label);
+  planActualMonthDateTicks(daily, width - pad.left - pad.right).forEach(({index, label: text}) => {
+    const label = document.createElementNS(ns, 'text'); label.setAttribute('x', String(x(index))); label.setAttribute('y', String(height - 12)); label.setAttribute('text-anchor', index === 0 ? 'start' : index === daily.length - 1 ? 'end' : 'middle'); label.textContent = text; svg.append(label);
   });
 }
 
@@ -1334,6 +1377,7 @@ function planActualSetupCockpitTabs() {
       const selected = current === tab; current.setAttribute('aria-selected', String(selected)); current.tabIndex = selected ? 0 : -1;
       $(current.getAttribute('aria-controls')).hidden = !selected;
     }
+    if (tab.id === 'plan-actual-tab-trend') planActualScheduleMonthChartResize();
     tab.focus();
   };
   tabs.forEach(tab => tab.addEventListener('click', () => {
@@ -1720,6 +1764,7 @@ async function planActualCompare() {
     planActualRender(result);
     $('plan-actual-result').hidden = false;
     $('plan-actual-result').dataset.loaded = 'true';
+    planActualScheduleMonthChartResize();
     return true;
   } catch (error) {
     if (!current()) return false;
@@ -1783,8 +1828,29 @@ async function planActualEnsureLoaded() {
     await planActualMetadata();
     if ($('plan-actual-revision').value && !$('plan-actual-result').dataset.loaded) {
       await planActualCompare();
+    } else if ($('plan-actual-result').dataset.loaded) {
+      planActualScheduleMonthChartResize();
     }
   } catch (error) { planActualSetStatus(error.message, true); }
+}
+
+let planActualMonthResizeTimer = null;
+function planActualScheduleMonthChartResize() {
+  window.clearTimeout(planActualMonthResizeTimer);
+  if (planActualTrendRange !== 'month' || !$('plan-actual-result').dataset.loaded
+      || $('plan-actual-result').hidden || $('plan-actual-cockpit').hidden
+      || $('plan-actual-panel-trend').hidden) return;
+  // Reuse the loaded comparison; resizing the SVG must never request or recalculate data.
+  planActualMonthResizeTimer = window.setTimeout(() => {
+    planActualMonthResizeTimer = null;
+    const result = window.planActualLatestResult;
+    if (!result || planActualTrendRange !== 'month'
+        || !$('plan-actual-result').dataset.loaded || $('plan-actual-result').hidden
+        || $('plan-actual-cockpit').hidden || $('plan-actual-panel-trend').hidden
+        || !$('plan-actual-daily-chart').parentNode?.clientWidth) return;
+    planActualRenderDaily(result.daily, result.daily_metadata,
+      result.daily_by_person, result.account_balance_change);
+  }, 120);
 }
 
 $('plan-actual-load').addEventListener('click', () => run(planActualCompare));
@@ -1803,3 +1869,5 @@ $('plan-actual-person-toggle').addEventListener('change', planActualInvalidateCo
 $('plan-actual-mapping-save').addEventListener('click', () => run(planActualSaveMappings));
 window.addEventListener('hashchange', planActualEnsureLoaded);
 window.addEventListener('load', planActualEnsureLoaded);
+window.addEventListener('resize', planActualScheduleMonthChartResize);
+window.addEventListener('orientationchange', planActualScheduleMonthChartResize);
