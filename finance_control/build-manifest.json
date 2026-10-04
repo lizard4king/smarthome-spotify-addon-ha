@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.3",
+  "addon_version": "0.2.4",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -91,7 +91,7 @@
     "payment_status.py": "a5b618b67d96d05a0c0025bc7a40ecf849aed3b9e45c0f5b01f33cc51dfbaefc",
     "payment_status_sync.py": "72d3c22909c57e5540ddd6cb440ece90188a17a53fece5e7102547bdc00b58af",
     "person_attribution.py": "5a2f895f2b4fb54daef9459103a9c4c3b8e27c9fd23bd1a57f0ef68be70ef1d1",
-    "plan_actual.py": "67d97201d00039b978ac671ae9b266a1bf03eea0109626934517ed375946d31f",
+    "plan_actual.py": "55f274206675a1185a3447d5da16d3ae03b6b65e20b2d552ef448ca7c914f28e",
     "planning.py": "ed9e7ac506108e0bab36327a153040f6510993ece89c8c519f4b721b797e6fb4",
     "providers.py": "55025deb5dba67e64b7f12849a64da144da9bc722b699c89eec1cd3781cbc4ef",
     "read_api.py": "9b768baeca1987803ea64d4f2d758c9ca169ba61bebd037d7b6ea0151cc6f89e",
@@ -113,19 +113,19 @@
     "static/budget.js": "ea3023482093ef21eba12b4ecb97b9e0bf81e9d4c85853fe4f857b38b3906502",
     "static/classification.js": "06b4dfbfd5253d7ee8f534b3821fbd745c909711a3b62182dcaf78ab39eef9af",
     "static/finanzguru.js": "93be375aba7e94f8952b0fde451d130db36e6ff815dbffcc560438ae3ca8c5fb",
-    "static/index.html": "0a746bb1ca7b93f4b7f682d6759e863fa34203b3ccc2ed8e3857ae557540a753",
+    "static/index.html": "1d4d60830282eb6dbb23e0cb6233a781684fcba8fb9436b91d754ef6d734e03c",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/monthly.js": "1d339cf392ec69c3186c4c06a726c0c6c497ce842a393d086306397360b4f97b",
-    "static/plan_actual.js": "a4c3e495a50968be1091dce841b5ee4305af6a8ed64854f0ddf652baee840992",
-    "static/style.css": "1cc923caeed718cd9175e02c6938e1509828dc991724f7bdee87f4f71061e118",
+    "static/plan_actual.js": "d50bae02ce3f6073f919e2fb922ba7ffbe77cf3e6dfe5c470a9f7ebc3beaa9d3",
+    "static/style.css": "ab3a72e8d95f80b8ab483dea6bb36103d217b69416286e42a1c0b860617a4e36",
     "static/tabs.js": "515f60582b198fbdcbe892725840c88a6a5bc73cca9aa1fa8ad1f2b575d36e1b",
     "static/wealth.js": "5853064d6054f5f695c9bb38872a96c2429385bd0c8009af2e615f256db6ac34",
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "1eb55db0d79e7cdbf2d069a204cdd784c097cec7e4c1f76b072ded7b32dc51c9",
     "wealth.py": "3c420811efd92f40a97de2a0f1f570f5fe358c17c245c9f65b197871d7cf7179",
-    "web.py": "20295c653d04477c064b49b79c9e31f4e67bb7551fd0a76db2c26d13645d5abf"
+    "web.py": "af565ff9d27ac296bce356a134bf6be0503f98165f126bd68bccb613947424f8"
   },
   "schema_version": 1,
-  "source_commit": "b78c1ddd9a98256abba3e3c0b4558d89b4ac2a65",
-  "source_tree_sha256": "ce4321a762f4043cefce33c9750674919a758032475f92a2e7c3f64ebc385664"
+  "source_commit": "6294b1554aff7fc2751590ddf0e724ef4f5413f4",
+  "source_tree_sha256": "e75941f484fc359b3a9adb95a68bd397387a886b8a0bdf245b3283de11a28d7c"
 }

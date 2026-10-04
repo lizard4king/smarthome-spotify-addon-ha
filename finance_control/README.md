@@ -1,6 +1,6 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.3` runs the current `src/finance_control` package inside a Home
+Version `0.2.4` runs the current `src/finance_control` package inside a Home
 Assistant add-on. Build an installable add-on context from the repository with
 `scripts/build_homeassistant_addon.py`; the resulting `.tar.gz` is written outside
 the repository and includes a source manifest. The package keeps source provenance in `build-manifest.json`; no private data
@@ -41,3 +41,5 @@ database restore and a successful application start have been verified.
 
 See the [Finance Control server documentation](https://github.com/lizard4king/finance-control/blob/main/docs/homeassistant-server.md)
 for build, access, backup, and migration requirements.
+
+Version `0.2.4` distinguishes saved monthly budgets from months without a plan, improves month navigation and historical cockpit labels, and exposes audited single-leg transfer corrections through the existing API.

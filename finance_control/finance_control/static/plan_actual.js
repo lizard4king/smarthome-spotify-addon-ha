@@ -25,6 +25,7 @@ async function planActualEnsureTrend() {
       || personBreakdown !== $('plan-actual-person-toggle').checked) return null;
   window.planActualLatestResult = enriched;
   if (enriched.available_from_month) $('plan-actual-month').min = enriched.available_from_month;
+  planActualUpdateMonthNavigation();
   return enriched;
 }
 
@@ -227,7 +228,7 @@ function planActualCoverageItem(parent, label, count, value, context, id) {
   card.append(details); parent.append(card);
 }
 
-function planActualRenderCoverage(coverage) {
+function planActualRenderCoverage(coverage, planAvailable = true) {
   const target = $('plan-actual-coverage'); target.replaceChildren();
   const hasAction = Number(coverage.unclassified?.count || 0) > 0
     || Number(coverage.unmapped?.count || 0) > 0;
@@ -235,7 +236,7 @@ function planActualRenderCoverage(coverage) {
   if (!hasAction) return;
   planActualCoverageItem(target, 'Kategorie noch offen', coverage.unclassified.count,
     coverage.unclassified.absolute, planActualContext('unclassified'), 'plan-actual-unclassified-details');
-  planActualCoverageItem(target, 'Bestätigt, aber keiner Planposition zugeordnet', coverage.unmapped.count,
+  planActualCoverageItem(target, planAvailable ? 'Bestätigt, aber keiner Planposition zugeordnet' : 'Bestätigte Ist-Buchungen ohne Zuordnung', coverage.unmapped.count,
     Number(coverage.unmapped.income || 0) + Number(coverage.unmapped.expenses || 0),
     planActualContext('unmapped'), 'plan-actual-unmapped-details');
   const excluded = document.createElement('article');
@@ -378,6 +379,9 @@ function planActualRenderPayday(payday) {
 }
 
 function planActualMoney(value) { return eur(Number(value || 0)); }
+function planActualPlanMoney(value, direction = null) {
+  return value == null ? '—' : planActualSignedEur(value, direction);
+}
 function planActualAvailable(value) { return eur(Math.max(0, Number(value || 0))); }
 function planActualTreePlanIst(value, kind) {
   return kind === 'expense' ? planActualSignedEur(value, 'expense') : planActualMoney(value);
@@ -566,12 +570,13 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
     return;
   }
   svg.setAttribute('aria-label', planActualTrendCumulative
-    ? 'Kumulierte Plan- und Ist-Werte im Monatsverlauf'
-    : 'Tägliche Plan- und Ist-Einzelwerte im Monatsverlauf');
+    ? `${result?.plan_available === false ? 'Kumulierte Ist-Werte' : 'Kumulierte Plan- und Ist-Werte'} im Monatsverlauf`
+    : `${result?.plan_available === false ? 'Tägliche Ist-Einzelwerte' : 'Tägliche Plan- und Ist-Einzelwerte'} im Monatsverlauf`);
   if (heading) heading.textContent = planActualTrendCumulative
     ? 'Kumulierter Verlauf im Monat' : 'Tageswerte im Monat';
   const reconstructed = result?.basis?.plan_source === 'reconstructed_from_monthly_actuals';
-  note.textContent = `Gebucht bis ${metadata?.as_of || daily.at(-1).date}. ${reconstructed
+  note.textContent = `Gebucht bis ${metadata?.as_of || daily.at(-1).date}. ${result?.plan_available === false
+    ? 'Kein gespeicherter Monatsplan; gezeigt werden nur Ist-Buchungen.' : reconstructed
     ? 'Der historische Plan entspricht den Ist-Buchungen dieses Monats, einschließlich der Buchungstage. Die Nullabweichung folgt aus dieser Rekonstruktion und ist kein unabhängiger Plan-Ist-Nachweis.'
     : planActualTrendCumulative
     ? 'Eindeutig datierte Planbeträge sind als Stufen enthalten; der übrige Monatsplan wird zeitanteilig verteilt.'
@@ -583,7 +588,7 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
     {key: 'planned_cumulative_expenses', label: 'Plan-Ausgaben (Betrag)', color: '#b34435', planned: true},
     {key: 'cumulative_income', label: 'Ist-Einnahmen', color: '#28734b'},
     {key: 'planned_cumulative_income', label: 'Plan-Einnahmen', color: '#28734b', planned: true},
-  ];
+  ].filter(item => !item.planned || result?.plan_available !== false);
   if (planActualTrendCumulative && accountBalance?.available && balanceForView?.points?.length) {
     series.push({key: 'change', label: 'Kontostandsänderung Girokonto',
       color: '#34495e', balance: true});
@@ -680,6 +685,7 @@ function planActualMonthDailyValues(points, cumulative) {
   return points.map(point => {
     const values = {...point};
     for (const key of Object.keys(previous)) {
+      if (point[key] == null) { values[key] = null; continue; }
       const current = Number(point[key] || 0);
       values[key] = (key.includes('expenses') ? Math.abs(current - previous[key])
         : current - previous[key]);
@@ -716,8 +722,10 @@ function planActualDailyCumulativeRange(sourcePoints, startDate, view, balanceAv
   return points.map(point => {
     const values = {};
     for (const key of ['actual_income', 'actual_expenses', 'planned_income', 'planned_expenses']) {
-      const delta = Number(point[`${key}_delta`] || 0);
-      running[key] += delta;
+      const raw = point[`${key}_delta`];
+      const delta = raw == null && key.startsWith('planned_') ? null : Number(raw || 0);
+      // Once a planned day is unavailable, its cumulative series is unknown for the range.
+      running[key] = delta == null || running[key] == null ? null : running[key] + delta;
       values[key] = cumulative ? running[key] : delta;
     }
     if (balanceAvailable && point.balance_change_delta !== null)
@@ -751,11 +759,13 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
   legend.replaceChildren();
   const hasBalance = cumulative && months.some(row => row.balance_available
     && row.balance_change?.[view] !== undefined);
+  const hasPlan = months.some(row => row.plan?.[view]?.income != null
+    || row.plan?.[view]?.expenses != null);
   const series = [
     {key: 'expenses', source: 'actual', label: 'Ist-Ausgaben (Betrag)', color: '#b34435'},
-    {key: 'expenses', source: 'plan', label: 'Plan-Ausgaben (Betrag)', color: '#b34435', planned: true},
+    ...(hasPlan ? [{key: 'expenses', source: 'plan', label: 'Plan-Ausgaben (Betrag)', color: '#b34435', planned: true}] : []),
     {key: 'income', source: 'actual', label: 'Ist-Einnahmen', color: '#28734b'},
-    {key: 'income', source: 'plan', label: 'Plan-Einnahmen', color: '#28734b', planned: true},
+    ...(hasPlan ? [{key: 'income', source: 'plan', label: 'Plan-Einnahmen', color: '#28734b', planned: true}] : []),
     ...(hasBalance ? [{key: 'balance', source: 'balance', label: 'Kontostandsänderung (rechte Achse)', color: '#34495e'}] : []),
   ];
   for (const item of series) {
@@ -771,22 +781,22 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
     note.textContent = 'Für den gewählten Zeitraum sind keine Monatswerte verfügbar.';
     return;
   }
-  svg.setAttribute('aria-label', `${granularity === 'daily' ? 'Tagesgenaue' : 'Monatliche'} ${cumulative ? 'kumulierte' : 'einzelne'} Plan- und Ist-Werte im Zeitraum${hasBalance ? ' mit Kontostandsänderung' : ''}`);
+  svg.setAttribute('aria-label', `${granularity === 'daily' ? 'Tagesgenaue' : 'Monatliche'} ${cumulative ? 'kumulierte' : 'einzelne'} ${hasPlan ? 'Plan- und Ist-Werte' : 'Ist-Werte'} im Zeitraum${hasBalance ? ' mit Kontostandsänderung' : ''}`);
   const savedProjection = months.some(row => row.plan_source === 'saved_revision_projection');
   const fixedActuals = months.some(row => row.plan_source === 'reconstructed_from_monthly_actuals');
-  const monthlyProjection = months.some(row => row.plan_source === 'monthly_budget_projection');
   const planNote = [
     fixedActuals
       ? 'Für Monate mit Ist-Rückblick wird der Gesamtplan aus den Ist-Buchungen dieses Monats rekonstruiert. Die Nullabweichung dort ist kein unabhängiger Plan-Ist-Nachweis.'
       : '',
-    monthlyProjection
-      ? `Monate mit Budget-Übertrag verwenden den monatlichen Budgetplan der gewählten Revision ${trend.revision}, ohne Einmal- und Mehrmonatspositionen.`
-      : '',
     savedProjection
       ? `Weitere Monate innerhalb Revision ${trend.revision} verwenden die dort gespeicherten Budgetpositionen.`
       : '',
-    !fixedActuals && !monthlyProjection && !savedProjection
+    !fixedActuals && !savedProjection && hasPlan
       ? `Planwerte aus Revision ${trend.revision}.` : '',
+    months.some(row => row.plan_source === 'no_saved_budget')
+      ? 'Für Monate ohne gespeicherten Plan fehlen Plan- und Abweichungswerte.' : '',
+    cumulative && months.some(row => row.plan_source === 'no_saved_budget')
+      ? 'Kumulierte Planlinie endet, sobald ein Monatsplan fehlt; spätere vorhandene Monatspläne sind als Einzelwerte sichtbar.' : '',
   ].filter(Boolean).join(' ');
   const valueLabel = cumulative ? 'ab Zeitraumstart laufend kumuliert' : 'als Einzelwerte je Tag bzw. Monat';
   const endRow = months.at(-1);
@@ -803,7 +813,9 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
       if (!row.balance_available || row.balance_change?.[view] === undefined) return null;
       return Number(row.balance_change[view]);
     }
-    const amount = Number(row[item.source]?.[view]?.[item.key] || 0);
+    const raw = row[item.source]?.[view]?.[item.key];
+    if (raw == null) return null;
+    const amount = Number(raw);
     return Math.abs(amount);
   };
   const comparisonValues = months.flatMap(row => series.filter(item => item.source !== 'balance')
@@ -867,7 +879,7 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
     if (!points.length) continue;
     const path = document.createElementNS(ns, 'path');
     path.setAttribute('d', points.map((point, index) =>
-      `${index ? 'L' : 'M'} ${x(point.index)} ${yFor(point.value, item)}`).join(' '));
+      `${index && point.index === points[index - 1].index + 1 ? 'L' : 'M'} ${x(point.index)} ${yFor(point.value, item)}`).join(' '));
     path.setAttribute('fill', 'none'); path.setAttribute('stroke', item.color);
     path.setAttribute('stroke-width', item.source === 'balance' ? '4' : '3');
     if (item.planned) path.setAttribute('stroke-dasharray', '8 6');
@@ -900,6 +912,13 @@ function planActualMonthlyRangeValues(months, view, cumulative) {
       const values = {...(row[series]?.[view] || {})};
       for (const key of ['income', 'expenses']) {
         const totalKey = `${series}:${key}`;
+        // A cumulative plan from the period start is unknown after its first missing month.
+        // Keep it null; a zero or restart would imply a complete continuous plan.
+        if (series === 'plan' && (values[key] == null || totals[totalKey] === null)) {
+          totals[totalKey] = null;
+          values[key] = null;
+          continue;
+        }
         totals[totalKey] = (totals[totalKey] || 0) + Number(values[key] || 0);
         values[key] = totals[totalKey];
       }
@@ -988,6 +1007,7 @@ function planActualNodeDelta(node) {
 }
 
 function planActualIncomeStatus(node) {
+  if (node.planned == null) return {label: 'Kein gespeicherter Monatsplan', className: 'no_actual'};
   const planned = Number(node.planned || 0), actual = Number(node.actual || 0);
   if (actual > planned + .005) return {label: 'Über Plan eingegangen', className: 'income-over'};
   if (actual >= planned - .005) return {label: 'Exakt im Plan', className: 'income-exact'};
@@ -996,6 +1016,7 @@ function planActualIncomeStatus(node) {
 }
 
 function planActualExpenseStatus(node) {
+  if (node.planned == null) return {label: 'Kein gespeicherter Monatsplan', className: 'no_actual'};
   const planned = Number(node.planned || 0), actual = Number(node.actual || 0);
   const remaining = Number(node.remaining || 0);
   if (!planned && actual) return {label: 'Ohne Budget', className: 'unbudgeted'};
@@ -1040,14 +1061,14 @@ function planActualRenderTree(tree) {
       row.append(toggle);
       const label = document.createElement('strong'); label.textContent = node.label || 'Ohne Bezeichnung'; row.append(label);
       const groupSummary = document.createElement('span'); groupSummary.className = 'plan-actual-tree-group-values';
-      groupSummary.textContent = `Plan ${planActualTreePlanIst(node.planned, kind)} · Ist ${planActualTreePlanIst(node.actual, kind)} · Rest ${planActualMoney(node.remaining)}`; row.append(groupSummary);
+      groupSummary.textContent = `Plan ${node.planned == null ? '—' : planActualTreePlanIst(node.planned, kind)} · Ist ${planActualTreePlanIst(node.actual, kind)} · Rest ${node.remaining == null ? '—' : planActualMoney(node.remaining)}`; row.append(groupSummary);
       parent.append(row); parent.append(nested); children.forEach(child => renderNode(child, nested, level + 1, branchKind));
       return;
     }
     const label = document.createElement('strong'); label.textContent = node.label || 'Ohne Bezeichnung'; row.append(label);
-    const plan = document.createElement('span'); plan.textContent = `Plan ${planActualTreePlanIst(node.planned, branchKind)}`; row.append(plan);
+    const plan = document.createElement('span'); plan.textContent = `Plan ${node.planned == null ? '—' : planActualTreePlanIst(node.planned, branchKind)}`; row.append(plan);
     const actual = document.createElement('span'); actual.textContent = `Ist ${planActualTreePlanIst(node.actual, branchKind)}`; row.append(actual);
-    const rest = document.createElement('span'); rest.textContent = `Rest ${planActualMoney(node.remaining)}`; row.append(rest);
+    const rest = document.createElement('span'); rest.textContent = `Rest ${node.remaining == null ? '—' : planActualMoney(node.remaining)}`; row.append(rest);
     const status = document.createElement('span');
     if (branchKind === 'unclassified' || kind === 'unclassified') {
       status.textContent = 'Noch nicht eingeordnet'; status.className = 'plan-actual-state near_limit';
@@ -1085,19 +1106,25 @@ function planActualRenderCockpit(result) {
     $('plan-actual-view-note').textContent = 'Cockpitdaten fehlen; die klassische Ansicht wird verwendet.';
     planActualSetView('classic', false); return;
   }
-  $('plan-actual-view-note').textContent = 'Cockpit: verfügbare Mittel und Zeiträume. Klassisch: vollständige Plan-Ist-Tabelle.';
+  $('plan-actual-view-note').textContent = result.plan_available === false
+    ? 'Ist-Buchungen im Cockpit; klassische Ansicht mit vollständiger Buchungszuordnung.'
+    : 'Cockpit: verfügbare Mittel und Zeiträume. Klassisch: vollständige Plan-Ist-Tabelle.';
   const historical = planActualIsHistorical(result);
   const payday = historical ? null : result.payday;
+  const actualOnly = historical || result.plan_available === false;
+  $('plan-actual-cockpit').dataset.historical = String(actualOnly);
   const freeCard = $('plan-actual-free-title').closest('.plan-actual-free-card');
-  freeCard.querySelector('.eyebrow').textContent = historical ? 'RÜCKBLICK' : 'BIS ZUM NÄCHSTEN GEHALT';
-  $('plan-actual-free-title').textContent = historical ? 'Ist-Cashflow (Monatsüberschuss)' : 'Kurzfristig frei ausgebbar';
+  // A planned historical month shows actual cashflow in the bridge, once only.
+  freeCard.hidden = historical && result.plan_available !== false;
+  freeCard.querySelector('.eyebrow').textContent = actualOnly ? `IST · ${result.month}` : 'BIS ZUM NÄCHSTEN GEHALT';
+  $('plan-actual-free-title').textContent = actualOnly ? 'Ist-Cashflow (Monatsüberschuss)' : 'Kurzfristig frei ausgebbar';
   $('plan-actual-free-value').textContent = payday?.available
     ? planActualAvailable(payday.total_free_spendable)
-    : historical ? planActualSignedEur(result.totals?.actual_cashflow ?? 0) : 'Nicht verfügbar';
+    : actualOnly ? planActualSignedEur(result.totals?.actual_cashflow ?? 0) : 'Nicht verfügbar';
   const salaryDates = [...new Set((payday?.cycles || []).map(cycle => cycle.next_salary_date).filter(Boolean))];
   $('plan-actual-free-period').textContent = payday?.available
     ? `Nach erfassten Fälligkeiten bis zum Gehalt am ${salaryDates.map(planActualDate).join(' und ')}. Zeitraum: heute bis zu diesem Termin.`
-    : historical ? 'Monatsüberschuss aus Ist-Einnahmen minus Ist-Ausgaben, kein Kontostand. Personenzuordnung nach Inhaberschaft der Buchungskonten.'
+    : actualOnly ? 'Ist-Einnahmen minus Ist-Ausgaben; kein Kontostand. Personenzuordnung nach Inhaberschaft der Buchungskonten.'
       : 'Für diesen Zeitraum liegen keine bestätigten Gehaltsdaten vor.';
   planActualRenderDataQuality(result.data_quality);
   const split = $('plan-actual-free-split'); split.replaceChildren();
@@ -1118,17 +1145,20 @@ function planActualRenderCockpit(result) {
     split.append(cap);
   }
   window.planActualLatestResult = result;
-  planActualRenderSurplusBridge(result.surplus_bridge, historical, result);
+  planActualRenderSurplusBridge(result.surplus_bridge, historical && result.plan_available !== false, result);
   planActualRenderDue(payday);
-  $('plan-actual-due-list').closest('.plan-actual-due').hidden = historical;
+  $('plan-actual-due-list').closest('.plan-actual-due').hidden = historical || result.plan_available === false;
   $('plan-actual-tab-accounts').textContent = historical ? 'Konten-Rückblick' : 'Konten bis Gehalt';
   $('plan-actual-panel-accounts').querySelector('h3').textContent = historical
     ? 'Konten-Rückblick' : 'Konten bis Gehalt';
   planActualRenderDaily(result.daily, result.daily_metadata, result.daily_by_person,
     result.account_balance_change);
+  $('plan-actual-differences-only').checked = result.plan_available === false
+    ? false : $('plan-actual-differences-only').checked;
+  $('plan-actual-differences-only').disabled = result.plan_available === false;
   planActualRenderTree(result.tree);
-  planActualRenderCockpitAccounts(historical
-    ? {...result, payday: null, liquidity: null, historical: true} : result);
+  planActualRenderCockpitAccounts(historical || result.plan_available === false
+    ? {...result, payday: null, liquidity: null, historical} : result);
   const preferred = sessionStorage.getItem('finance-control-plan-actual-view') || 'cockpit';
   planActualSetView(preferred);
 }
@@ -1188,8 +1218,10 @@ function planActualRenderSurplusBridge(bridge, historical = false, result = null
   if (historical) {
     const summary = planActualHistoricalCashflow(result);
     section.hidden = false;
+    $('plan-actual-surplus-eyebrow').textContent = `RÜCKBLICK · ${result.month}`;
+    $('plan-actual-surplus-joint-note').hidden = true;
     $('plan-actual-surplus-title').textContent = 'Ist- und Planwerte des Monats';
-    $('plan-actual-surplus-note').textContent = 'Ist-Cashflow bedeutet Monatsüberschuss aus Ist-Einnahmen minus Ist-Ausgaben, kein Kontostand. Personensummen folgen der Inhaberschaft der Buchungskonten.';
+    $('plan-actual-surplus-note').textContent = 'Ist-Cashflow bedeutet Monatsüberschuss aus Ist-Einnahmen minus Ist-Ausgaben; kein Kontostand. Personensummen folgen der Inhaberschaft der Buchungskonten.';
     $('plan-actual-surplus-remaining').textContent = planActualSignedEur(summary.actualCashflow);
     const steps = $('plan-actual-surplus-steps'); steps.replaceChildren();
     const values = [
@@ -1212,6 +1244,8 @@ function planActualRenderSurplusBridge(bridge, historical = false, result = null
   }
   if (!bridge?.confirmed) { section.hidden = true; return; }
   section.hidden = false;
+  $('plan-actual-surplus-eyebrow').textContent = 'MONATSRAHMEN';
+  $('plan-actual-surplus-joint-note').hidden = false;
   $('plan-actual-surplus-title').textContent = 'Geplanter Monatssaldo';
   $('plan-actual-surplus-note').textContent = 'Unverplanter Rest einschließlich verfügbarer Budgets. Dieser Rahmen ist nicht vollständig sofort auf den Konten verfügbar.';
   const spendable = bridge.household_split?.spendable;
@@ -1319,7 +1353,7 @@ function planActualSetupCockpitTabs() {
   $('plan-actual-classic-mode').addEventListener('click', () => planActualSetView('classic'));
 }
 
-function planActualAppendMetricGroups(container, totals) {
+function planActualAppendMetricGroups(container, totals, planAvailable = true) {
   const groups = document.createElement('div'); groups.className = 'plan-actual-person-metric-groups';
   const metrics = [
     ['Einnahmen', totals.income], ['Ausgaben', totals.expenses], ['Saldo', totals.balance],
@@ -1335,8 +1369,9 @@ function planActualAppendMetricGroups(container, totals) {
       const item = document.createElement('div'), name = document.createElement('span'),
         amount = document.createElement('strong');
       name.textContent = title;
-      amount.textContent = variance ? planActualSignedEur(value) : eur(value);
-      if (variance) amount.className = `plan-actual-person-variance ${planActualVarianceClass(value)}`;
+      amount.textContent = (title !== 'Ist' && !planAvailable) ? '—'
+        : variance ? planActualSignedEur(value) : eur(value);
+      if (variance && planAvailable) amount.className = `plan-actual-person-variance ${planActualVarianceClass(value)}`;
       item.append(name, amount); grid.append(item);
     }
     group.append(grid); groups.append(group);
@@ -1353,8 +1388,8 @@ function planActualRenderPeople(result) {
   section.hidden = !breakdown;
   if (!breakdown) return;
   $('plan-actual-person-basis').textContent =
-    `Plan: ${breakdown.planned_basis}. Ist: ${breakdown.actual_basis}. `+
-    'Plan und Ist folgen der hinterlegten Kontozuordnung: persönliche Konten vollständig zur Person, Gemeinschaftskonto vollständig zu Gemeinsam. Eine Haushaltsquote wird hier nicht angewendet; maßgeblich ist das zugeordnete Konto, nicht zwingend die Person am Einkauf.';
+    `${result.plan_available === false ? 'Kein gespeicherter Monatsplan. ' : `Plan: ${breakdown.planned_basis}. `}Ist: ${breakdown.actual_basis}. `+
+    'Persönliche Konten zählen vollständig zur Person, Gemeinschaftskonten zu Gemeinsam; keine Haushaltsquote.';
   const bucketOrder = ['ANDREAS', 'ERLENE', 'JOINT'];
   const individualScope = result.reporting_scope?.mode === 'individual';
   const includedIds = individualScope
@@ -1364,7 +1399,7 @@ function planActualRenderPeople(result) {
   totalHeading.textContent = planActualReportingTotalLabel(result.reporting_scope, breakdown.people);
   totalBox.setAttribute('aria-label', totalHeading.textContent);
   totalBox.append(totalHeading);
-  planActualAppendMetricGroups(totalBox, totals);
+  planActualAppendMetricGroups(totalBox, totals, result.plan_available !== false);
   const people = [...planActualVisiblePeople(breakdown.people, result.reporting_scope)]
     .sort((left, right) => {
     const leftIndex = bucketOrder.indexOf(left.id), rightIndex = bucketOrder.indexOf(right.id);
@@ -1375,13 +1410,13 @@ function planActualRenderPeople(result) {
     const card = document.createElement('article'); card.className = 'plan-actual-person-card';
     const heading = document.createElement('h4'); heading.textContent = person.label;
     card.append(heading);
-    planActualAppendMetricGroups(card, planActualPersonTotals(breakdown, [person.id]));
+    planActualAppendMetricGroups(card, planActualPersonTotals(breakdown, [person.id]), result.plan_available !== false);
     const rows = planActualPersonDetailRows(result, person.id);
     if (rows.length) {
       const details = document.createElement('details'), summary = document.createElement('summary'),
         tableWrap = document.createElement('div'), table = document.createElement('table'), head = document.createElement('thead'),
         header = document.createElement('tr'), body = document.createElement('tbody');
-      summary.textContent = `${rows.length} Positionen · nach Abweichung sortiert`;
+      summary.textContent = `${rows.length} Positionen · ${result.plan_available === false ? 'nach Istbetrag' : 'nach Abweichung'} sortiert`;
       tableWrap.className = 'plan-actual-person-table-wrap';
       table.className = 'plan-actual-person-table';
       for (const text of ['Art', 'Planposition', 'Plan', 'Ist', 'Abweichung']) {
@@ -1392,10 +1427,10 @@ function planActualRenderPeople(result) {
         const entry = document.createElement('tr'), label = document.createElement('th');
         const type = document.createElement('td'); type.textContent = kind === 'income' ? 'Einnahme' : 'Ausgabe'; entry.append(type);
         label.scope = 'row'; label.textContent = row.label; entry.append(label);
-        for (const [index, text] of [eur(rowPlanned), eur(rowActual),
-          planActualSignedEur(planActualVariance(rowActual, rowPlanned))].entries()) {
+        for (const [index, text] of [result.plan_available === false ? '—' : eur(rowPlanned), eur(rowActual),
+          result.plan_available === false ? '—' : planActualSignedEur(planActualVariance(rowActual, rowPlanned))].entries()) {
           const amount = document.createElement('td'); amount.textContent = text;
-          if (index === 2) amount.className = `plan-actual-person-variance ${planActualVarianceClass(planActualVariance(rowActual, rowPlanned))}`;
+          if (index === 2 && result.plan_available !== false) amount.className = `plan-actual-person-variance ${planActualVarianceClass(planActualVariance(rowActual, rowPlanned))}`;
           entry.append(amount);
         }
         body.append(entry);
@@ -1409,28 +1444,31 @@ function planActualRenderPeople(result) {
 
 function planActualRender(result) {
   $('plan-actual-result').hidden = false;
+  const planAvailable = result.plan_available !== false;
+  $('plan-actual-no-plan').hidden = planAvailable;
   const retrospective = result.basis?.type === 'retrospective_reference';
-  const monthlyProjection = result.basis?.type === 'monthly_budget_projection';
   const historical = planActualIsHistorical(result);
-  $('plan-actual-revision-label').textContent = `Revision ${result.revision} · ${result.month}${retrospective ? ' · Monatsrückblick aus Ist-Buchungen' : monthlyProjection ? ' · monatlicher Budgetplan' : ''}`;
+  $('plan-actual-revision-label').textContent = `${result.month} · ${planAvailable ? `Revision ${result.revision}${retrospective ? ' · Monatsrückblick aus Ist-Buchungen' : ''}` : 'kein gespeicherter Monatsplan'}`;
   if (result.available_from_month)
     $('plan-actual-month').min = result.available_from_month;
-  $('plan-actual-planned-expenses').textContent = planActualSignedEur(
+  planActualUpdateMonthNavigation();
+  $('plan-actual-planned-expenses').textContent = planActualPlanMoney(
     result.totals.planned_expenses, 'expense');
   $('plan-actual-expenses').textContent = planActualSignedEur(
     result.totals.actual_expenses, 'expense');
-  $('plan-actual-fixed-remaining').textContent = planActualSignedEur(
+  $('plan-actual-fixed-remaining').textContent = planActualPlanMoney(
     result.totals.remaining_fixed_expenses, 'expense');
-  $('plan-actual-variable-remaining').textContent = eur(result.totals.remaining_variable_budget);
-  $('plan-actual-estimated-remaining').textContent = planActualSignedEur(
+  $('plan-actual-variable-remaining').textContent = result.totals.remaining_variable_budget == null
+    ? '—' : eur(result.totals.remaining_variable_budget);
+  $('plan-actual-estimated-remaining').textContent = planActualPlanMoney(
     result.totals.remaining_estimated_expenses, 'expense');
   $('plan-actual-open-count').textContent = String(result.unclassified.count || 0);
-  planActualRenderPayday(historical ? null : result.payday);
-  planActualRenderLiquidity(historical ? null : result.liquidity);
+  planActualRenderPayday(historical || !planAvailable ? null : result.payday);
+  planActualRenderLiquidity(historical || !planAvailable ? null : result.liquidity);
   planActualRenderPeople(result);
   planActualRenderCockpit(result);
   planActualRenderCoverage({unmapped: result.unmapped, unclassified: result.unclassified,
-    excluded: result.excluded || {}});
+    excluded: result.excluded || {}}, planAvailable);
   const body = $('plan-actual-rows'); body.replaceChildren();
   const appendUnmappedRow = (label, value, suffix, contextType) => {
     if (!Number(value || 0)) return;
@@ -1438,8 +1476,8 @@ function planActualRender(result) {
     const row = document.createElement('tr'); row.className = `plan-actual-unmapped-row ${direction}`;
     cell(row, label); cell(row, '—', true); cell(row, planActualSignedEur(value, direction), true);
     cell(row, '—', true);
-    const stateCell = cell(row, 'Zuordnung zu Planposition offen');
-    stateCell.className = `plan-actual-state ${direction === 'expense' ? 'unbudgeted' : 'near_limit'}`;
+    const stateCell = cell(row, planAvailable ? 'Zuordnung zu Planposition offen' : 'Kein gespeicherter Monatsplan');
+    stateCell.className = `plan-actual-state ${planAvailable && direction === 'expense' ? 'unbudgeted' : 'near_limit'}`;
     const action = cell(row, '');
     const detailId = `plan-actual-unmapped-${suffix}`;
     const detailRow = document.createElement('tr'); detailRow.hidden = true;
@@ -1474,17 +1512,19 @@ function planActualRender(result) {
   for (const item of items) {
     const index = rowIndex++;
     const row = document.createElement('tr');
-    const classification = item.kind === 'income' && Number(item.actual)
+    const classification = !planAvailable
+      ? {label: 'Kein gespeicherter Monatsplan', className: 'no_actual'}
+      : item.kind === 'income' && Number(item.actual)
       ? {label: planActualStatusLabels.income, className: 'income'}
       : planActualExpenseStatus(item);
     if (classification.className === 'unbudgeted') row.className = 'plan-actual-unbudgeted-item';
     const direction = item.kind === 'income' ? 'income' : 'expense';
     cell(row, `${item.label} · ${item.kind === 'income' ? 'Einnahme' : 'Ausgabe'}`);
-    cell(row, planActualSignedEur(item.planned, direction), true);
+    cell(row, planActualPlanMoney(item.planned, direction), true);
     cell(row, planActualSignedEur(item.actual, direction), true);
     const remaining = cell(row, classification.className === 'unbudgeted' ? '—'
-      : planActualSignedEur(item.remaining), true);
-    if (Number(item.remaining) < 0) remaining.className += ' negative';
+      : planActualPlanMoney(item.remaining), true);
+    if (item.remaining != null && Number(item.remaining) < 0) remaining.className += ' negative';
     const stateCell = cell(row, classification.label);
     stateCell.className = `plan-actual-state ${classification.className}`;
     const action = cell(row, '');
@@ -1510,8 +1550,9 @@ function planActualRender(result) {
       const hasUnmapped = owner === 'Ungeklärt' && Number(unmappedValue || 0);
       if (!ownerItems.length && !hasUnmapped) continue;
       appendOwner(planActualOwnerLabel(owner));
-      renderItems(ownerItems.filter(item => Number(item.planned) || !Number(item.actual)));
-      const unbudgeted = ownerItems.filter(item => !Number(item.planned) && Number(item.actual));
+      renderItems(ownerItems.filter(item => !planAvailable || Number(item.planned) || !Number(item.actual)));
+      const unbudgeted = planAvailable
+        ? ownerItems.filter(item => !Number(item.planned) && Number(item.actual)) : [];
       if (unbudgeted.length) {
         appendSubgroup('Sonstiges · ohne Budget');
         renderItems(unbudgeted);
@@ -1531,20 +1572,19 @@ function planActualRender(result) {
     result.unmapped.expenses, 'expenses', 'unmapped_expense',
     'Bestätigte Ist-Ausgaben · noch nicht einzeln verteilt');
   if (!body.children.length) {
-    const row = document.createElement('tr'); const empty = cell(row, 'Im gewählten Monat ist keine Planposition aktiv.');
+    const row = document.createElement('tr'); const empty = cell(row, planAvailable
+      ? 'Im gewählten Monat ist keine Planposition aktiv.' : 'Keine Ist-Buchungen im gewählten Monat.');
     empty.colSpan = 6; body.append(row);
   }
-  const basis = monthlyProjection
-    ? ` ${result.month} verwendet den monatlichen Budgetplan der gewählten Revision ${result.revision}, abgeleitet aus ${result.basis.derived_from_month}; Einmal- und Mehrmonatspositionen sind ausgeschlossen.`
-    : retrospective
-    ? (result.basis?.plan_source === 'reconstructed_from_monthly_actuals'
-      ? ` ${result.month} verwendet einen eigenen rückblickenden Plan aus den Ist-Buchungen dieses Monats.`
-      : ` ${result.month} verwendet den retrospektiven Referenzplan aus Revision ${result.revision}, abgeleitet aus ${result.basis.derived_from_month}; Einmal- und Mehrmonatspositionen sind ausgeschlossen.`)
-    : '';
+  const basis = !planAvailable ? 'Nur Istwerte.'
+    : retrospective ? (result.basis?.plan_source === 'reconstructed_from_monthly_actuals'
+      ? 'Rückblick aus Ist-Buchungen.'
+      : `Rückblick-Referenz aus ${result.basis.derived_from_month}.`)
+    : 'Gespeicherter Plan.';
   const ownerMapping = result.automatic_owner_mapping_count
     ? ` ${result.automatic_owner_mapping_count} Gehaltsbuchung wurde über die eindeutige Kontoinhaberschaft zugeordnet.` : '';
   const scopeNote = planActualReportingHistoryNote(result);
-  planActualSetStatus(`Vergleich für ${result.month} geladen.${basis}${ownerMapping}${scopeNote ? ` ${scopeNote}` : ''} Stand: ${result.generated_at || 'jetzt'}.`);
+  planActualSetStatus(`${planAvailable ? 'Vergleich' : 'Ist-Auswertung'} für ${result.month} · Revision ${result.revision} geladen. ${basis}${ownerMapping}${scopeNote ? ` ${scopeNote}` : ''}`);
 }
 
 function planActualMappingsByItem(plan) {
@@ -1602,6 +1642,7 @@ async function planActualLoadRevision(revision) {
       month.value = month.max;
   }
   planActualRenderMappings(planActualBudget.plan);
+  planActualUpdateMonthNavigation();
 }
 
 async function planActualMetadata(force = false) {
@@ -1636,8 +1677,25 @@ function planActualInvalidateComparison() {
   $('plan-actual-load').disabled = !$('plan-actual-revision').value || !$('plan-actual-month').value;
   $('plan-actual-load').setAttribute('aria-busy', 'false');
   $('plan-actual-result').hidden = true; delete $('plan-actual-result').dataset.loaded;
+  $('plan-actual-no-plan').hidden = true;
+  $('plan-actual-revision-label').textContent = `${$('plan-actual-month').value || 'Kein Monat'} · noch nicht geladen`;
   planActualRenderDataQuality(null);
-  planActualSetStatus('Auswahl geändert. Bitte den Vergleich für diesen Monat und diese Revision laden.');
+  planActualSetStatus(`Auswahl: ${$('plan-actual-month').value || 'kein Monat'} · Revision ${$('plan-actual-revision').value || 'keine'}. Vergleich laden.`);
+}
+function planActualShiftMonth(offset) {
+  const input = $('plan-actual-month');
+  if (!/^\d{4}-\d{2}$/.test(input.value)) return;
+  const [year, month] = input.value.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1 + offset, 1));
+  const value = `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+  if ((input.min && value < input.min) || (input.max && value > input.max)) return;
+  input.value = value;
+  input.dispatchEvent(new Event('change', {bubbles: true}));
+}
+function planActualUpdateMonthNavigation() {
+  const input = $('plan-actual-month');
+  $('plan-actual-prev-month').disabled = !input.value || Boolean(input.min && input.value <= input.min);
+  $('plan-actual-next-month').disabled = !input.value || Boolean(input.max && input.value >= input.max);
 }
 async function planActualCompare() {
   if (!$('plan-actual-revision').value || !$('plan-actual-month').value) {
@@ -1735,7 +1793,12 @@ $('plan-actual-revision').addEventListener('change', () => run(async () => {
   planActualInvalidateComparison();
   await planActualLoadRevision(Number($('plan-actual-revision').value));
 }));
-$('plan-actual-month').addEventListener('change', planActualInvalidateComparison);
+$('plan-actual-month').addEventListener('change', () => {
+  planActualUpdateMonthNavigation();
+  planActualInvalidateComparison();
+});
+$('plan-actual-prev-month').addEventListener('click', () => planActualShiftMonth(-1));
+$('plan-actual-next-month').addEventListener('click', () => planActualShiftMonth(1));
 $('plan-actual-person-toggle').addEventListener('change', planActualInvalidateComparison);
 $('plan-actual-mapping-save').addEventListener('click', () => run(planActualSaveMappings));
 window.addEventListener('hashchange', planActualEnsureLoaded);

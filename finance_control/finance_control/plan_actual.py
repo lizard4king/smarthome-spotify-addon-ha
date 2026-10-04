@@ -82,17 +82,19 @@ def _monthly_reference(snapshot, month, reporting_history=None):
     retrospective = (reporting_history is None
                      or "retrospective_actual_years" not in reporting_history
                      or int(month[:4]) in reporting_history["retrospective_actual_years"])
+    # These positions remain useful for classifying actual bookings. A revision
+    # starting later does not establish a budget for this earlier month.
     return {
         "period": month, "income": _format(buckets["income"]),
         "fixed": _format(buckets["fixed"]), "variable": _format(buckets["variable"]),
         "cashflow": _format(buckets["income"] - buckets["fixed"] - buckets["variable"]),
         "items": items,
     }, {
-        "type": ("retrospective_reference" if retrospective else "monthly_budget_projection"),
+        "type": ("retrospective_reference" if retrospective else "no_saved_budget"),
         "label": ("Rückblick aus den importierten Ist-Buchungen" if retrospective else
-                  "Monatlicher Budgetplan der gewählten Revision"),
+                  "Kein gespeicherter Monatsplan"),
         "plan_source": ("reconstructed_from_monthly_actuals" if retrospective else
-                        "monthly_budget_projection"),
+                        "no_saved_budget"),
         "derived_from_month": rows[0]["period"],
         "excluded_nonmonthly_items": sum(
             (item.get("interval_months") or 1) != 1 for item in reference_items),
@@ -1192,6 +1194,50 @@ def _set_daily_plan_to_classified_actual(daily):
              for values in daily["points_by_person"].values()), Decimal("0.00")))
 
 
+def _hide_unavailable_plan(comparison):
+    """Keep actual matching, but publish no plan inferred from a later revision."""
+    for key in comparison["totals"]:
+        if key.startswith(("planned_", "remaining_")):
+            comparison["totals"][key] = None
+    for row in comparison["rows"]:
+        for key in ("planned", "remaining", "variance"):
+            row[key] = None
+        for key in ("planned_by_person", "variance_by_person"):
+            if key in row:
+                row[key] = dict.fromkeys(row[key], None)
+
+    def hide_tree(nodes):
+        for node in nodes:
+            node["planned"] = None
+            node["remaining"] = None
+            hide_tree(node["children"])
+            # Do not retain an over-budget flag computed from the later plan.
+            node["attention"] = (node["kind"] == "unclassified"
+                                 or "open-classification" in node["key"]
+                                 or any(child["attention"] for child in node["children"]))
+
+    hide_tree(comparison["tree"])
+    for point in comparison["daily"]:
+        point["planned_cumulative_income"] = None
+        point["planned_cumulative_expenses"] = None
+    for points in comparison["daily_by_person"].values():
+        for point in points:
+            point["planned_cumulative_income"] = None
+            point["planned_cumulative_expenses"] = None
+    comparison["daily_metadata"]["basis"] = None
+    comparison["surplus_bridge"] = None
+    if "person_breakdown" in comparison:
+        breakdown = comparison["person_breakdown"]
+        breakdown["planned_basis"] = "Kein gespeicherter Monatsplan"
+        for key, values in breakdown["totals"].items():
+            if key.startswith("planned_"):
+                breakdown["totals"][key] = dict.fromkeys(values, None)
+    # Both widgets contain assumptions from the selected revision. Independent
+    # booked account balances remain in account_balance_change.
+    comparison["liquidity"] = None
+    comparison["payday"] = None
+
+
 def _liquidity_view(store, snapshot, month, comparison_rows):
     """Separate checking-account liquidity from adjustable budget headroom."""
     account_ids = snapshot["plan"].get("liquidity_accounts", [])
@@ -1572,13 +1618,17 @@ def _monthly_trend(store, selected_month, snapshot, account_owners,
         if plan_source == "reconstructed_from_monthly_actuals":
             planned = {person: values.copy() for person, values in actual.items()}
 
-        planned_by_item = {item["id"]: money(item["amount"]) for item in month_items}
-        month_snapshot = _trend_snapshot_for_month(month_snapshot, month, selected_month)
+        planned_by_item = ({item["id"]: money(item["amount"]) for item in month_items}
+                           if plan_source != "no_saved_budget" else {})
+        if plan_source != "no_saved_budget":
+            month_snapshot = _trend_snapshot_for_month(month_snapshot, month, selected_month)
         daily = (selected_daily
                  if (month == selected_month and selected_daily is not None
                  and plan_source != "reconstructed_from_monthly_actuals")
                  else _daily_series(
-                     month, ledger_rows, month_plan, planned_by_item, month_snapshot,
+                     month, ledger_rows,
+                     month_plan if plan_source != "no_saved_budget" else {"items": []},
+                     planned_by_item, month_snapshot,
                      today=today, account_owners=account_owners,
                      known_person_ids=known_person_ids, person_ids=person_ids))
         if plan_source == "reconstructed_from_monthly_actuals":
@@ -1670,7 +1720,19 @@ def _monthly_trend(store, selected_month, snapshot, account_owners,
                 person: summary["change"] for person, summary in balance.get(
                     "by_person", {}).items()},
             "plan_source": plan_source,
+            "plan_available": plan_source != "no_saved_budget",
         })
+        if plan_source == "no_saved_budget":
+            # The copied positions above only support classification of actuals.
+            # A later revision supplies no publishable plan for this month.
+            for values in rows[-1]["plan"].values():
+                values["income"] = None
+                values["expenses"] = None
+            for person_points in daily_points_by_person.values():
+                for point in person_points:
+                    if point["date"].startswith(month):
+                        point["planned_income_delta"] = None
+                        point["planned_expenses_delta"] = None
         balance.pop("_account_end_balances", None)
     _scope_person_values(daily_points_by_person, scope)
     balance_availability = {
@@ -1698,7 +1760,7 @@ def _monthly_trend(store, selected_month, snapshot, account_owners,
         "note": ("Historische Monatspläne vor gespeicherten Monaten entsprechen den klassifizierten Ist-Buchungen. Die Zusammensetzung fester und sonstiger Einnahmen und Ausgaben wird getrennt ausgewiesen."
                  if reporting_history is None or
                  "retrospective_actual_years" not in reporting_history else
-                 "Nur freigegebene Rückblickjahre verwenden Ist als Planreferenz; andere Monate übernehmen den monatlichen Budgetplan der gewählten Revision."),
+                  "Nur freigegebene Rückblickjahre verwenden Ist als Planreferenz; Monate vor der gewählten Revision ohne gespeicherten Plan zeigen ausschließlich Ist-Werte."),
     }
 
 
@@ -2097,7 +2159,10 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
     for item in snapshot["plan"]["items"]:
         planned = planned_by_item.get(item["id"], Decimal("0.00"))
         actual = actual_by_item[item["id"]]
-        if planned == 0 and actual == 0:
+        # With no saved plan, later-revision items having no actual booking
+        # would be phantom budget rows, so show only items with actuals.
+        if (planned == 0 and actual == 0
+                or basis["type"] == "no_saved_budget" and actual == 0):
             continue
         rows.append({
             "item_id": item["id"],
@@ -2155,7 +2220,9 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
     generated_at = datetime.now(UTC).isoformat()
     comparison = {
         "revision": revision, "month": month, "generated_at": generated_at,
-        "basis": basis, "reporting_scope": scope,
+        "basis": basis, "plan_reference": basis,
+        "plan_available": basis["type"] != "no_saved_budget",
+        "reporting_scope": scope,
         "audit_watermark": _watermark(store), "rows": rows,
         "totals": {
             "planned_income": _format(planned_income),
@@ -2204,9 +2271,10 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
     bridge_unclassified = ({"net": Decimal("0.00"), "absolute": Decimal("0.00"),
                             "count": 0}
                            if retrospective_actual_plan else unclassified)
-    comparison["surplus_bridge"] = _surplus_bridge(
+    comparison["surplus_bridge"] = (_surplus_bridge(
         rows, bridge_unmapped, bridge_unclassified, planned_income - planned_expenses,
         scoped_snapshot["plan"].get("household_split"))
+        if comparison["plan_available"] else None)
     tree_unmapped = dict(unmapped) | {
         "income_keys": unmapped_keys["income"],
         "expense_keys": unmapped_keys["expenses"],
@@ -2215,10 +2283,13 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
         "income_keys": open_classification_keys["income"],
         "expenses_keys": open_classification_keys["expenses"],
     }
-    daily_snapshot = _trend_snapshot_for_month(
-        scoped_snapshot, month, month,
-        force=basis.get("type") in {"retrospective_reference", "monthly_budget_projection"})
-    daily = _daily_series(month, ledger_rows, month_plan, planned_by_item, daily_snapshot,
+    daily_snapshot = (_trend_snapshot_for_month(
+        scoped_snapshot, month, month, force=retrospective_actual_plan)
+        if comparison["plan_available"] else scoped_snapshot)
+    daily = _daily_series(month, ledger_rows,
+                          month_plan if comparison["plan_available"] else {"items": []},
+                          planned_by_item if comparison["plan_available"] else {},
+                          daily_snapshot,
                           account_owners=account_owners, known_person_ids=known_person_ids,
                           person_ids=sorted(known_person_ids))
     if retrospective_actual_plan:
@@ -2254,8 +2325,10 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
             sorted(known_person_ids), selected_ledger_rows=ledger_rows,
             selected_daily=selected_daily, selected_balance=selected_balance,
             available_from_month=available_from_month, reporting_history=reporting_history)
-    comparison["liquidity"] = _liquidity_view(store, scoped_snapshot, month, rows)
-    comparison["payday"] = _payday_view(store, scoped_snapshot, month)
+    comparison["liquidity"] = (_liquidity_view(store, scoped_snapshot, month, rows)
+                               if comparison["plan_available"] else None)
+    comparison["payday"] = (_payday_view(store, scoped_snapshot, month)
+                            if comparison["plan_available"] else None)
     if data.get("person_breakdown"):
         comparison["person_breakdown"] = _person_comparison(
             store, snapshot, rows, ledger_rows, mapping, allocations,
@@ -2285,6 +2358,8 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
             comparison["monthly_trend"].pop("reporting_history", None)
             for row in comparison["monthly_trend"]["months"]:
                 row.pop("reporting_scope", None)
+    if not comparison["plan_available"]:
+        _hide_unavailable_plan(comparison)
     return comparison
 
 
@@ -2292,7 +2367,7 @@ def actual_details(store, data, *, reporting_history=None):
     """Return only transactions belonging to the requested comparison context."""
     revision, month, context, page = _request(data, details=True)
     scope = scope_for_month(store, month, reporting_history)
-    snapshot, month_plan, _ = _snapshot(
+    snapshot, month_plan, basis = _snapshot(
         store, revision, month, reporting_history=reporting_history)
     mapping = _mapping(store, snapshot)
     allocations = _allocations(snapshot)
@@ -2350,6 +2425,8 @@ def actual_details(store, data, *, reporting_history=None):
     total = len(selected)
     return {
         "revision": revision, "month": month, "context": context,
+        "plan_available": basis["type"] != "no_saved_budget",
+        "plan_reference": basis,
         "generated_at": datetime.now(UTC).isoformat(), "audit_watermark": _watermark(store),
         "page": page, "page_size": _PAGE_SIZE, "total_count": total,
         "has_more": start + _PAGE_SIZE < total,

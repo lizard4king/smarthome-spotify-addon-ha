@@ -110,6 +110,7 @@ class Cockpit:
             if route.startswith('/api/transfer-correction-'):
                 from . import transfer_corrections
                 actions = {'suggestions': transfer_corrections.suggestions, 'save': transfer_corrections.save,
+                           'single-leg-save': transfer_corrections.save_single_leg,
                            'get': transfer_corrections.get, 'revoke': transfer_corrections.revoke}
                 action = route.removeprefix('/api/transfer-correction-')
                 if action not in actions:
