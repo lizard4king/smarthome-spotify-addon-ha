@@ -60,6 +60,60 @@ class Tests(unittest.TestCase):
             client.play({"assignments": [], "profile": "Alice"})
         self.assertEqual(client.opener.requests, [])
 
+    def test_signed_control_contract_and_no_observed_success_invention(self):
+        client = SpotifyCockpit()
+        client.opener = Network({"status": "accepted", "playback_verified": False})
+        payload = {"profile": "a", "target": "living", "action": "seek", "position_ms": 12000,
+                   "track_uri": "spotify:track:AAAA"}
+        self.assertEqual(client.control(payload)["status"], "accepted")
+        request = client.opener.requests[0]
+        self.assertTrue(request.full_url.endswith("/api/spotify/control"))
+        self.assertEqual(json.loads(request.data), payload)
+        self.assertIsNotNone(request.get_header("X-smarthome-signature"))
+        client.opener.value = {"status": "accepted", "playback_verified": True}
+        with self.assertRaises(SpotifyCockpitError):
+            client.control(payload)
+
+    def test_control_extra_fields_bool_and_negative_seek_rejected_without_network(self):
+        client = SpotifyCockpit()
+        client.opener = Network({})
+        payload = {"profile": "a", "target": "living", "action": "seek", "position_ms": 0,
+                   "track_uri": "spotify:track:AAAA"}
+        for invalid in ({**payload, "token": "x"}, {**payload, "position_ms": True},
+                        {**payload, "position_ms": -1}, {**payload, "action": "stop"}):
+            with self.assertRaises(ValueError):
+                client.control(invalid)
+        self.assertEqual(client.opener.requests, [])
+
+    def test_accepted_without_verification_flag_reports_unknown_not_definite_rejection(self):
+        client = SpotifyCockpit()
+        client.opener = Network({"status": "accepted"})
+        with self.assertRaisesRegex(SpotifyCockpitError, "Ausgang.*unbekannt") as failure:
+            client.control({"profile": "a", "target": "living", "action": "pause"})
+        self.assertEqual(failure.exception.outcome, "unknown")
+        self.assertEqual(len(client.opener.requests), 1)
+
+    def test_bridge_outcome_is_preserved_or_defaults_to_unknown(self):
+        client = SpotifyCockpit()
+        for outcome in ("not_sent", "unknown", None, "arbitrary"):
+            client.opener = Network({"status": "failed", "error": "Rejected", "outcome": outcome})
+            with self.assertRaises(SpotifyCockpitError) as failure:
+                client.control({"profile": "a", "target": "living", "action": "pause"})
+            self.assertEqual(failure.exception.outcome, outcome if outcome in {"not_sent", "unknown"} else "unknown")
+
+    def test_raw_proxy_transport_failure_and_malformed_json_are_unknown(self):
+        for bad in (TimeoutError("private-details"), b"not-json"):
+            client = SpotifyCockpit()
+            def open_request(*args, **kwargs):
+                if isinstance(bad, Exception):
+                    raise bad
+                return io.BytesIO(bad)
+            client.opener = SimpleNamespace(open=open_request)
+            with self.assertRaises(SpotifyCockpitError) as failure:
+                client.control({"profile": "a", "target": "living", "action": "pause"})
+            self.assertEqual(failure.exception.outcome, "unknown")
+            self.assertNotIn("private-details", str(failure.exception))
+
 
 class HandlerTests(unittest.TestCase):
     def handler(self, path, payload=None, headers=None):
@@ -114,6 +168,35 @@ class HandlerTests(unittest.TestCase):
             handler.do_GET()
         self.assertEqual(handler.results[0][0], 403)
         client.assert_not_called()
+
+    def test_control_route_and_failure_status(self):
+        handler = self.handler("/api/spotify/control", {"profile": "a", "target": "living", "action": "pause"})
+        with patch("dashboard.server.SpotifyCockpit", return_value=SimpleNamespace(
+                control=lambda payload: {"status": "accepted", "playback_verified": False})):
+            handler.do_POST()
+        self.assertEqual(handler.results[0][0], 200)
+        failed = self.handler("/api/spotify/control", {"profile": "a", "target": "living", "action": "pause"})
+        with patch("dashboard.server.SpotifyCockpit", side_effect=SpotifyCockpitError("Unavailable")):
+            failed.do_POST()
+        self.assertEqual(failed.results[0][0], 409)
+
+    def test_control_origin_gate_before_network(self):
+        for headers in ({"Origin": "https://attacker.invalid"}, {"Sec-Fetch-Site": "cross-site"},
+                        {"Content-Type": "application/x-www-form-urlencoded"}):
+            handler = self.handler("/api/spotify/control", {}, headers)
+            with patch("dashboard.server.SpotifyCockpit") as client:
+                handler.do_POST()
+            self.assertIn(handler.results[0][0], (400, 403))
+            self.assertEqual(handler.results[0][1]["outcome"], "not_sent")
+            client.assert_not_called()
+
+    def test_control_server_forwards_known_vs_unknown_outcome(self):
+        for outcome in ("not_sent", "unknown"):
+            handler = self.handler("/api/spotify/control", {"profile": "a", "target": "living", "action": "pause"})
+            with patch("dashboard.server.SpotifyCockpit", side_effect=SpotifyCockpitError("Controlled error", outcome=outcome)):
+                handler.do_POST()
+            self.assertEqual(handler.results[0][0], 409)
+            self.assertEqual(handler.results[0][1]["outcome"], outcome)
 
 
 if __name__ == "__main__":
