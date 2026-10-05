@@ -107,6 +107,27 @@
     .music-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
     .music-actions button { min-height:44px; min-width:82px; }
     .music-message { min-height:1.5em; margin-top:9px; }
+    .music-live { margin-top:16px; padding:16px; border:1px solid var(--line); border-radius:12px; background:#101a2c; }
+    .music-live-heading { display:grid; grid-template-columns:72px minmax(0,1fr); gap:14px; align-items:center; }
+    .music-live-heading .music-art-slot { width:72px; height:72px; }
+    .music-live-title { font-size:20px; font-weight:750; overflow-wrap:anywhere; }
+    .music-live-subtitle, .music-live-status { margin-top:5px; overflow-wrap:anywhere; }
+    .music-transport { display:grid; grid-template-columns:1fr 1.4fr 1fr; gap:8px; margin-top:16px; }
+    .music-transport button, .music-stop { min-height:48px; padding:10px 6px; }
+    .music-stop { width:100%; margin-top:8px; }
+    .music-seek { margin-top:14px; }
+    .music-seek input { width:100%; min-height:44px; margin:0; accent-color:var(--accent); }
+    .music-seek-times { display:flex; justify-content:space-between; }
+    .music-queue { margin-top:16px; border-top:1px solid var(--line); padding-top:12px; }
+    .music-queue h3, .music-library h3 { font-size:16px; margin:0 0 10px; }
+    .music-queue-list { display:grid; gap:8px; max-height:250px; overflow:auto; }
+    .music-queue-item { padding:8px 10px; border-radius:8px; background:#0d1729; overflow-wrap:anywhere; }
+    .music-queue-item[aria-current="true"] { border:1px solid var(--accent); }
+    .music-library { margin-top:20px; }
+    .music-selection-label { color:var(--muted); font-size:12px; margin-bottom:4px; }
+    .music-library-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .music-library-actions button { min-height:44px; }
+    @media (max-width:620px) { .music-live { padding:12px; } .music-live-heading { grid-template-columns:56px minmax(0,1fr); gap:10px; } .music-live-heading .music-art-slot { width:56px; height:56px; } .music-live-title { font-size:18px; } .music-transport button { font-size:12px; } .music-actions button { flex:1 1 140px; } }
     .alexa-card { margin-bottom:18px; background:linear-gradient(135deg, rgba(43,54,83,.98), rgba(18,28,47,.98) 62%); }
     .alexa-controls { display:grid; grid-template-columns:1fr 1fr 1.4fr; gap:10px; margin-top:14px; align-items:end; }
     .alexa-controls label { display:grid; gap:5px; color:var(--muted); font-size:12px; }
@@ -239,26 +260,35 @@
     <section class="card own-music-card" aria-labelledby="ownMusicTitle">
       <div class="section-title"><div class="spotify-brand"><span class="spotify-logo" style="background:#b89cff">♫</span><h2 id="ownMusicTitle">Eigene Musik</h2></div><span class="meta">Lokale Bibliothek · eigener Player</span></div>
       <div id="musicAvailability" class="meta music-status" role="status" aria-live="polite">Musikdienst wird geprüft …</div>
+      <div class="music-routing">
+        <label for="musicPlayer">Wiedergabeziel<select id="musicPlayer" aria-label="Wiedergabeziel für eigene Musik" disabled><option value="">Player werden geladen …</option></select></label>
+        <span id="musicPlayerHint" class="meta">Nur tatsächlich gemeldete Player werden angeboten.</span>
+      </div>
+      <div class="music-live">
+        <div class="music-live-heading"><span class="music-art-slot"><img id="musicCurrentArt" class="music-art" alt="" hidden></span><div><div id="musicCurrentTitle" class="music-live-title">Wiedergabe wird geprüft …</div><div id="musicCurrentSubtitle" class="music-live-subtitle meta"></div></div></div>
+        <div id="musicLiveStatus" class="music-live-status meta" role="status" aria-live="polite">Noch kein Wiedergabestatus geladen.</div>
+        <div class="music-transport" aria-label="Aktuelle eigene Musik steuern"><button id="musicPrevious" type="button" disabled>⏮ Zurück</button><button id="musicToggle" class="primary" type="button" disabled>Wiedergabe</button><button id="musicNext" type="button" disabled>Weiter ⏭</button></div>
+        <button id="musicStop" class="danger music-stop" type="button" disabled>■ Stopp</button>
+        <div class="music-seek"><input id="musicSeek" type="range" min="0" max="1" value="0" disabled aria-label="Position im aktuellen eigenen Titel"><div class="music-seek-times meta"><span id="musicElapsed">–:–</span><span id="musicDuration">–:–</span></div></div>
+        <div class="music-queue"><h3>Warteschlange</h3><div id="musicQueue" class="music-queue-list"><div class="meta">Warteschlange wird geprüft …</div></div></div>
+      </div>
+      <div class="music-library"><h3>Musik auswählen</h3>
       <form id="musicSearchForm" class="music-search" role="search">
         <label class="spotify-track-hidden" for="musicQuery">Eigene Musik suchen</label>
         <input id="musicQuery" type="search" placeholder="Titel, Album oder Interpret suchen …" aria-label="Eigene Musik suchen" autocomplete="off">
         <button id="musicSearchButton" type="submit">Suchen</button>
       </form>
-      <div class="music-routing">
-        <label for="musicPlayer">Zielzimmer / Player<select id="musicPlayer" aria-label="Zielzimmer oder Player" disabled><option value="">Player werden geladen …</option></select></label>
-        <span id="musicPlayerHint" class="meta">Nur tatsächlich gemeldete Player werden angeboten.</span>
-      </div>
-      <div id="musicResults" class="music-results" aria-live="polite"><div class="meta">Suche nach einem Titel, Album oder Interpreten.</div></div>
+      <div class="music-library-actions"><button id="musicLibrary" type="button" disabled>Bibliothek anzeigen</button></div>
+      <div id="musicResults" class="music-results" aria-live="polite"><div class="meta">Bibliothek anzeigen oder nach Musik suchen.</div></div>
       <div id="musicSelected" class="music-selected" hidden>
         <span class="music-art-slot"><img id="musicSelectedArt" class="music-art" alt="" hidden></span>
-        <div><div id="musicSelectedTitle" class="music-result-title"></div><div id="musicSelectedSubtitle" class="music-result-subtitle"></div></div>
+        <div><div class="music-selection-label">Für den nächsten Start</div><div id="musicSelectedTitle" class="music-result-title"></div><div id="musicSelectedSubtitle" class="music-result-subtitle"></div></div>
       </div>
-      <div class="music-actions" aria-label="Musiksteuerung">
-        <button id="musicPlay" class="primary" type="button" disabled>▶ Abspielen</button>
-        <button id="musicPause" type="button" disabled>Ⅱ Pause</button>
-        <button id="musicResume" type="button" disabled>↻ Fortsetzen</button>
-        <button id="musicStop" class="danger" type="button" disabled>■ Stopp</button>
+      <div class="music-actions" aria-label="Ausgewählten Titel übernehmen">
+        <button id="musicPlay" class="primary" type="button" disabled>▶ Ausgewählten Titel starten</button>
+        <button id="musicAdd" type="button" disabled>＋ Zur Warteschlange</button>
         <button id="musicMore" type="button" hidden>Weitere Treffer</button>
+      </div>
       </div>
       <div id="musicMessage" class="meta music-message" role="status" aria-live="polite"></div>
     </section>
@@ -901,6 +931,13 @@
       let searching = false;
       let commandPending = false;
       let playbackAllowed = false;
+      let observedQueue = null;
+      let queueGeneration = 0;
+      let queueRequest = null;
+      let queueRefreshWanted = false;
+      let pollTimer = null;
+      let seekContext = null;
+      const queueControls = ['pause','resume','stop','previous','next','seek'];
       function setMessage(text, isError = false) {
         message.textContent = text;
         message.style.color = isError ? '#ffb1b1' : '';
@@ -913,19 +950,37 @@
         const targetReady = serviceReady && Boolean(selectedPlayer());
         const locked = searching || commandPending;
         document.getElementById('musicPlay').disabled = !(playbackAllowed && targetReady && selectedTrack && !commandPending);
-        for (const id of ['musicPause','musicResume','musicStop']) document.getElementById(id).disabled = !(playbackAllowed && targetReady && !commandPending);
+        document.getElementById('musicAdd').disabled = document.getElementById('musicPlay').disabled;
+        const knownState = ['playing','paused','idle','stopped'].includes(observedQueue?.state);
+        const ready = playbackAllowed && targetReady && observedQueue?.own_music === true && knownState && !commandPending;
+        const controls = observedQueue?.controls || {};
+        const toggleCommand = !knownState ? '' : observedQueue?.state === 'playing' && controls.pause === true ? 'pause' : controls.resume === true ? 'resume' : '';
+        document.getElementById('musicToggle').textContent = toggleCommand === 'pause' ? 'Ⅱ Pause' : toggleCommand === 'resume' ? '▶ Fortsetzen' : 'Wiedergabe';
+        document.getElementById('musicToggle').disabled = !(ready && toggleCommand && controls[toggleCommand] === true);
+        for (const [id, action] of [['musicStop','stop'],['musicPrevious','previous'],['musicNext','next'],['musicSeek','seek']]) document.getElementById(id).disabled = !(ready && controls[action] === true);
+        const duration = Number(observedQueue?.current_track?.duration);
+        if (!Number.isFinite(duration) || duration <= 0) document.getElementById('musicSeek').disabled = true;
         document.getElementById('musicSearchButton').disabled = !serviceReady || locked;
+        document.getElementById('musicLibrary').disabled = !serviceReady || locked;
         document.getElementById('musicQuery').disabled = !serviceReady || commandPending;
         playerSelect.disabled = !serviceReady || commandPending || !Array.from(playerSelect.options).some(option => !option.disabled && option.value);
         results.querySelectorAll('.music-result').forEach(button => { button.disabled = commandPending; });
         moreButton.disabled = locked || nextOffset === null;
       }
-      async function getJson(path) {
-        const response = await fetch(path, { cache:'no-store' });
+      async function getJson(path, signal) {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        if (signal?.aborted) controller.abort();
+        else signal?.addEventListener('abort', abort, {once:true});
+        const timeout = setTimeout(abort, 10000);
+        timeout.unref?.();
+        try {
+        const response = await fetch(path, { cache:'no-store', signal:controller.signal });
         let payload;
         try { payload = await response.json(); } catch { throw new Error('Ungültige Antwort des Musikdienstes.'); }
         if (!response.ok) throw new Error(payload.error || 'Musikdienst nicht erreichbar.');
         return payload;
+        } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort); }
       }
       function renderPlayers(players, state = 'error') {
         playerSelect.replaceChildren();
@@ -948,8 +1003,7 @@
         for (const player of usable) {
           const option = document.createElement('option');
           option.value = player.id;
-          const room = typeof player.room === 'string' && player.room ? player.room + ' · ' : '';
-          option.textContent = room + player.name + (player.available === false ? ' (nicht verfügbar)' : '');
+          option.textContent = player.name + (player.available === false ? ' (nicht verfügbar)' : '');
           option.disabled = player.available !== true;
           playerSelect.append(option);
         }
@@ -998,14 +1052,13 @@
           document.getElementById('musicSelectedTitle').textContent = title.textContent;
           document.getElementById('musicSelectedSubtitle').textContent = subtitle.textContent;
           results.querySelectorAll('.music-result').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-          setMessage('Titel ausgewählt. Abspielen startet erst nach deiner Auswahl.');
+          setMessage('Titel ausgewählt. Du kannst ihn starten oder zur Warteschlange hinzufügen.');
           updateControls();
         });
         results.append(button);
       }
       async function search(append = false) {
         const query = append ? activeQuery : document.getElementById('musicQuery').value.trim();
-        if (!query) { setMessage('Bitte einen Titel, ein Album oder einen Interpreten eingeben.', true); return; }
         if (searching || commandPending || !serviceReady) return;
         searching = true;
         if (!append) activeQuery = query;
@@ -1023,7 +1076,7 @@
         results.append(loading);
         try {
           const offset = append && Number.isFinite(Number(nextOffset)) ? Number(nextOffset) : 0;
-          const payload = await getJson('/api/music/tracks?q=' + encodeURIComponent(query) + '&offset=' + encodeURIComponent(String(offset)));
+          const payload = await getJson('/api/music/tracks?q=' + encodeURIComponent(query) + '&offset=' + encodeURIComponent(String(offset)) + '&limit=50');
           loading.remove();
           const tracks = Array.isArray(payload.tracks) ? payload.tracks : [];
           tracks.filter(track => track && typeof track.uri === 'string' && track.uri).forEach(renderTrack);
@@ -1055,27 +1108,159 @@
         commandPending = true;
         updateControls();
         setMessage('Befehl wird gesendet …');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        timeout.unref?.();
         try {
-          const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+          const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), signal:controller.signal });
           let result;
           try { result = await response.json(); } catch { throw new Error('Ungültige Antwort des Musikdienstes.'); }
           if (!response.ok) throw new Error(result.error || 'Befehl abgelehnt.');
           if (result.status !== 'ok' || (result.mode !== undefined && result.mode !== 'live')) throw new Error(result.error || 'Kein bestätigter Musikbefehl.');
           setMessage(success);
           log('Eigene Musik: ' + success);
-        } catch (error) { setMessage('Befehl fehlgeschlagen: ' + error.message, true); }
-        finally { commandPending = false; updateControls(); }
+        } catch (error) { setMessage(error.name === 'AbortError' ? 'Zeitüberschreitung: Befehlsergebnis unklar. Der Status wird neu gelesen; der Befehl wird nicht erneut gesendet.' : 'Befehl fehlgeschlagen: ' + error.message, true); }
+        finally { clearTimeout(timeout); commandPending = false; updateControls(); refreshQueue(); }
       }
-      playerSelect.addEventListener('change', updateControls);
+      function formatTime(value) {
+        const seconds = Number(value);
+        return Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds / 60) + ':' + String(Math.floor(seconds % 60)).padStart(2,'0') : '–:–';
+      }
+      function clearQueue(text) {
+        observedQueue = null;
+        seekContext = null;
+        document.getElementById('musicCurrentTitle').textContent = 'Keine bestätigte Wiedergabe';
+        document.getElementById('musicCurrentSubtitle').textContent = '';
+        const art = document.getElementById('musicCurrentArt');
+        art.hidden = true; art.removeAttribute('src');
+        document.getElementById('musicLiveStatus').textContent = text;
+        document.getElementById('musicSeek').value = '0';
+        document.getElementById('musicSeek').max = '1';
+        document.getElementById('musicElapsed').textContent = '–:–';
+        document.getElementById('musicDuration').textContent = '–:–';
+        const empty = document.createElement('div'); empty.className = 'meta'; empty.textContent = text;
+        document.getElementById('musicQueue').replaceChildren(empty);
+        updateControls();
+      }
+      function renderQueue(payload) {
+        observedQueue = payload;
+        const track = payload.current_track;
+        document.getElementById('musicCurrentTitle').textContent = track?.title || 'Kein aktueller Titel';
+        document.getElementById('musicCurrentSubtitle').textContent = [track?.artist,track?.album].filter(value => typeof value === 'string' && value).join(' · ');
+        const art = document.getElementById('musicCurrentArt'); art.removeAttribute('src');
+        art.hidden = !(typeof track?.artwork_url === 'string' && track.artwork_url && typeof track?.uri === 'string' && track.uri);
+        if (!art.hidden) art.src = '/api/music/artwork?uri=' + encodeURIComponent(track.uri);
+        art.onerror = () => { art.hidden = true; };
+        const stateLabels = {playing:'Wiedergabe',paused:'Pause',idle:'Gestoppt',stopped:'Gestoppt'};
+        const emptyIdle = payload.own_music === false && payload.state === 'idle' && payload.items === 0 && !track;
+        const otherSourceActive = payload.own_music === false && payload.active === true && ['playing','paused'].includes(payload.state) && (track || payload.items > 0);
+        document.getElementById('musicLiveStatus').textContent = emptyIdle ? 'Keine eigene Wiedergabe'
+          : (stateLabels[payload.state] || 'Status unbekannt') + (payload.active === false ? ' · Warteschlange nicht aktiv' : '')
+            + (otherSourceActive ? ' · Andere Musikquelle aktiv' : payload.own_music === false ? ' · Keine eigene Wiedergabe' : '');
+        const duration = Number(track?.duration);
+        const elapsed = Number(payload.elapsed_time);
+        document.getElementById('musicSeek').max = String(Number.isFinite(duration) && duration > 0 ? duration : 1);
+        if (!seekContext) document.getElementById('musicSeek').value = String(Number.isFinite(elapsed) && elapsed >= 0 ? Math.min(elapsed, Number.isFinite(duration) && duration > 0 ? duration : elapsed) : 0);
+        document.getElementById('musicElapsed').textContent = payload.elapsed_time === null ? '–:–' : formatTime(payload.elapsed_time);
+        document.getElementById('musicDuration').textContent = track?.duration == null ? '–:–' : formatTime(track.duration);
+        const queue = document.getElementById('musicQueue'); queue.replaceChildren();
+        for (const item of payload.tracks) {
+          const row = document.createElement('div'); row.className = 'music-queue-item';
+          row.setAttribute('aria-current', String(item.index === payload.current_index));
+          row.textContent = (item.index === payload.current_index ? '▶ ' : '') + (item.index + 1) + '. ' + (item.title || 'Titel ohne Namen') + (item.artist ? ' · ' + item.artist : '');
+          queue.append(row);
+        }
+        if (!payload.tracks.length) { const empty = document.createElement('div'); empty.className = 'meta'; empty.textContent = payload.items > 0 ? 'Titel der Warteschlange nicht verfügbar.' : 'Warteschlange ist leer.'; queue.append(empty); }
+        updateControls();
+      }
+      function scheduleQueue() {
+        clearTimeout(pollTimer);
+        if (document.hidden) return;
+        pollTimer = setTimeout(() => refreshQueue(), 8000);
+        pollTimer.unref?.();
+      }
+      async function refreshQueue() {
+        clearTimeout(pollTimer);
+        if (queueRequest) { queueRefreshWanted = true; return; }
+        const playerId = selectedPlayer();
+        if (!serviceReady || !playerId) { clearQueue('Kein verfügbares Wiedergabeziel.'); return; }
+        if (commandPending) { scheduleQueue(); return; }
+        const generation = queueGeneration;
+        const controller = new AbortController(); queueRequest = controller;
+        try {
+          const payload = await getJson('/api/music/queue?player_id=' + encodeURIComponent(playerId), controller.signal);
+          if (generation !== queueGeneration || playerId !== selectedPlayer()) return;
+          if (!payload || payload.player_id !== playerId || typeof payload.state !== 'string'
+              || typeof payload.active !== 'boolean' || typeof payload.own_music !== 'boolean'
+              || !Number.isInteger(payload.items) || payload.items < 0 || !Array.isArray(payload.tracks)
+              || (payload.current_track !== null && (typeof payload.current_track !== 'object' || Array.isArray(payload.current_track)))
+              || !payload.controls || queueControls.some(name => typeof payload.controls[name] !== 'boolean')
+              || payload.tracks.some(track => !track || typeof track.title !== 'string' || !Number.isInteger(track.index) || track.index < 0)) throw new Error('Ungültiger Wiedergabestatus.');
+          renderQueue(payload);
+        } catch (error) {
+          if (generation === queueGeneration && playerId === selectedPlayer()) clearQueue('Wiedergabestatus nicht abrufbar: ' + error.message);
+        } finally {
+          queueRequest = null;
+          if (queueRefreshWanted || generation !== queueGeneration) { queueRefreshWanted = false; refreshQueue(); }
+          else scheduleQueue();
+        }
+      }
+      playerSelect.addEventListener('change', () => {
+        queueGeneration += 1;
+        clearQueue('Wiedergabeziel geändert · Status wird geprüft …');
+        queueRequest?.abort();
+        refreshQueue();
+      });
       document.getElementById('musicSearchForm').addEventListener('submit', event => { event.preventDefault(); search(false); });
+      document.getElementById('musicLibrary').addEventListener('click', () => { document.getElementById('musicQuery').value = ''; search(false); });
       moreButton.addEventListener('click', () => search(true));
       document.getElementById('musicPlay').addEventListener('click', () => {
         if (!selectedTrack) return;
-        command('/api/music/play', { uri:selectedTrack.uri, player_id:selectedPlayer() }, 'Wiedergabebefehl gesendet.');
+        command('/api/music/play', { uri:selectedTrack.uri, player_id:selectedPlayer(), option:'replace' }, 'Startbefehl angenommen · Wiedergabestatus wird geprüft.');
       });
-      for (const [id, commandName, text] of [['musicPause','pause','Pausebefehl gesendet.'],['musicResume','resume','Fortsetzungsbefehl gesendet.'],['musicStop','stop','Stoppbefehl gesendet.']]) {
-        document.getElementById(id).addEventListener('click', () => command('/api/music/control', { player_id:selectedPlayer(), command:commandName }, text));
+      document.getElementById('musicAdd').addEventListener('click', () => {
+        if (!selectedTrack) return;
+        command('/api/music/play', {uri:selectedTrack.uri, player_id:selectedPlayer(), option:'add'}, 'Befehl zum Hinzufügen angenommen · Warteschlange wird geprüft.');
+      });
+      function control(commandName, position) {
+        if (observedQueue?.own_music !== true || !['playing','paused','idle','stopped'].includes(observedQueue.state) || observedQueue.controls[commandName] !== true) return;
+        const payload = {player_id:selectedPlayer(), command:commandName};
+        if (position !== undefined) payload.position = position;
+        command('/api/music/control', payload, 'Befehl angenommen · Wiedergabestatus wird geprüft.');
       }
+      for (const [id, commandName] of [['musicPrevious','previous'],['musicNext','next'],['musicStop','stop']]) document.getElementById(id).addEventListener('click', () => control(commandName));
+      document.getElementById('musicToggle').addEventListener('click', () => {
+        if (observedQueue?.state === 'playing' && observedQueue.controls.pause === true) control('pause');
+        else if (observedQueue?.controls.resume === true) control('resume');
+      });
+      function captureSeek() {
+        if (document.getElementById('musicSeek').disabled) return;
+        seekContext = {playerId:selectedPlayer(), uri:observedQueue?.current_track?.uri, generation:queueGeneration};
+      }
+      document.getElementById('musicSeek').addEventListener('pointerdown', captureSeek);
+      document.getElementById('musicSeek').addEventListener('keydown', captureSeek);
+      document.getElementById('musicSeek').addEventListener('pointercancel', () => { seekContext = null; if (observedQueue) renderQueue(observedQueue); });
+      document.getElementById('musicSeek').addEventListener('blur', () => { seekContext = null; if (observedQueue) renderQueue(observedQueue); });
+      document.getElementById('musicSeek').addEventListener('change', () => {
+        const captured = seekContext; seekContext = null;
+        if (!captured || !captured.uri || captured.playerId !== selectedPlayer() || captured.generation !== queueGeneration || captured.uri !== observedQueue?.current_track?.uri) {
+          if (observedQueue) renderQueue(observedQueue);
+          setMessage('Titel oder Ziel wurde während der Positionswahl geändert. Bitte die Position erneut wählen.', true);
+          return;
+        }
+        const position = Number(document.getElementById('musicSeek').value);
+        const duration = Number(observedQueue?.current_track?.duration);
+        if (Number.isFinite(position) && position >= 0 && Number.isFinite(duration) && duration > 0 && position <= duration) control('seek', position);
+      });
+      if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', () => {
+        clearTimeout(pollTimer);
+        if (!document.hidden) {
+          queueGeneration += 1;
+          clearQueue('Ansicht wieder aktiv · Wiedergabestatus wird geprüft …');
+          queueRequest?.abort();
+          refreshQueue();
+        }
+      });
       async function initialize() {
         try {
           const status = await getJson('/api/music/status');
@@ -1091,7 +1276,7 @@
           }
           serviceReady = true;
           playbackAllowed = status.allow_playback === true;
-          availability.textContent = 'Musikdienst verfügbar. Der Wiedergabestatus des Players wird von dieser Schnittstelle nicht bereitgestellt.';
+          availability.textContent = 'Musikdienst verfügbar · Status und Warteschlange werden vom Wiedergabeziel gelesen.';
           if (!playbackAllowed) availability.textContent += ' Wiedergabeaktionen sind nicht freigegeben.';
           const payload = await getJson('/api/music/players');
           if (!payload || !Array.isArray(payload.players)) {
@@ -1104,14 +1289,16 @@
             throw new Error('Ungültige Playerliste des Musikdienstes.');
           }
           renderPlayers(payload.players, 'loaded');
+          refreshQueue();
         } catch (error) {
           availability.textContent = 'Eigene Musik derzeit nicht verfügbar: ' + error.message;
           renderPlayers([], 'error');
+          clearQueue('Wiedergabestatus nicht verfügbar.');
         }
         updateControls();
       }
       initialize();
-      return { search };
+      return { search, refresh:refreshQueue };
     })();
     function showSpotifyEmbed(uri) {
       const match = String(uri || '').match(/^spotify:(track|album|playlist):([A-Za-z0-9]+)$/);

@@ -83,6 +83,7 @@ def _load_options_fallback() -> None:
         ("bridge_secret", "SPOTIFY_BRIDGE_SECRET"),
         ("music_assistant_url", "MUSIC_ASSISTANT_URL"),
         ("music_assistant_token", "MUSIC_ASSISTANT_TOKEN"),
+        ("music_assistant_library_provider", "MUSIC_ASSISTANT_LIBRARY_PROVIDER"),
     ):
         value = options.get(key)
         if isinstance(value, str) and value:

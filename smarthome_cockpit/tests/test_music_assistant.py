@@ -15,6 +15,10 @@ TRACK = {"media_type": "track", "name": "Song", "artists": [{"name": "Artist"}],
          "album": {"name": "Album"}, "provider_mappings": [{"provider_domain": "filesystem_local",
          "provider_instance": "filesystem_local--abc", "item_id": "Artist/Album/song.flac", "available": True}],
          "metadata": {"images": [{"type": "thumb", "proxy_id": "a" * 64}]}}
+PLAYER = {"player_id": "echo", "available": True, "supported_features": ["pause", "play_media"]}
+QUEUE_ITEM = {"queue_item_id": "opaque", "name": "Artist - Song", "duration": 240, "media_item": TRACK}
+QUEUE = {"queue_id": "echo", "active": True, "available": True, "items": 2, "current_index": 0,
+         "state": "playing", "elapsed_time": 12, "current_item": QUEUE_ITEM}
 
 
 class Response(io.BytesIO):
@@ -125,9 +129,164 @@ class MusicTests(unittest.TestCase):
 
     def test_controls(self):
         for command in ("pause", "resume", "stop"):
-            client = self.client([{"player_id": "echo", "available": True}], {"queue_id": "echo"}, None)
+            queue = dict(QUEUE, state="paused" if command == "resume" else "playing")
+            client = self.client([PLAYER], queue, [QUEUE_ITEM, QUEUE_ITEM], None)
             self.assertEqual(client.control("echo", command), {"status": "ok"})
             self.assertEqual(json.loads(client.opener.requests[-1][0].data)["command"], "player_queues/" + command)
+
+    def test_queue_preserves_selected_player_and_uses_group_features(self):
+        group = dict(PLAYER, player_id="group", supported_features=["seek", "pause"])
+        client = self.client([PLAYER, group], dict(QUEUE, queue_id="group"), [QUEUE_ITEM, QUEUE_ITEM])
+        result = client.queue("echo")
+        self.assertEqual(result["player_id"], "echo")
+        self.assertEqual(result["queue_id"], "group")
+        self.assertTrue(result["own_music"])
+        self.assertTrue(result["controls"]["seek"])
+        self.assertTrue(all(isinstance(v, bool) for v in result["controls"].values()))
+        self.assertEqual(result["current_track"]["uri"], URI)
+        self.assertEqual([t["index"] for t in result["tracks"]], [0, 1])
+        self.assertNotIn("media_item", json.dumps(result))
+
+    def test_external_source_neutral_and_controls_never_write(self):
+        client = self.client([PLAYER], None)
+        result = client.queue("echo")
+        self.assertIsNone(result["queue_id"])
+        self.assertFalse(result["own_music"])
+        self.assertFalse(any(result["controls"].values()))
+        for command in ("pause", "resume", "stop", "next", "previous"):
+            client = self.client([PLAYER], None)
+            with self.assertRaises(ValueError):
+                client.control("echo", command)
+            self.assertEqual(len(client.opener.requests), 2)
+
+    def test_foreign_queue_items_block_controls(self):
+        foreign = dict(QUEUE_ITEM, media_item=dict(TRACK, provider_mappings=[{"provider_domain": "spotify"}]))
+        for queue, items in ((dict(QUEUE, current_item=foreign), [foreign, foreign]),
+                             (QUEUE, [QUEUE_ITEM, foreign])):
+            client = self.client([PLAYER], queue, items)
+            result = client.queue("echo")
+            self.assertFalse(result["own_music"])
+            self.assertFalse(any(result["controls"].values()))
+            self.assertNotIn("spotify", json.dumps(result))
+
+    def test_mixed_mapping_does_not_mislabel_spotify_stream_as_own_music(self):
+        mixed = dict(TRACK, provider="library", provider_mappings=TRACK["provider_mappings"] + [
+            {"provider_domain": "spotify", "provider_instance": "spotify--abc", "item_id": "123"}])
+        for stream in ({"provider": "spotify--abc"}, None):
+            item = dict(QUEUE_ITEM, media_item=mixed, streamdetails=stream)
+            client = self.client([PLAYER], dict(QUEUE, current_item=item), [item, item])
+            self.assertFalse(client.queue("echo")["own_music"])
+        item = dict(QUEUE_ITEM, media_item=mixed, streamdetails={"provider": "filesystem_local--abc"})
+        client = self.client([PLAYER], dict(QUEUE, current_item=item), [item, item])
+        self.assertTrue(client.queue("echo")["own_music"])
+
+    def test_queue_disabled_playback_preserves_read_status(self):
+        with patch.dict("os.environ", {"MUSIC_ASSISTANT_ALLOW_PLAYBACK": "false"}):
+            client = self.client([PLAYER], QUEUE, [QUEUE_ITEM, QUEUE_ITEM])
+        result = client.queue("echo")
+        self.assertTrue(result["own_music"])
+        self.assertFalse(any(result["controls"].values()))
+
+    def test_unknown_queue_state_never_enables_controls(self):
+        for state in (None, "buffering", [], {"unexpected": True}):
+            client = self.client([PLAYER], dict(QUEUE, state=state), [QUEUE_ITEM, QUEUE_ITEM])
+            result = client.queue("echo")
+            self.assertEqual(result["state"], "unknown")
+            self.assertFalse(any(result["controls"].values()))
+
+    def test_stopped_own_queue_can_resume_without_external_fallback(self):
+        client = self.client([PLAYER], dict(QUEUE, active=False, state="idle"), [QUEUE_ITEM, QUEUE_ITEM])
+        result = client.queue("echo")
+        self.assertFalse(result["active"])
+        self.assertTrue(result["controls"]["resume"])
+        self.assertFalse(any(value for key, value in result["controls"].items() if key != "resume"))
+
+    def test_queue_bounded_window_and_safe_metadata(self):
+        poisoned = dict(QUEUE_ITEM, streamdetails={"path": "http://private", "token": "secret"})
+        client = self.client([PLAYER], dict(QUEUE, items=200, current_index=80), [poisoned] * 60)
+        result = client.queue("echo")
+        self.assertEqual(len(result["tracks"]), 50)
+        self.assertEqual(result["tracks"][0]["index"], 70)
+        self.assertEqual(result["next_offset"], 120)
+        self.assertNotIn("private", json.dumps(result))
+        self.assertNotIn("secret", json.dumps(result))
+        self.assertEqual(json.loads(client.opener.requests[-1][0].data)["args"],
+                         {"queue_id": "echo", "limit": 50, "offset": 70})
+
+    def test_queue_seek_requires_player_feature_and_valid_duration(self):
+        client = self.client([PLAYER], QUEUE, [QUEUE_ITEM, QUEUE_ITEM])
+        self.assertFalse(client.queue("echo")["controls"]["seek"])
+        for position in (-1, True, 1.5, None):
+            client = self.client()
+            with self.assertRaises(ValueError):
+                client.control("echo", "seek", position)
+            self.assertFalse(client.opener.requests)
+        seek_player = dict(PLAYER, supported_features=["seek", "pause"])
+        client = self.client([seek_player], QUEUE, [QUEUE_ITEM, QUEUE_ITEM], None)
+        self.assertEqual(client.control("echo", "seek", 120), {"status": "ok"})
+        self.assertEqual(json.loads(client.opener.requests[-1][0].data)["args"], {"queue_id": "echo", "position": 120})
+        client = self.client([seek_player], QUEUE, [QUEUE_ITEM, QUEUE_ITEM])
+        with self.assertRaises(ValueError):
+            client.control("echo", "seek", 241)
+        self.assertEqual(len(client.opener.requests), 3)
+
+    def test_queue_navigation_checks_adjacent_items(self):
+        client = self.client([PLAYER], dict(QUEUE, elapsed_time=0), [QUEUE_ITEM, QUEUE_ITEM])
+        result = client.queue("echo")
+        self.assertFalse(result["controls"]["previous"])
+        self.assertTrue(result["controls"]["next"])
+        client = self.client([PLAYER], dict(QUEUE, items=1, elapsed_time=0), [QUEUE_ITEM])
+        self.assertFalse(client.queue("echo")["controls"]["next"])
+        for command in ("next", "previous"):
+            client = self.client([PLAYER], QUEUE, [QUEUE_ITEM, QUEUE_ITEM], None)
+            self.assertEqual(client.control("echo", command), {"status": "ok"})
+            self.assertEqual(json.loads(client.opener.requests[-1][0].data)["command"], "player_queues/" + command)
+
+    def test_explicit_play_falls_back_to_verified_group_queue(self):
+        child = dict(PLAYER, active_group="group")
+        group = dict(PLAYER, player_id="group")
+        client = self.client(TRACK, [child, group], None, {"queue_id": "group", "available": True}, None)
+        self.assertEqual(client.play(URI, "echo", "add"), {"status": "ok"})
+        calls = [json.loads(req.data) for req, _ in client.opener.requests]
+        self.assertEqual(calls[-2]["command"], "player_queues/get")
+        self.assertEqual(calls[-2]["args"], {"queue_id": "group"})
+        self.assertEqual(calls[-1]["args"], {"queue_id": "group", "media": URI, "option": "add"})
+        client = self.client(TRACK, [child], None)
+        with self.assertRaises(MusicAssistantError):
+            client.play(URI, "echo")
+        self.assertEqual(len(client.opener.requests), 3)
+
+    def test_invalid_queue_option_rejected_before_network(self):
+        for option in ("next", [], None):
+            client = self.client()
+            with self.assertRaises(ValueError):
+                client.play(URI, "echo", option)
+            self.assertFalse(client.opener.requests)
+
+    def test_configured_provider_selects_mapping_and_filters_query(self):
+        provider = "filesystem_local--NewCopy"
+        local_uri = provider + "://track/new/song.flac"
+        local_mapping = dict(TRACK["provider_mappings"][0], provider_instance=provider, item_id="new/song.flac")
+        track = dict(TRACK, provider_mappings=TRACK["provider_mappings"] + [local_mapping])
+        with patch.dict("os.environ", {"MUSIC_ASSISTANT_LIBRARY_PROVIDER": provider}):
+            client = self.client([track])
+        self.assertEqual(client.tracks("Enya")["tracks"][0]["uri"], local_uri)
+        self.assertEqual(json.loads(client.opener.requests[0][0].data)["args"]["provider"], provider)
+        with patch.dict("os.environ", {"MUSIC_ASSISTANT_LIBRARY_PROVIDER": provider}):
+            client = self.client(track, [PLAYER], QUEUE, None)
+        client.play("library://track/12", "echo")
+        self.assertEqual(json.loads(client.opener.requests[-1][0].data)["args"]["media"], local_uri)
+        with patch.dict("os.environ", {"MUSIC_ASSISTANT_LIBRARY_PROVIDER": provider}):
+            client = self.client(track)
+        with self.assertRaises(ValueError):
+            client.play(URI, "echo")
+
+    def test_invalid_library_provider_disables_network(self):
+        for provider in ("spotify--copy", "filesystem_local--bad/url", "FILESYSTEM_LOCAL"):
+            with patch.dict("os.environ", {"MUSIC_ASSISTANT_LIBRARY_PROVIDER": provider}):
+                client = self.client()
+            self.assertFalse(client.status()["available"])
+            self.assertFalse(client.opener.requests)
 
     def test_playback_gate(self):
         with patch.dict("os.environ", {"MUSIC_ASSISTANT_ALLOW_PLAYBACK": "false"}):
@@ -304,6 +463,61 @@ class RouteTests(unittest.TestCase):
             handler._handle_music_post({"uri": URI, "player_id": "echo"})
             client.return_value.play.assert_called_once_with(URI, "echo")
             handler.send_response.assert_called_with(200)
+
+    def test_queue_and_add_and_seek_routes(self):
+        handler = self.handler("/api/music/queue?player_id=echo")
+        with patch("dashboard.server.MusicAssistant") as client:
+            client.return_value.queue.return_value = {"player_id": "echo", "queue_id": "group", "controls": {}}
+            handler.do_GET()
+            client.return_value.queue.assert_called_once_with("echo")
+            self.assertEqual(json.loads(handler.wfile.getvalue())["queue_id"], "group")
+        handler = self.handler("/api/music/play")
+        with patch("dashboard.server.MusicAssistant") as client:
+            client.return_value.play.return_value = {"status": "ok"}
+            handler._handle_music_post({"uri": URI, "player_id": "echo", "option": "add"})
+            client.return_value.play.assert_called_once_with(URI, "echo", "add")
+        handler = self.handler("/api/music/control")
+        with patch("dashboard.server.MusicAssistant") as client:
+            client.return_value.control.return_value = {"status": "ok"}
+            handler._handle_music_post({"player_id": "echo", "command": "seek", "position": 120})
+            client.return_value.control.assert_called_once_with("echo", "seek", 120)
+
+    def test_music_cross_site_without_origin_is_rejected(self):
+        handler = self.handler("/api/music/control")
+        handler.headers["Sec-Fetch-Site"] = "cross-site"
+        with patch("dashboard.server.MusicAssistant") as client:
+            handler._handle_music_post({"player_id": "echo", "command": "pause"})
+            handler.send_response.assert_called_with(403)
+            client.assert_not_called()
+
+    def test_music_reads_reject_cross_site_before_client(self):
+        paths = ("/api/music/queue?player_id=echo", "/api/music/artwork?uri=" + URI,
+                 "/api/music/tracks?q=enya")
+        rejected_headers = ({"Sec-Fetch-Site": "cross-site"}, {"Origin": "http://evil.test"},
+                            {"Origin": "null"}, {"Origin": "https://cockpit.test.evil"})
+        for path in paths:
+            for extra_headers in rejected_headers:
+                with self.subTest(path=path, headers=extra_headers):
+                    handler = self.handler(path)
+                    handler.headers.update(extra_headers)
+                    with patch("dashboard.server.MusicAssistant") as client:
+                        handler.do_GET()
+                        handler.send_response.assert_called_with(403)
+                        client.assert_not_called()
+
+    def test_music_reads_accept_same_origin(self):
+        for path in ("/api/music/queue?player_id=echo", "/api/music/artwork?uri=" + URI,
+                     "/api/music/tracks?q=enya"):
+            with self.subTest(path=path):
+                handler = self.handler(path)
+                handler.headers.update({"Origin": "http://cockpit.test", "Sec-Fetch-Site": "same-origin"})
+                with patch("dashboard.server.MusicAssistant") as client:
+                    client.return_value.queue.return_value = {"state": "idle"}
+                    client.return_value.tracks.return_value = {"tracks": []}
+                    client.return_value.artwork.return_value = (b"png", "image/png")
+                    handler.do_GET()
+                    handler.send_response.assert_called_with(200)
+                    client.assert_called_once_with()
 
 
 if __name__ == "__main__":
