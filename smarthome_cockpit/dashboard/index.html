@@ -185,19 +185,19 @@
 
     <section class="card spotify-card" aria-label="Spotify">
       <div class="section-title"><div class="spotify-brand"><span class="spotify-logo">●</span><h2>Spotify</h2></div><span class="meta">Zentrale Steuerung · Räume zeigen nur den Status</span></div>
-      <label class="spotify-search-profile" for="spotifyProfile">Titel auswählen für<select id="spotifyProfile"><option value="Andreas">Andreas</option><option value="Erlene Andreia">Erlene Andreia</option></select></label>
+      <label class="spotify-search-profile" for="spotifyProfile">Titel auswählen für<select id="spotifyProfile" disabled><option value="">Profile werden geprüft …</option></select></label>
       <div class="spotify-search"><input id="spotifyQuery" type="search" placeholder="Titel, Interpret, Album oder Playlist suchen …" aria-label="Spotify-Suche"><button id="spotifySearch" type="button">Suchen</button></div>
       <div class="spotify-sessions" aria-label="Unabhängige Spotify-Profile">
-        <div class="spotify-session" data-spotify-profile="Andreas">
-          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled>Andreas · mit starten</label>
+        <div class="spotify-session" data-spotify-slot="1">
+          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled><span class="spotify-session-profile-label">Profil wird geprüft …</span> · mit starten</label>
           <div class="spotify-session-track">Noch kein Titel ausgewählt.</div>
-          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für Andreas" disabled><option value="">Ziele werden geprüft …</option></select></label>
+          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für das erste Profil" disabled><option value="">Ziele werden geprüft …</option></select></label>
           <div class="spotify-session-status meta" aria-live="polite">Wiedergabestatus wird geprüft …</div>
         </div>
-        <div class="spotify-session" data-spotify-profile="Erlene Andreia">
-          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled>Erlene Andreia · mit starten</label>
+        <div class="spotify-session" data-spotify-slot="2">
+          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled><span class="spotify-session-profile-label">Profil wird geprüft …</span> · mit starten</label>
           <div class="spotify-session-track">Noch kein Titel ausgewählt.</div>
-          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für Erlene Andreia" disabled><option value="">Ziele werden geprüft …</option></select></label>
+          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für das zweite Profil" disabled><option value="">Ziele werden geprüft …</option></select></label>
           <div class="spotify-session-status meta" aria-live="polite">Wiedergabestatus wird geprüft …</div>
         </div>
       </div>
@@ -515,28 +515,31 @@
       const profileSelect = document.getElementById('spotifyProfile');
       const playButton = document.getElementById('spotifyPlay');
       const message = document.getElementById('spotifyMessage');
-      const slots = new Map(Array.from(document.querySelectorAll('[data-spotify-profile]'), card => [card.dataset.spotifyProfile, {
+      const slots = Array.from(document.querySelectorAll('[data-spotify-slot]'), card => ({
         card, enabled:card.querySelector('.spotify-session-enabled'), target:card.querySelector('.spotify-session-target-select'),
         trackNode:card.querySelector('.spotify-session-track'), statusNode:card.querySelector('.spotify-session-status'),
-        selected:null, ready:false, profileId:null, availableTargets:new Set(), requiresTargetSelection:false,
-      }]));
+        profileLabel:card.querySelector('.spotify-session-profile-label'),
+        selected:null, ready:false, searchReady:false, profileId:null, profileName:null, availableTargets:new Set(), requiresTargetSelection:false,
+      }));
       let pending = false;
       let refreshPromise = null;
       const normalize = value => String(value || '').normalize('NFKC').replace(/[‘’]/g, "'").trim().toLocaleLowerCase('de-DE');
       function setMessage(text, error = false) { message.textContent = text; message.style.color = error ? '#ffb1b1' : ''; }
       function selectedAssignments() {
-        return Array.from(slots, ([profile, slot]) => ({profile, slot})).filter(({slot}) => slot.enabled.checked)
-          .map(({profile, slot}) => ({profile, target:slot.target.value, track:slot.selected?.uri || '', slot}));
+        return slots.filter(slot => slot.enabled.checked)
+          .map(slot => ({profile:slot.profileId, target:slot.target.value, track:slot.selected?.uri || '', slot}));
       }
+      const profileSlot = id => slots.find(slot => slot.profileId === id && id);
+      const profileName = id => profileSlot(id)?.profileName || 'kein verfügbares Profil';
       function updateControls() {
         const assignments = selectedAssignments();
         const chosenTargets = assignments.map(item => item.target).filter(Boolean);
         const duplicateTarget = new Set(chosenTargets).size !== chosenTargets.length;
         playButton.disabled = pending || !assignments.length || duplicateTarget || assignments.some(item => !item.slot.ready || !item.slot.availableTargets.has(item.target) || !item.target || !item.track);
-        profileSelect.disabled = pending;
-        document.getElementById('spotifySearch').disabled = pending;
-        document.getElementById('spotifyQuery').disabled = pending;
-        for (const slot of slots.values()) {
+        profileSelect.disabled = pending || !slots.some(slot => slot.searchReady);
+        document.getElementById('spotifySearch').disabled = pending || !profileSlot(profileSelect.value)?.searchReady;
+        document.getElementById('spotifyQuery').disabled = pending || !profileSlot(profileSelect.value)?.searchReady;
+        for (const slot of slots) {
           slot.enabled.disabled = pending || !slot.ready || !slot.selected;
           slot.target.disabled = pending || !slot.ready || !slot.availableTargets.size;
         }
@@ -584,9 +587,21 @@
         const available = payload.available === true;
         const targets = payload.targets.filter(target => target && typeof target.target_id === 'string' && target.target_id
           && typeof target.display_name === 'string' && target.display_name);
-        const profiles = payload.profiles.filter(profile => profile && typeof profile.profile_id === 'string' && typeof profile.display_name === 'string');
-        for (const [name, slot] of slots) {
-          const profile = profiles.find(item => normalize(item.display_name) === normalize(name));
+        const profiles = payload.profiles.filter(profile => profile && typeof profile.profile_id === 'string' && profile.profile_id.trim()
+          && typeof profile.display_name === 'string' && profile.display_name.trim());
+        if (new Set(profiles.map(profile => profile.profile_id)).size !== profiles.length) throw new Error('Mehrdeutige Spotify-Profil-IDs.');
+        const boundIds = new Set(slots.map(slot => slot.profileId).filter(Boolean));
+        for (const slot of slots) {
+          if (!slot.profileId && available) {
+            const initial = profiles.find(profile => !boundIds.has(profile.profile_id));
+            if (initial) { slot.profileId = initial.profile_id; boundIds.add(initial.profile_id); }
+          }
+          const profile = profiles.find(item => item.profile_id === slot.profileId);
+          if (profile) slot.profileName = profile.display_name;
+          slot.profileLabel.textContent = slot.profileName || 'Kein Profil verfügbar';
+          slot.target.setAttribute('aria-label', 'Spotify-Ziel für ' + (slot.profileName || 'unbekanntes Profil'));
+          slot.searchReady = available && Boolean(profile) && ['playing','paused','idle'].includes(profile.status);
+          if (!profile && slot.profileId) slot.enabled.checked = false;
           const allowed = profile && Array.isArray(profile.targets) ? new Set(profile.targets) : new Set();
           const deviceAvailabilityKnown = Boolean(profile) && Array.isArray(profile.available_targets);
           slot.availableTargets = new Set(deviceAvailabilityKnown ? profile.available_targets.filter(id => allowed.has(id)) : []);
@@ -601,7 +616,7 @@
             slot.target.append(option);
           }
           if (!usable.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Kein freigegebenes Ziel verfügbar'; slot.target.append(option); }
-          const occupied = new Set(Array.from(slots.values()).filter(other => other !== slot).map(other => other.target.value));
+          const occupied = new Set(slots.filter(other => other !== slot).map(other => other.target.value));
           const visible = usable.filter(target => slot.availableTargets.has(target.target_id));
           if (previous && !usable.some(target => target.target_id === previous)) {
             slot.requiresTargetSelection = true;
@@ -611,9 +626,9 @@
             missing.textContent = 'Zuvor gewähltes Ziel nicht mehr konfiguriert'; missing.disabled = true;
             slot.target.append(missing); slot.target.value = ''; slot.enabled.checked = false;
           } else slot.target.value = previous || (visible.find(target => !occupied.has(target.target_id)) || visible[0])?.target_id || '';
-          slot.profileId = profile?.profile_id || null;
-          slot.ready = available && Boolean(profile) && deviceAvailabilityKnown && ['playing','paused','idle'].includes(profile.status) && usable.length > 0;
-          if (!profile || profile.status === 'unavailable' || !available) slot.statusNode.textContent = 'Wiedergabestatus nicht verfügbar.';
+          slot.ready = slot.searchReady && deviceAvailabilityKnown && usable.length > 0;
+          if (!profile && slot.profileId) slot.statusNode.textContent = 'Dieses Profil ist nicht mehr verfügbar. Es wird keinem anderen Konto zugeordnet.';
+          else if (!profile || profile.status === 'unavailable' || !available) slot.statusNode.textContent = 'Wiedergabestatus nicht verfügbar.';
           else if (profile.track && typeof profile.track.title === 'string' && profile.status === 'playing' && profile.is_playing === true)
             slot.statusNode.textContent = 'Spielt: ' + profile.track.title + ' · ' + (profile.active_device_name || 'Ziel unbekannt');
           else if (profile.track && typeof profile.track.title === 'string' && profile.status === 'paused')
@@ -622,6 +637,17 @@
           if (!deviceAvailabilityKnown) slot.statusNode.textContent += ' Zielverfügbarkeit nicht bestätigt.';
           else if (!visible.length) slot.statusNode.textContent += ' Kein Echo-Ziel ist derzeit in Spotify sichtbar.';
         }
+        const previousProfile = profileSelect.value;
+        profileSelect.replaceChildren();
+        for (const slot of slots.filter(slot => slot.profileId)) {
+          const option = document.createElement('option'); option.value = slot.profileId; option.disabled = !slot.searchReady;
+          option.textContent = slot.profileName + (slot.searchReady ? '' : ' · nicht verfügbar'); profileSelect.append(option);
+        }
+        if (!profileSelect.children.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Kein Profil verfügbar'; option.disabled = true; profileSelect.append(option); }
+        profileSelect.value = slots.some(slot => slot.profileId === previousProfile) ? previousProfile
+          : slots.find(slot => slot.searchReady)?.profileId || '';
+        if (!pending && profiles.some(profile => !slots.some(slot => slot.profileId === profile.profile_id)))
+          setMessage('Ein weiteres Profil wird nicht automatisch übernommen. Nach einer Konfigurationsänderung bitte die Seite neu laden.', true);
         renderRoomStatus(profiles, targets, available);
         updateControls();
       }
@@ -630,10 +656,10 @@
         refreshPromise = (async () => {
           try { applyStatus(await request('/api/spotify/status')); }
           catch (error) {
-            for (const slot of slots.values()) { slot.ready = false; slot.statusNode.textContent = 'Wiedergabestatus nicht verfügbar.'; }
+            for (const slot of slots) { slot.ready = false; slot.searchReady = false; slot.statusNode.textContent = 'Wiedergabestatus nicht verfügbar.'; }
             renderRoomStatus([], [], false);
             updateControls();
-            if (!pending) setMessage('Spotify-Status nicht erreichbar. Es wird keine Wiedergabe behauptet.', true);
+            if (!pending) setMessage('Spotify-Status nicht verwendbar: ' + error.message + ' Es wird keine Wiedergabe behauptet.', true);
           } finally { refreshPromise = null; }
         })();
         return refreshPromise;
@@ -644,8 +670,8 @@
         await refresh();
       }
       function selectTrack(item, forProfile = profileSelect.value) {
-        const slot = slots.get(forProfile);
-        if (!slot || pending || typeof item.title !== 'string' || !item.title.trim()
+        const slot = profileSlot(forProfile);
+        if (!slot || !slot.searchReady || pending || typeof item.title !== 'string' || !item.title.trim()
             || !/^spotify:(track|album|playlist|artist):[A-Za-z0-9]+$/.test(String(item.uri || ''))) {
           setMessage('Dieser Treffer kann nicht als eindeutiger Spotify-Inhalt gestartet werden.', true);
           return;
@@ -655,8 +681,8 @@
         slot.enabled.checked = true;
         document.getElementById('track').value = item.uri;
         showSpotifyEmbed(item.uri);
-        document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + item.title + ' · für ' + forProfile;
-        setMessage('Titel für ' + forProfile + ' ausgewählt. Erst „Ausgewählte Profile starten“ sendet einen Echo-Befehl.');
+        document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + item.title + ' · für ' + slot.profileName;
+        setMessage('Titel für ' + slot.profileName + ' ausgewählt. Erst „Ausgewählte Profile starten“ sendet einen Echo-Befehl.');
         updateControls();
       }
       async function play() {
@@ -674,7 +700,7 @@
             const result = payload.assignments.find(item => item.target_id === assignment.target && item.profile_id === assignment.slot.profileId)
               || payload.assignments.find(item => item.profile === assignment.profile && item.target === assignment.target);
             if (!result || !['accepted','failed','not_attempted'].includes(result.status)) throw new Error('Unvollständige Antwort der Spotify-Steuerung.');
-            return assignment.profile + ': ' + (result.status === 'accepted' ? 'Befehl angenommen; Status wird geprüft'
+            return assignment.slot.profileName + ': ' + (result.status === 'accepted' ? 'Befehl angenommen; Status wird geprüft'
               : result.status === 'failed' ? 'fehlgeschlagen' + (typeof result.error === 'string' ? ' · ' + result.error : '') : 'nicht gestartet');
           });
           setMessage(results.join(' / '), payload.status !== 'accepted');
@@ -688,17 +714,17 @@
         }
         finally { await refreshAfterCommand(); pending = false; updateControls(); }
       }
-      for (const slot of slots.values()) {
+      for (const slot of slots) {
         slot.enabled.addEventListener('change', updateControls);
         slot.target.addEventListener('change', () => { if (slot.availableTargets.has(slot.target.value)) slot.requiresTargetSelection = false; setMessage('Zielauswahl geändert. Noch kein Befehl gesendet.'); updateControls(); });
       }
       playButton.addEventListener('click', play);
       const poll = async () => { if (!document.hidden && !pending) await refresh(); setTimeout(poll, 30000); };
       if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) { renderRoomStatus([], [], false); for (const slot of slots.values()) { slot.ready = false; slot.statusNode.textContent = 'Wiedergabestatus wird neu geprüft …'; } updateControls(); refresh(); }
+        if (!document.hidden) { renderRoomStatus([], [], false); for (const slot of slots) { slot.ready = false; slot.searchReady = false; slot.statusNode.textContent = 'Wiedergabestatus wird neu geprüft …'; } updateControls(); refresh(); }
       });
       poll();
-      return {selectTrack, refresh, applyStatus, play};
+      return {selectTrack, refresh, applyStatus, play, profileName, searchAllowed:id => !pending && profileSlot(id)?.searchReady === true, updateControls};
     })();
     function selectSpotifyTrack(item, profile) { spotifyController.selectTrack(item, profile); }
 
@@ -979,7 +1005,7 @@
         button.append(art, meta);
         button.addEventListener('click', () => {
           selectSpotifyTrack({title, subtitle, uri}, forProfile);
-          log('Spotify-Titel ausgewählt für ' + forProfile + ': ' + title);
+          log('Spotify-Titel ausgewählt für ' + spotifyController.profileName(forProfile) + ': ' + title);
         });
         results.append(button);
       }
@@ -990,15 +1016,17 @@
       const results = document.getElementById('spotifyResults');
       results.replaceChildren();
       const note = document.createElement('div'); note.className = 'meta';
-      note.textContent = 'Suche nach einem Titel für ' + document.getElementById('spotifyProfile').value + '.';
+      note.textContent = 'Suche nach einem Titel für ' + spotifyController.profileName(document.getElementById('spotifyProfile').value) + '.';
       results.append(note);
       document.getElementById('spotifyEmbedWrap').hidden = true;
       document.getElementById('spotifyEmbed').src = 'about:blank';
       document.getElementById('nowPlaying').textContent = 'Die Titelauswahl des anderen Profils bleibt erhalten.';
+      spotifyController.updateControls();
     });
     document.getElementById('spotifySearch').addEventListener('click', async () => {
       const query = document.getElementById('spotifyQuery').value.trim();
       const profile = document.getElementById('spotifyProfile').value;
+      if (!spotifyController.searchAllowed(profile)) return;
       const generation = ++spotifySearchGeneration;
       const results = document.getElementById('spotifyResults');
       if (!query) { results.innerHTML = '<div class="meta">Bitte einen Titel oder Interpreten eingeben.</div>'; return; }
