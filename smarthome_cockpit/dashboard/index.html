@@ -446,7 +446,7 @@
       let activeQuery = '';
       let searching = false;
       let commandPending = false;
-      let playbackAllowed = true;
+      let playbackAllowed = false;
       function setMessage(text, isError = false) {
         message.textContent = text;
         message.style.color = isError ? '#ffb1b1' : '';
@@ -473,16 +473,21 @@
         if (!response.ok) throw new Error(payload.error || 'Musikdienst nicht erreichbar.');
         return payload;
       }
-      function renderPlayers(players) {
+      function renderPlayers(players, state = 'error') {
         playerSelect.replaceChildren();
         const usable = players.filter(player => player && typeof player.id === 'string' && player.id && typeof player.name === 'string' && player.name);
         if (!usable.length) {
           const option = document.createElement('option');
           option.value = '';
-          option.textContent = 'Kein Player verfügbar';
+          option.disabled = true;
+          option.textContent = state === 'error' ? 'Playerliste nicht abrufbar'
+            : state === 'unavailable' ? 'Musikdienst nicht verfügbar' : 'Kein Player verfügbar';
           playerSelect.append(option);
           playerSelect.disabled = true;
-          document.getElementById('musicPlayerHint').textContent = 'Der Dienst meldet derzeit keinen auswählbaren Player.';
+          document.getElementById('musicPlayerHint').textContent = state === 'error'
+            ? 'Die Player konnten nicht geladen werden. Bitte später erneut versuchen.'
+            : state === 'unavailable' ? 'Der Musikdienst ist derzeit nicht verfügbar.'
+              : 'Der Dienst meldet derzeit keinen auswählbaren Player.';
           updateControls();
           return;
         }
@@ -619,23 +624,32 @@
           const status = await getJson('/api/music/status');
           if (!status.configured) {
             availability.textContent = status.error || 'Eigene Musik ist nicht konfiguriert.';
-            renderPlayers([]);
+            renderPlayers([], 'unavailable');
             return;
           }
           if (!status.available) {
             availability.textContent = status.error || 'Eigene Musik ist konfiguriert, aber derzeit nicht verfügbar.';
-            renderPlayers([]);
+            renderPlayers([], 'unavailable');
             return;
           }
           serviceReady = true;
-          playbackAllowed = status.allow_playback !== false;
+          playbackAllowed = status.allow_playback === true;
           availability.textContent = 'Musikdienst verfügbar. Der Wiedergabestatus des Players wird von dieser Schnittstelle nicht bereitgestellt.';
           if (!playbackAllowed) availability.textContent += ' Wiedergabeaktionen sind nicht freigegeben.';
           const payload = await getJson('/api/music/players');
-          renderPlayers(Array.isArray(payload.players) ? payload.players : []);
+          if (!payload || !Array.isArray(payload.players)) {
+            throw new Error('Ungültige Playerliste des Musikdienstes.');
+          }
+          if (payload.players.some(player => !player || typeof player !== 'object'
+              || typeof player.id !== 'string' || !player.id.trim()
+              || typeof player.name !== 'string' || !player.name.trim()
+              || typeof player.available !== 'boolean')) {
+            throw new Error('Ungültige Playerliste des Musikdienstes.');
+          }
+          renderPlayers(payload.players, 'loaded');
         } catch (error) {
           availability.textContent = 'Eigene Musik derzeit nicht verfügbar: ' + error.message;
-          renderPlayers([]);
+          renderPlayers([], 'error');
         }
         updateControls();
       }
@@ -648,6 +662,59 @@
       document.getElementById('spotifyEmbed').src = 'https://open.spotify.com/embed/track/' + match[1] + '?utm_source=generator&theme=0';
       document.getElementById('spotifyEmbedWrap').hidden = false;
     }
+    function renderSpotifyResults(results, items) {
+      results.replaceChildren();
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'meta';
+        empty.textContent = 'Keine Treffer gefunden.';
+        results.append(empty);
+        return;
+      }
+      for (const item of items) {
+        const title = typeof item?.title === 'string' && item.title ? item.title : 'Unbekannter Titel';
+        const subtitle = typeof item?.subtitle === 'string' ? item.subtitle : '';
+        const uri = typeof item?.uri === 'string' ? item.uri : '';
+        const button = document.createElement('button');
+        button.className = 'spotify-result';
+        button.type = 'button';
+        const art = document.createElement('span');
+        art.className = 'spotify-result-art';
+        const imageUrl = typeof item?.image_url === 'string' ? item.image_url : '';
+        try {
+          const parsedImageUrl = new URL(imageUrl);
+          if (parsedImageUrl.protocol === 'https:' && parsedImageUrl.hostname
+              && !parsedImageUrl.username && !parsedImageUrl.password) {
+            const image = document.createElement('img');
+            image.alt = '';
+            image.loading = 'lazy';
+            image.src = parsedImageUrl.href;
+            image.style.width = '100%';
+            image.style.height = '100%';
+            image.style.objectFit = 'cover';
+            image.style.borderRadius = 'inherit';
+            art.append(image);
+          }
+        } catch { /* Invalid artwork URLs leave the gradient placeholder. */ }
+        const meta = document.createElement('span');
+        meta.className = 'spotify-result-meta';
+        const titleNode = document.createElement('span');
+        titleNode.className = 'spotify-result-title';
+        titleNode.textContent = title;
+        const subtitleNode = document.createElement('span');
+        subtitleNode.className = 'spotify-result-subtitle';
+        subtitleNode.textContent = subtitle;
+        meta.append(titleNode, subtitleNode);
+        button.append(art, meta);
+        button.addEventListener('click', () => {
+          document.getElementById('track').value = title;
+          showSpotifyEmbed(uri);
+          document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + title;
+          log('Spotify-Titel ausgewählt: ' + title);
+        });
+        results.append(button);
+      }
+    }
     document.getElementById('spotifySearch').addEventListener('click', async () => {
       const query = document.getElementById('spotifyQuery').value.trim();
       const results = document.getElementById('spotifyResults');
@@ -658,8 +725,7 @@
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Suche nicht verfügbar');
         const items = Array.isArray(payload.results) ? payload.results : [];
-        results.innerHTML = items.length ? items.map((item) => '<button class="spotify-result" type="button" data-track-selection="' + String(item.title || '').replace(/"/g, '&quot;') + '" data-track-uri="' + String(item.uri || '').replace(/"/g, '&quot;') + '"><span class="spotify-result-art" style="background-image:url(\'' + String(item.image_url || '').replace(/'/g, '%27') + '\');background-size:cover"></span><span class="spotify-result-meta"><span class="spotify-result-title">' + (item.title || 'Unbekannter Titel') + '</span><span class="spotify-result-subtitle">' + (item.subtitle || '') + '</span></span></button>').join('') : '<div class="meta">Keine Treffer gefunden.</div>';
-        results.querySelectorAll('[data-track-selection]').forEach((button) => button.addEventListener('click', () => { document.getElementById('track').value = button.dataset.trackSelection; showSpotifyEmbed(button.dataset.trackUri); document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + button.dataset.trackSelection; log('Spotify-Titel ausgewählt: ' + button.dataset.trackSelection); }));
+        renderSpotifyResults(results, items.filter(item => item && typeof item === 'object' && !Array.isArray(item)));
       } catch (error) { results.innerHTML = '<div class="meta">Spotify-Suche derzeit nicht erreichbar.</div>'; log('Spotify-Suche: ' + error.message); }
     });
     document.getElementById('refresh').addEventListener('click', async () => { log('Status aktualisiert (lokal)'); await refreshHomeAssistantInventory(); });
