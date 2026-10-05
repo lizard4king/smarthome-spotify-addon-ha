@@ -26,6 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from smarthome.home_assistant import HomeAssistantAdapter, HomeAssistantConfig, HomeAssistantError
 from dashboard.music_assistant import MusicAssistant, MusicAssistantError
 from dashboard.codex_control import handle as handle_codex_control
+from dashboard.spotify import SpotifyCockpit, SpotifyCockpitError
 
 
 ROOT = Path(__file__).resolve().parent
@@ -47,14 +48,14 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        if not urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/")):
+        if not urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/", "/api/spotify")):
             self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib API
-        if urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/")):
+        if urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/", "/api/spotify")):
             self._send_json(405, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
             return
         self.send_response(204)
@@ -64,6 +65,18 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path == "/api/spotify/status":
+            origin = self.headers.get("Origin")
+            if (self.headers.get("Sec-Fetch-Site") == "cross-site" or (origin and (
+                    urlsplit(origin).scheme not in {"http", "https"} or
+                    urlsplit(origin).netloc != self.headers.get("Host")))):
+                self._send_json(403, {"available": False, "error": "Cross-Origin-Spotifyzugriff ist nicht freigegeben."})
+                return
+            try:
+                self._send_json(200, SpotifyCockpit().status())
+            except SpotifyCockpitError as exc:
+                self._send_json(503, {"available": False, "error": str(exc), "profiles": [], "targets": [], "sessions": []})
+            return
         if urlsplit(self.path).path.startswith("/api/codex/"):
             self._send_json(404, {"error": "POST required."})
             return
@@ -124,6 +137,15 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             self._send_json(404, {"error": "Unbekannter Cockpit-Endpunkt."})
             return
         try:
+            if self.path.startswith("/api/spotify"):
+                origin = self.headers.get("Origin")
+                if origin:
+                    parsed = urlsplit(origin)
+                    if parsed.scheme not in {"http", "https"} or parsed.netloc != self.headers.get("Host"):
+                        self._send_json(403, {"error": "Cross-Origin-Spotifyzugriff ist nicht freigegeben."})
+                        return
+                if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
+                    raise ValueError("Spotify-Befehle benötigen application/json.")
             length = int(self.headers.get("Content-Length", "-1"))
             if length < 0 or length > MAX_BODY:
                 raise ValueError("Die Anfrage ist zu groß oder ungültig.")
@@ -237,37 +259,11 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self._send_json(200, {"status": "ok", "mode": "live", "target": target})
 
     def _handle_spotify(self, payload: dict[str, object]) -> None:
-        bridge_url = os.getenv("SPOTIFY_BRIDGE_URL", "").rstrip("/")
-        secret = os.getenv("SPOTIFY_BRIDGE_SECRET", "")
-        if not bridge_url or len(secret) < 32:
-            self._send_json(409, {"error": "Spotify-Bridge ist nicht konfiguriert.", "mode": "simulation"})
-            return
-        profile = payload.get("profile")
-        target = payload.get("target")
-        track = payload.get("track")
-        if not all(isinstance(item, str) and item.strip() for item in (profile, target, track)):
-            raise ValueError("Spotify-Profil, Ziel und Titel sind Pflichtfelder.")
-        body = _json_bytes({
-            "intent": {"name": "SpotifyPlayIntent", "slots": {
-                "MediaQuery": {"value": track}, "ProfileAlias": {"value": profile},
-                "TargetAlias": {"value": target}, "RememberForSession": {"value": "nein"},
-            }},
-            "voice_identity": {"status": "absent", "person_id": None},
-            "session": {"profile_id": None},
-        })
-        timestamp = str(int(time.time()))
-        signature = hmac.new(secret.encode("utf-8"), (timestamp + ".").encode() + body, hashlib.sha256).hexdigest()
-        request = Request(bridge_url + "/api/spotify/command", data=body, method="POST", headers={
-            "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (SmartHome Cockpit)",
-            "X-SmartHome-Timestamp": timestamp, "X-SmartHome-Signature": signature,
-        })
         try:
-            with urlopen(request, timeout=15) as response:
-                result = json.loads(response.read(16 * 1024).decode("utf-8"))
-        except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-            self._send_json(503, {"error": "Spotify-Bridge ist nicht erreichbar."})
-            return
-        self._send_json(200, {"status": "ok", "mode": "live", "bridge": result})
+            result = SpotifyCockpit().play(payload)
+            self._send_json(200 if result["status"] != "failed" else 409, {**result, "mode": "live"})
+        except SpotifyCockpitError as exc:
+            self._send_json(409, {"error": str(exc), "mode": "live"})
 
     def _handle_spotify_search(self, payload: dict[str, object]) -> None:
         bridge_url = os.getenv("SPOTIFY_BRIDGE_URL", "").rstrip("/")

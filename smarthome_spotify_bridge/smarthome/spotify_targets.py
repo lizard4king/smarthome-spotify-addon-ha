@@ -74,6 +74,11 @@ class SpotifyTargetRegistry:
             )
         self._targets: Mapping[str, SpotifyPlaybackTarget] = MappingProxyType(by_id)
 
+    @property
+    def targets(self) -> Mapping[str, SpotifyPlaybackTarget]:
+        """Read-only configured targets, without account credentials."""
+        return self._targets
+
     def require(self, target_id: str) -> SpotifyPlaybackTarget:
         if not isinstance(target_id, str):
             raise SpotifyTargetConfigurationError(

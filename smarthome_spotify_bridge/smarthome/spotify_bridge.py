@@ -20,6 +20,8 @@ MAX_BODY_BYTES = 16 * 1024
 MAX_CLOCK_SKEW_SECONDS = 300
 BRIDGE_PATH = "/api/spotify/command"
 SEARCH_PATH = "/api/spotify/search"
+STATUS_PATH = "/api/spotify/status"
+ASSIGNMENTS_PATH = "/api/spotify/assignments"
 HEALTH_PATH = "/health"
 
 
@@ -40,6 +42,12 @@ class SpotifyCommandDispatcher(Protocol):
 
     def search(self, profile_alias: str, query: str, *, now: datetime) -> object:
         """Search one explicitly selected profile without playback."""
+
+    def status(self, *, now: datetime) -> dict[str, object]:
+        """Return observed, token-free profile/player metadata."""
+
+    def play_assignments(self, assignments: object, *, now: datetime) -> dict[str, object]:
+        """Start distinct-account, distinct-target assignments after preflight."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +164,25 @@ class SpotifyBridge:
         if not hmac.compare_digest(expected, supplied):
             raise SpotifyBridgeError("Die Bridge-Signatur ist ungültig.")
 
+    def handle_cockpit(self, *, method: str, path: str, headers: Mapping[str, str], body: bytes) -> dict:
+        """Authenticated status or independent assignments; no token fields."""
+        if method.upper() != "POST" or path not in {STATUS_PATH, ASSIGNMENTS_PATH}:
+            raise SpotifyBridgeError("Der Cockpit-Endpunkt ist nicht verfügbar.")
+        if len(body) > MAX_BODY_BYTES:
+            raise SpotifyBridgeError("Die Cockpit-Anfrage ist zu groß.")
+        self._verify_signature(headers, body)
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (UnicodeError, ValueError):
+            raise SpotifyBridgeError("Die Cockpit-Anfrage ist ungültig.") from None
+        if path == STATUS_PATH:
+            if payload != {}:
+                raise SpotifyBridgeError("Die Statusanfrage enthält unerwartete Felder.")
+            return self._dispatcher.status(now=datetime.now(UTC))
+        if not isinstance(payload, dict) or set(payload) != {"assignments"}:
+            raise SpotifyBridgeError("Die Cockpit-Anfrage enthält unerwartete Felder.")
+        return self._dispatcher.play_assignments(payload["assignments"], now=datetime.now(UTC))
+
 
 def _voice_identity(raw: object) -> AlexaVoiceIdentity:
     if not isinstance(raw, dict) or set(raw) != {"status", "person_id"}:
@@ -225,7 +252,9 @@ def make_server(
             length = int(self.headers.get("Content-Length", "-1"))
             body = self.rfile.read(max(0, min(length, MAX_BODY_BYTES + 1)))
             try:
-                if self.path == SEARCH_PATH:
+                if self.path in {STATUS_PATH, ASSIGNMENTS_PATH}:
+                    payload = bridge.handle_cockpit(method="POST", path=self.path, headers=self.headers, body=body)
+                elif self.path == SEARCH_PATH:
                     payload = bridge.handle_search(method="POST", path=self.path, headers=self.headers, body=body)
                 else:
                     response = bridge.handle(

@@ -14,8 +14,8 @@ const musicStart = scriptMatch[1].indexOf('const ownMusic = (() => {');
 const musicEnd = scriptMatch[1].indexOf('\n    function showSpotifyEmbed', musicStart);
 assert.ok(musicStart >= 0 && musicEnd > musicStart, 'Eigene-Musik-Code muss eindeutig isolierbar sein.');
 const ownMusicSource = scriptMatch[1].slice(musicStart, musicEnd);
-const spotifyRenderStart = scriptMatch[1].indexOf('function renderSpotifyResults(results, items) {');
-const spotifyRenderEnd = scriptMatch[1].indexOf('\n    document.getElementById(\'spotifySearch\')', spotifyRenderStart);
+const spotifyRenderStart = scriptMatch[1].indexOf('function renderSpotifyResults(');
+const spotifyRenderEnd = scriptMatch[1].indexOf('\n    let spotifySearchGeneration', spotifyRenderStart);
 assert.ok(spotifyRenderStart >= 0 && spotifyRenderEnd > spotifyRenderStart, 'Spotify-Renderer muss eindeutig isolierbar sein.');
 const spotifyRenderSource = scriptMatch[1].slice(spotifyRenderStart, spotifyRenderEnd);
 
@@ -56,7 +56,7 @@ class Element {
 }
 const track=new Element('input'); const nowPlaying=new Element();
 global.document={createElement:tag=>new Element(tag),getElementById:id=>id==='track'?track:nowPlaying};
-global.showSpotifyEmbed=()=>{}; global.log=()=>{};
+global.showSpotifyEmbed=()=>{}; global.selectSpotifyTrack=()=>{}; global.log=()=>{};
 ${spotifyRenderSource}
 const results=new Element();
 renderSpotifyResults(results,[{title:'<img src=x onerror=alert(1)>',subtitle:'<svg onload=alert(1)>',uri:'spotify:track:abc',image_url:'javascript:alert(1)'}]);
@@ -106,12 +106,16 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
       return overrides.playerResponse || {ok:true,json:async()=>({players:[{id:'player-1',name:'Testplayer',available:true}]})};
     }
     if (url.startsWith('/api/music/tracks?')) {
+      if (overrides.trackFailure) throw new Error('Musiksuche offline');
       const parsed=new URL(url,'http://local'); const offset=Number(parsed.searchParams.get('offset'));
       const track={uri:'library:track/1',title:'Treffer',artist:'Interpret',album:'Album'};
       if (artworkPresent) track.artwork_url='https://example.invalid/cover.jpg';
       return {ok:true,json:async()=>offset<2?{tracks:[],next_offset:offset+1}:{tracks:[track],next_offset:3}};
     }
-    if (options.method==='POST') return new Promise(resolve=>{ resolvePost=()=>resolve({ok:true,json:async()=>({})}); });
+    if (options.method==='POST') {
+      if (overrides.postResponse) return overrides.postResponse;
+      return new Promise(resolve=>{ resolvePost=()=>resolve({ok:true,json:async()=>({status:'ok'})}); });
+    }
     throw new Error('Unerwarteter API-Pfad: '+url);
   };
   const document={getElementById:id=>elements[id],createElement:tag=>new Element(tag),querySelectorAll:()=>[]};
@@ -145,6 +149,19 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
   assert.equal(active.calls.filter(call=>call.options.method==='POST').length,1,'kein paralleler zweiter POST');
   active.finishPost(); await tick(); await tick();
   assert.equal(active.elements.musicMore.disabled,false,'Pagination wird nach POST wieder aktiv');
+
+  const pageErrorOptions={}; const pageError=await createRig(true,false,pageErrorOptions);
+  pageError.elements.musicQuery.value='Query'; await pageError.ownMusic.search(false);
+  assert.equal(pageError.elements.musicMore.hidden,false);
+  pageErrorOptions.trackFailure=true; await pageError.ownMusic.search(true);
+  assert.equal(pageError.elements.musicMore.hidden,true,'fehlgeschlagene Seite behält keine alte Pagination');
+  assert.equal(pageError.elements.musicMore.disabled,true);
+
+  for (const result of [{status:'failed'}, {status:'ok',mode:'simulation'}, {}]) {
+    const rejected=await createRig(true,false,{postResponse:{ok:true,json:async()=>result}});
+    rejected.elements.musicResume.fire('click'); await tick(); await tick();
+    assert.match(rejected.elements.musicMessage.textContent,/Befehl fehlgeschlagen/,'HTTP 200 ist kein bestätigter Musikbefehl');
+  }
 
   const readOnly=await createRig(false,false);
   assert.equal(readOnly.elements.musicPlay.disabled,true,'allow_playback=false sperrt Play');
