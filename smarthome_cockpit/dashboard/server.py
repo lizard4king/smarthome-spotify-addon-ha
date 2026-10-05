@@ -176,6 +176,12 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             self._send_json(400, error)
 
     def _handle_music_get(self) -> None:
+        origin = self.headers.get("Origin")
+        if (self.headers.get("Sec-Fetch-Site") == "cross-site" or (origin and (
+                urlsplit(origin).scheme not in {"http", "https"} or
+                urlsplit(origin).netloc != self.headers.get("Host")))):
+            self._send_json(403, {"available": False, "error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
+            return
         client = MusicAssistant()
         parsed = urlsplit(self.path)
         query = parse_qs(parsed.query)
@@ -186,6 +192,8 @@ class CockpitHandler(SimpleHTTPRequestHandler):
                 result = {"players": client.players()}
             elif parsed.path == "/api/music/tracks":
                 result = client.tracks(query.get("q", [""])[0], int(query.get("offset", ["0"])[0]))
+            elif parsed.path == "/api/music/queue":
+                result = client.queue(query.get("player_id", [""])[0])
             elif parsed.path == "/api/music/artwork":
                 body, content_type = client.artwork(query.get("uri", [""])[0])
                 self.send_response(200)
@@ -207,6 +215,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
 
     def _handle_music_post(self, payload: dict[str, object]) -> None:
         # Reject browser cross-origin writes, including simple form requests.
+        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+            self._send_json(403, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
+            return
         origin = self.headers.get("Origin")
         if origin:
             parsed = urlsplit(origin)
@@ -218,9 +229,15 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         client = MusicAssistant()
         try:
             if self.path == "/api/music/play":
-                result = client.play(payload.get("uri"), payload.get("player_id"))
+                if "option" in payload:
+                    result = client.play(payload.get("uri"), payload.get("player_id"), payload["option"])
+                else:
+                    result = client.play(payload.get("uri"), payload.get("player_id"))
             else:
-                result = client.control(payload.get("player_id"), payload.get("command"))
+                if payload.get("command") == "seek":
+                    result = client.control(payload.get("player_id"), "seek", payload.get("position"))
+                else:
+                    result = client.control(payload.get("player_id"), payload.get("command"))
             self._send_json(200, result)
         except MusicAssistantError as exc:
             self._send_json(503, {"available": False, "error": str(exc)})

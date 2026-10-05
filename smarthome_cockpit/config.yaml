@@ -1,5 +1,5 @@
 name: Smart Home Cockpit
-version: "0.1.12"
+version: "0.1.13"
 slug: smarthome_cockpit
 description: Privates Smart-Home-Cockpit auf Home Assistant
 arch:
@@ -26,6 +26,7 @@ options:
   music_assistant_url: ""
   music_assistant_token: ""
   music_assistant_allow_playback: false
+  music_assistant_library_provider: ""
 schema:
   home_assistant_token: password
   home_assistant_entities_json: str
@@ -39,3 +40,4 @@ schema:
   music_assistant_url: str
   music_assistant_token: password
   music_assistant_allow_playback: bool
+  music_assistant_library_provider: str

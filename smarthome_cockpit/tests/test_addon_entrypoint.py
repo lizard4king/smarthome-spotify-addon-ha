@@ -28,6 +28,15 @@ class HandoffTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
+    def test_library_provider_loaded_without_changing_credentials(self):
+        options = {"music_assistant_library_provider": "filesystem_local--example",
+                   "music_assistant_token": "existing-offline-token"}
+        with patch("builtins.open", mock_open(read_data=json.dumps(options))), \
+                patch.object(entry.os, "open"):
+            entry._load_options_fallback()
+        self.assertEqual(os.environ["MUSIC_ASSISTANT_LIBRARY_PROVIDER"], "filesystem_local--example")
+        self.assertEqual(os.environ["MUSIC_ASSISTANT_TOKEN"], "existing-offline-token")
+
     def network_free_handoff(self, value=HANDOFF, *, raw=None, directory_mode=0o700,
                              file_mode=0o600, file_type=stat.S_IFREG, size=None):
         data = raw if raw is not None else json.dumps(value).encode()

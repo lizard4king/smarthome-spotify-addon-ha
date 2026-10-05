@@ -94,7 +94,7 @@ class Element {
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 async function createRig(allowPlayback, artworkPresent, overrides={}) {
-  const ids='musicAvailability musicPlayer musicResults musicMessage musicMore musicPlay musicPause musicResume musicStop musicSearchButton musicQuery musicPlayerHint musicSelected musicSelectedArt musicSelectedTitle musicSelectedSubtitle musicSearchForm'.split(' ');
+  const ids='musicAvailability musicPlayer musicResults musicMessage musicMore musicPlay musicAdd musicToggle musicPrevious musicNext musicStop musicSeek musicElapsed musicDuration musicCurrentArt musicCurrentTitle musicCurrentSubtitle musicLiveStatus musicQueue musicLibrary musicSearchButton musicQuery musicPlayerHint musicSelected musicSelectedArt musicSelectedTitle musicSelectedSubtitle musicSearchForm'.split(' ');
   const elements=Object.fromEntries(ids.map(id=>[id,new Element(id==='musicPlayer'?'select':'div')]));
   elements.musicSelectedArt.hidden=true; elements.musicMore.hidden=true;
   const calls=[]; let resolvePost;
@@ -104,6 +104,12 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
     if (url==='/api/music/players') {
       if (overrides.playerFailure) throw new Error('synthetischer API-Ausfall');
       return overrides.playerResponse || {ok:true,json:async()=>({players:[{id:'player-1',name:'Testplayer',available:true}]})};
+    }
+    if (url.startsWith('/api/music/queue?')) {
+      if (overrides.queueFailure) throw new Error('Warteschlange offline');
+      if (overrides.queueFetch) return overrides.queueFetch(url, options);
+      const playerId = new URL(url,'http://local').searchParams.get('player_id');
+      return {ok:true,json:async()=>overrides.queuePayload || ({player_id:playerId,queue_id:playerId,active:true,state:'playing',own_music:true,items:2,current_index:0,elapsed_time:14,current_track:{title:'Aktueller Titel',artist:'Aktueller Interpret',album:'Aktuelles Album',duration:120,uri:'library:track/current',artwork_url:'https://example.invalid/cover.jpg'},tracks:[{title:'Aktueller Titel',artist:'Aktueller Interpret',index:0},{title:'Nächster Titel',index:1}],controls:{pause:true,resume:false,stop:true,previous:false,next:true,seek:true}})};
     }
     if (url.startsWith('/api/music/tracks?')) {
       if (overrides.trackFailure) throw new Error('Musiksuche offline');
@@ -118,11 +124,11 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
     }
     throw new Error('Unerwarteter API-Pfad: '+url);
   };
-  const document={getElementById:id=>elements[id],createElement:tag=>new Element(tag),querySelectorAll:()=>[]};
+  const document={hidden:false,listeners:{},getElementById:id=>elements[id],createElement:tag=>new Element(tag),querySelectorAll:()=>[],addEventListener(name,fn){this.listeners[name]=fn;},fire(name){this.listeners[name]?.();}};
   const log=()=>{};
   ${ownMusicSource}
   await tick(); await tick();
-  return {elements,calls,ownMusic,finishPost:()=>resolvePost?.()};
+  return {elements,calls,document,ownMusic,finishPost:()=>resolvePost?.()};
 }
 (async()=>{
   const active=await createRig(true,true);
@@ -159,13 +165,13 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
 
   for (const result of [{status:'failed'}, {status:'ok',mode:'simulation'}, {}]) {
     const rejected=await createRig(true,false,{postResponse:{ok:true,json:async()=>result}});
-    rejected.elements.musicResume.fire('click'); await tick(); await tick();
+    rejected.elements.musicToggle.fire('click'); await tick(); await tick();
     assert.match(rejected.elements.musicMessage.textContent,/Befehl fehlgeschlagen/,'HTTP 200 ist kein bestätigter Musikbefehl');
   }
 
   const readOnly=await createRig(false,false);
   assert.equal(readOnly.elements.musicPlay.disabled,true,'allow_playback=false sperrt Play');
-  assert.equal(readOnly.elements.musicPause.disabled,true,'allow_playback=false sperrt Steueraktionen');
+  assert.equal(readOnly.elements.musicToggle.disabled,true,'allow_playback=false sperrt Steueraktionen');
   assert.equal(readOnly.elements.musicSearchButton.disabled,false,'Suche bleibt im Lesemodus verfügbar');
   readOnly.elements.musicQuery.value='Lesbarer Titel';
   await readOnly.ownMusic.search(false);
@@ -217,7 +223,7 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
   }
 
   const strictPlayback=await createRig(true,false,{statusResponse:{ok:true,json:async()=>({configured:true,available:true})}});
-  assert.equal(strictPlayback.elements.musicPause.disabled,true,'fehlendes allow_playback darf nicht standardmäßig freigeben');
+  assert.equal(strictPlayback.elements.musicToggle.disabled,true,'fehlendes allow_playback darf nicht standardmäßig freigeben');
 
   const unavailablePlayers=await createRig(true,false,{playerResponse:{ok:true,json:async()=>({players:[
     {id:'offline-1',name:'Echo Küche',available:false},
@@ -232,7 +238,7 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
   assert.deepEqual(noSelection.elements.musicPlayer.selectedOptions,[],'nicht passende Auswahl hat kein selectedOptions-Fallback');
 
   function assertNoTargetActions(rig, label) {
-    for (const id of ['musicPlay','musicPause','musicResume','musicStop']) {
+    for (const id of ['musicPlay','musicAdd','musicToggle','musicPrevious','musicNext','musicStop','musicSeek']) {
       assert.equal(rig.elements[id].disabled,true,label + ': ' + id + ' gesperrt');
       rig.elements[id].fire('click');
     }
@@ -247,6 +253,111 @@ async function createRig(allowPlayback, artworkPresent, overrides={}) {
   ]) assertNoTargetActions(rig,label);
   assertNoTargetActions(unavailablePlayers,'alle Player nicht verfügbar');
   assert.equal(playerApiError.elements.musicSearchButton.disabled,false,'bei erfolgreichem Status bleibt Bibliothekssuche trotz Playerlistenfehler verfügbar');
+
+  assert.equal(active.elements.musicCurrentTitle.textContent,'Aktueller Titel','aktuelle Wiedergabe kommt aus gelesener Queue');
+  assert.equal(active.elements.musicSelectedTitle.textContent,'Treffer','Titelauswahl ist unabhängig von aktueller Wiedergabe');
+  assert.equal(active.elements.musicToggle.textContent,'Ⅱ Pause');
+  assert.equal(active.elements.musicPrevious.disabled,true,'fehlende previous-Freigabe sperrt Zurück');
+  assert.equal(active.elements.musicNext.disabled,false);
+  assert.equal(active.elements.musicSeek.disabled,false);
+  assert.equal(active.elements.musicElapsed.textContent,'0:14');
+  assert.equal(active.elements.musicDuration.textContent,'2:00');
+  assert.equal(active.elements.musicQueue.children[0].attributes['aria-current'],'true');
+  const playPayload=JSON.parse(active.calls.find(call=>call.url==='/api/music/play').options.body);
+  assert.equal(playPayload.option,'replace','Start ersetzt die Warteschlange explizit');
+  await active.ownMusic.search(false);
+  assert.equal(active.elements.musicCurrentTitle.textContent,'Aktueller Titel','neue Suche verändert keine beobachtete Wiedergabe');
+
+  const browse=await createRig(true,false);
+  browse.elements.musicLibrary.fire('click'); await tick(); await tick();
+  const browseUrl=new URL(browse.calls.find(call=>call.url.startsWith('/api/music/tracks?')).url,'http://local');
+  assert.equal(browseUrl.searchParams.get('q'),'','Bibliothek darf ohne Suchtext geladen werden');
+  assert.equal(browseUrl.searchParams.get('limit'),'50');
+  await browse.ownMusic.search(true); await browse.ownMusic.search(true);
+  browse.elements.musicResults.children.find(node=>node.className==='music-result').fire('click');
+  browse.elements.musicAdd.fire('click'); await tick();
+  assert.equal(JSON.parse(browse.calls.find(call=>call.url==='/api/music/play').options.body).option,'add','Queue-Hinzufügen nutzt add');
+  browse.finishPost(); await tick(); await tick();
+  browse.elements.musicSeek.fire('pointerdown'); browse.elements.musicSeek.value='42'; browse.elements.musicSeek.fire('change'); await tick();
+  assert.deepEqual(JSON.parse(browse.calls.filter(call=>call.options.method==='POST').at(-1).options.body),{player_id:'player-1',command:'seek',position:42});
+  browse.finishPost(); await tick(); await tick();
+
+  const paused=await createRig(true,false,{queuePayload:{player_id:'player-1',queue_id:'player-1',active:true,state:'paused',own_music:true,items:1,current_index:0,elapsed_time:5,current_track:{title:'Pause',duration:100},tracks:[{title:'Pause',index:0}],controls:{pause:false,resume:true,stop:true,previous:false,next:false,seek:false}}});
+  assert.equal(paused.elements.musicToggle.textContent,'▶ Fortsetzen');
+  assert.equal(paused.elements.musicToggle.disabled,false);
+  assert.equal(paused.elements.musicSeek.disabled,true,'seek wird nur bei expliziter Freigabe angeboten');
+  paused.elements.musicToggle.fire('click'); await tick();
+  assert.equal(JSON.parse(paused.calls.find(call=>call.options.method==='POST').options.body).command,'resume');
+  paused.finishPost(); await tick(); await tick();
+  assert.match(paused.elements.musicMessage.textContent,/Befehl angenommen/,'Befehlserfolg behauptet keine tatsächliche Wiedergabe');
+  assert.equal(paused.elements.musicCurrentTitle.textContent,'Pause','Befehlserfolg ersetzt beobachteten Titel nicht');
+
+  const queueFailureOptions={}; const formerlyPlaying=await createRig(true,false,queueFailureOptions);
+  assert.equal(formerlyPlaying.elements.musicCurrentTitle.textContent,'Aktueller Titel');
+  queueFailureOptions.queueFailure=true; await formerlyPlaying.ownMusic.refresh();
+  assert.equal(formerlyPlaying.elements.musicCurrentTitle.textContent,'Keine bestätigte Wiedergabe','Fehler nach erfolgreichem Lesen löscht alte Wiedergabe');
+  assert.equal(formerlyPlaying.elements.musicCurrentArt.hidden,true);
+  assert.equal(formerlyPlaying.elements.musicStop.disabled,true);
+  const otherSource=await createRig(true,false,{queuePayload:{player_id:'player-1',queue_id:'player-1',active:true,state:'playing',own_music:false,items:1,current_index:0,elapsed_time:5,current_track:{title:'Andere Quelle',duration:100},tracks:[{title:'Andere Quelle',index:0}],controls:{pause:true,resume:false,stop:true,previous:true,next:true,seek:true}}});
+  for(const id of ['musicToggle','musicPrevious','musicNext','musicStop','musicSeek']) {
+    assert.equal(otherSource.elements[id].disabled,true,'andere Musikquelle sperrt '+id);
+    otherSource.elements[id].fire(id==='musicSeek'?'change':'click');
+  }
+  assert.equal(otherSource.calls.filter(call=>call.options.method==='POST').length,0,'eigene Musik verändert keine fremde Wiedergabequelle');
+  assert.match(otherSource.elements.musicLiveStatus.textContent,/Andere Musikquelle aktiv/,'beobachtete andere aktive Quelle darf benannt werden');
+  const emptyIdle=await createRig(true,false,{queuePayload:{player_id:'player-1',queue_id:null,active:false,state:'idle',own_music:false,items:0,current_index:null,elapsed_time:0,current_track:null,tracks:[],controls:{pause:false,resume:false,stop:false,previous:false,next:false,seek:false}}});
+  assert.equal(emptyIdle.elements.musicLiveStatus.textContent,'Keine eigene Wiedergabe','leere idle Queue behauptet keine andere aktive Quelle');
+  const unknown=await createRig(true,false,{queuePayload:{player_id:'player-1',queue_id:'player-1',active:true,state:'unknown',own_music:true,items:1,current_index:0,elapsed_time:5,current_track:{title:'Unbekannter Zustand',duration:100,uri:'library:track/unknown'},tracks:[{title:'Unbekannter Zustand',index:0}],controls:{pause:true,resume:true,stop:true,previous:true,next:true,seek:true}}});
+  assert.equal(unknown.elements.musicLiveStatus.textContent,'Status unbekannt','unknown ist kein gestoppter Zustand');
+  assert.equal(unknown.elements.musicToggle.textContent,'Wiedergabe','unbekannter Zustand behauptet keine Pause oder Fortsetzung');
+  for(const id of ['musicToggle','musicPrevious','musicNext','musicStop','musicSeek']) {
+    assert.equal(unknown.elements[id].disabled,true,'unknown sperrt '+id);
+    unknown.elements[id].fire(id==='musicSeek'?'change':'click');
+  }
+  assert.equal(unknown.calls.filter(call=>call.options.method==='POST').length,0,'unknown verhindert Transportbefehle auch bei ungültiger Freigabe');
+
+  const idle=await createRig(true,false,{queuePayload:{player_id:'player-1',queue_id:'player-1',active:true,state:'idle',own_music:true,items:1,current_index:0,elapsed_time:5,current_track:{title:'Gestoppt',duration:100,uri:'library:track/stopped'},tracks:[{title:'Gestoppt',index:0}],controls:{pause:false,resume:true,stop:false,previous:false,next:false,seek:false}}});
+  assert.equal(idle.elements.musicToggle.textContent,'▶ Fortsetzen','beobachtete resume-Freigabe gilt auch bei gestoppter Queue');
+  assert.equal(idle.elements.musicToggle.disabled,false);
+  idle.elements.musicToggle.fire('click'); await tick();
+  assert.equal(JSON.parse(idle.calls.find(call=>call.options.method==='POST').options.body).command,'resume');
+  idle.finishPost(); await tick(); await tick();
+
+  const changingTrackOptions={}; const changingTrack=await createRig(true,false,changingTrackOptions);
+  changingTrack.elements.musicSeek.fire('pointerdown'); changingTrack.elements.musicSeek.value='42';
+  changingTrackOptions.queuePayload={player_id:'player-1',queue_id:'player-1',active:true,state:'playing',own_music:true,items:1,current_index:0,elapsed_time:5,current_track:{title:'Neuer Titel',duration:100,uri:'library:track/new'},tracks:[{title:'Neuer Titel',index:0}],controls:{pause:true,resume:false,stop:true,previous:false,next:false,seek:true}};
+  await changingTrack.ownMusic.refresh();
+  changingTrack.elements.musicSeek.fire('change'); await tick();
+  assert.equal(changingTrack.calls.filter(call=>call.options.method==='POST').length,0,'Positionswahl des alten Titels wird nicht auf neuen Titel übertragen');
+  assert.match(changingTrack.elements.musicMessage.textContent,/erneut wählen/);
+  const beforeVisibility=changingTrack.calls.filter(call=>call.url.startsWith('/api/music/queue?')).length;
+  changingTrack.document.hidden=true; changingTrack.document.fire('visibilitychange');
+  changingTrack.document.hidden=false; changingTrack.document.fire('visibilitychange');
+  assert.equal(changingTrack.elements.musicToggle.disabled,true,'Rückkehr zur Ansicht entfernt alte Bedienfreigabe sofort');
+  await tick(); await tick();
+  assert.equal(changingTrack.calls.filter(call=>call.url.startsWith('/api/music/queue?')).length,beforeVisibility+1,'Rückkehr zur Ansicht liest aktuellen Zustand neu');
+
+  const queueError=await createRig(true,false,{queueFailure:true});
+  assert.equal(queueError.elements.musicCurrentTitle.textContent,'Keine bestätigte Wiedergabe');
+  assert.match(queueError.elements.musicLiveStatus.textContent,/nicht abrufbar/);
+  for(const id of ['musicToggle','musicPrevious','musicNext','musicStop','musicSeek']) assert.equal(queueError.elements[id].disabled,true,'Queuefehler sperrt '+id);
+  const malformedQueue=await createRig(true,false,{queuePayload:{player_id:'player-1',state:'playing',controls:{pause:true}}});
+  assert.equal(malformedQueue.elements.musicToggle.disabled,true,'ungültige Statusantwort schaltet keine Bedienung frei');
+
+  let resolveOldQueue; let queueRequests=0;
+  const changed=await createRig(true,false,{playerResponse:{ok:true,json:async()=>({players:[{id:'player-1',name:'Raum Eins',room:'Raum Eins',available:true},{id:'player-2',name:'Raum Zwei',room:'Raum Zwei',available:true}]})},queueFetch:(url)=>{
+    queueRequests+=1;
+    if(queueRequests===1) return new Promise(resolve=>{resolveOldQueue=resolve;});
+    return Promise.resolve({ok:true,json:async()=>({player_id:'player-2',queue_id:'player-2',active:true,state:'idle',own_music:true,items:0,current_index:null,elapsed_time:0,current_track:null,tracks:[],controls:{pause:false,resume:false,stop:false,previous:false,next:false,seek:false}})});
+  }});
+  assert.equal(changed.elements.musicPlayer.options[0].textContent,'Raum Eins','Raumname wird nicht doppelt angezeigt');
+  changed.elements.musicPlayer.value='player-2'; changed.elements.musicPlayer.fire('change');
+  assert.equal(queueRequests,1,'Zielwechsel startet keinen überlappenden Queue-Request');
+  assert.equal(changed.elements.musicToggle.disabled,true,'alte Bedienung wird bei Zielwechsel sofort gesperrt');
+  resolveOldQueue({ok:true,json:async()=>({player_id:'player-1'})}); await tick(); await tick();
+  assert.equal(queueRequests,2,'nach altem Request wird das neue Ziel gelesen');
+  assert.equal(changed.elements.musicCurrentTitle.textContent,'Kein aktueller Titel','späte Antwort des alten Ziels überschreibt neuen Zustand nicht');
+  assert.doesNotMatch(changed.elements.musicLiveStatus.textContent,/nicht abrufbar/,'alte ungültige Antwort wird ignoriert');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 `;
   const result = runNodeFile(harness);

@@ -11,9 +11,11 @@ Das Cockpit spricht serverseitig die offizielle [REST API](https://www.music-ass
 an: `POST /api`, mit `Authorization: Bearer`. Add-on-Optionen sind
 `music_assistant_url` (Server-Ursprung, z. B. `http://music-assistant:8095`),
 `music_assistant_token` (geschütztes Passwortfeld) und
-`music_assistant_allow_playback` (standardmäßig `false`). Entsprechende
+`music_assistant_allow_playback` (standardmäßig `false`). Die optionale
+`music_assistant_library_provider` bindet Suche und Wiedergabe an eine vorhandene
+Filesystem-Instanz, etwa die interne Musikkopie; bei leerer Option bleibt die bisherige Quellenwahl erhalten. Entsprechende
 Umgebungsvariablen heißen `MUSIC_ASSISTANT_URL`, `MUSIC_ASSISTANT_TOKEN` und
-`MUSIC_ASSISTANT_ALLOW_PLAYBACK`. Tokens gelangen weder ins Browser-JSON noch in Logs.
+`MUSIC_ASSISTANT_ALLOW_PLAYBACK` sowie `MUSIC_ASSISTANT_LIBRARY_PROVIDER`. Tokens gelangen weder ins Browser-JSON noch in Logs.
 
 Bei leerer MA-Token-Option kann der HA-Einstiegspunkt den privaten Handoff
 `/config/private_smarthome_music/cockpit-ma.json` verwenden: `schema: 1`,
@@ -34,8 +36,14 @@ Zugelassen sind verfügbare Zuordnungen aus `filesystem_local`, `filesystem_smb`
 und `filesystem_nfs`; Cloud-, Streaming-, Radio-, URL- und rohe Dateipfadziele sind ausgeschlossen.
 Bei mehreren Quellen wird ausschließlich die geprüfte lokale Provider-URI gespielt.
 
-`POST /api/music/play` erhält `{ "uri": "…", "player_id": "…" }`;
-`POST /api/music/control` erhält `{ "player_id": "…", "command": "pause|resume|stop" }`.
+`GET /api/music/queue?player_id=…` liest den tatsächlichen Zustand und bis zu 50
+Queue-Einträge um den aktuellen Titel. Ausgewählter Titel und aktuelle Wiedergabe
+sind getrennt. Controls werden nur für eindeutig lokale Queue-Inhalte angeboten.
+`POST /api/music/play` erhält `{ "uri": "…", "player_id": "…", "option": "replace|add" }`;
+`replace` startet den Titel und ersetzt die Queue, `add` hängt ihn an.
+`POST /api/music/control` erhält `{ "player_id": "…", "command": "pause|resume|stop|previous|next|seek" }`;
+für `seek` kommt eine ganzzahlige `position` in Sekunden hinzu. Der Positionsregler
+ist nur bei tatsächlich gemeldeter Seek-Unterstützung verfügbar.
 Wiedergabe benötigt die separate Freigabe. Der Player muss tatsächlich verfügbar sein;
 die aktive Queue wird bei MA aufgelöst. `status: ok` bestätigt nur die erfolgreiche
 REST-Antwort, keine physische Wiedergabeprüfung. Ausfälle werden als nicht verfügbar gemeldet.
@@ -46,7 +54,7 @@ Cover kommen ausschließlich serverseitig über `/api/music/artwork?uri=…` aus
 MA `/imageproxy/<proxy_id>`; ältere Versionen unterstützen lokale Provider-Cover
 über `/imageproxy?provider=…&path=…`. Fremde Cover-URLs werden nicht übernommen.
 Timeout: 8 Sekunden je MA-Aufruf; JSON maximal 2 MiB, Cover maximal 4 MiB;
-Redirects werden nicht verfolgt. Verifiziert gegen öffentliche Server-Source Tag `2.10.4`
+Redirects und Umgebungs-Proxys werden nicht verwendet. Verifiziert gegen öffentliche Server-Source Tag `2.10.5`
 und den älteren Imageproxy-Vertrag `2.8.7`; die installierte Version benötigt einen
 separaten Kompatibilitätscheck ohne Wiedergabe.
 
