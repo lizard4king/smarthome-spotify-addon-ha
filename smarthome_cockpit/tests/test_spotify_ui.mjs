@@ -19,6 +19,7 @@ class Element {
   append(node) { this.children.push(node); if (this.tag === 'select' && this.children.length === 1) this.value = node.value; }
   replaceChildren() { this.children = []; if (this.tag === 'select') this.value = ''; }
   addEventListener(type, fn) { this.listeners[type] = fn; }
+  setAttribute(name, value) { (this.attributes ||= {})[name] = String(value); }
   fire(type) { return this.listeners[type]?.(); }
 }
 const publicStatus = () => ({available:true, profiles:[
@@ -32,10 +33,10 @@ const publicStatus = () => ({available:true, profiles:[
 function createRig() {
   const ids = 'spotifyProfile spotifyPlay spotifyMessage spotifySearch spotifyQuery track nowPlaying'.split(' ');
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
-  elements.spotifyProfile.value = 'Andreas';
-  const cards = ['Andreas', 'Erlene Andreia'].map(profile => {
-    const card = new Element(); card.dataset.spotifyProfile = profile;
-    card.nodes = Object.fromEntries(['.spotify-session-enabled','.spotify-session-track','.spotify-session-status','.spotify-session-target-select']
+  elements.spotifyProfile.value = '';
+  const cards = ['1', '2'].map(slot => {
+    const card = new Element(); card.dataset.spotifySlot = slot;
+    card.nodes = Object.fromEntries(['.spotify-session-enabled','.spotify-session-track','.spotify-session-status','.spotify-session-target-select','.spotify-session-profile-label']
       .map(selector => [selector,new Element(selector.endsWith('-select') ? 'select' : 'div')]));
     return card;
   });
@@ -48,7 +49,7 @@ function createRig() {
   let status = publicStatus(); let nextPost = null; let postResponse = null;
   const context = vm.createContext({
     document: {hidden:true,getElementById:id=>elements[id],createElement:tag=>new Element(tag),
-      querySelectorAll:selector=>selector==='[data-spotify-profile]'?cards:selector==='[data-room-target]'?rooms:[]},
+      querySelectorAll:selector=>selector==='[data-spotify-slot]'?cards:selector==='[data-room-target]'?rooms:[]},
     roomDetails:{living:{spotifyTarget:"Andreas' Echo Show"},office:{spotifyTarget:'Echo Büro'},bath:{spotifyTarget:'Echo Badezimmer'},bed:{spotifyTarget:'Echo Spot Schlafzimmer'},kitchen:{spotifyTarget:'Echo Küche'}},
     log:message=>logs.push(message), showSpotifyEmbed:()=>{}, AbortController,
     setTimeout:(fn,delay)=>{timers.push({fn,delay});return timers.length;},clearTimeout:()=>{},
@@ -86,8 +87,8 @@ test('Mobile Header-Aktionen dürfen umbrechen und lange Verbindungszustände pa
 
 test('Zwei Profile behalten unterschiedliche Titel und Ziele; genau ein batch POST', async () => {
   const rig = createRig(); rig.controller.applyStatus(publicStatus());
-  rig.controller.selectTrack({title:'Song A',subtitle:'Artist A',uri:'spotify:track:AAA'},'Andreas');
-  rig.controller.selectTrack({title:'Song B',subtitle:'Artist B',uri:'spotify:track:BBB'},'Erlene Andreia');
+  rig.controller.selectTrack({title:'Song A',subtitle:'Artist A',uri:'spotify:track:AAA'},'andreas');
+  rig.controller.selectTrack({title:'Song B',subtitle:'Artist B',uri:'spotify:track:BBB'},'erlene');
   assert.equal(rig.cards[0].nodes['.spotify-session-track'].textContent,'Song A · Artist A');
   assert.equal(rig.cards[1].nodes['.spotify-session-track'].textContent,'Song B · Artist B');
   assert.notEqual(rig.cards[0].nodes['.spotify-session-target-select'].value,rig.cards[1].nodes['.spotify-session-target-select'].value);
@@ -98,16 +99,113 @@ test('Zwei Profile behalten unterschiedliche Titel und Ziele; genau ein batch PO
   await rig.controller.play();
   assert.equal(rig.calls.filter(call=>call.path==='/api/spotify').length,1);
   const batch = JSON.parse(rig.calls.find(call=>call.path==='/api/spotify').options.body).assignments;
-  assert.deepEqual(batch,[{profile:'Andreas',target:'living',track:'spotify:track:AAA'},{profile:'Erlene Andreia',target:'office',track:'spotify:track:BBB'}]);
+  assert.deepEqual(batch,[{profile:'andreas',target:'living',track:'spotify:track:AAA'},{profile:'erlene',target:'office',track:'spotify:track:BBB'}]);
   rig.finishPost(); await play;
   assert.match(rig.elements.spotifyMessage.textContent,/Befehl angenommen/);
   assert.doesNotMatch(rig.rooms[0].nodes['.room-spotify-state'].textContent,/Spielt:/);
   assert.equal(rig.elements.spotifyPlay.disabled,false);
 });
 
+const actualProfileStatus = () => {
+  const status=publicStatus();
+  status.profiles[0]={...status.profiles[0],profile_id:'person_a',display_name:'Erlene Spotify'};
+  status.profiles[1]={...status.profiles[1],profile_id:'person_b',display_name:'Mein Spotify'};
+  return status;
+};
+
+test('Live-Profilnamen werden dynamisch angezeigt und Start sendet nur stabile IDs', async () => {
+  const rig=createRig(); rig.controller.applyStatus(actualProfileStatus());
+  assert.deepEqual(rig.cards.map(card=>card.nodes['.spotify-session-profile-label'].textContent),['Erlene Spotify','Mein Spotify']);
+  assert.deepEqual(rig.elements.spotifyProfile.children.map(option=>option.value),['person_a','person_b']);
+  assert.deepEqual(rig.elements.spotifyProfile.children.map(option=>option.textContent),['Erlene Spotify','Mein Spotify']);
+  assert.equal(rig.elements.spotifyProfile.value,'person_a');
+  assert.equal(rig.cards[0].nodes['.spotify-session-target-select'].attributes['aria-label'],'Spotify-Ziel für Erlene Spotify');
+  assert.equal(rig.controller.searchAllowed('person_a'),true);
+  assert.equal(rig.controller.searchAllowed('Andreas'),false,'kein geratenes Personenmapping');
+  rig.controller.selectTrack({title:'Song A',uri:'spotify:track:AAA'},'person_a');
+  rig.controller.selectTrack({title:'Song B',uri:'spotify:track:BBB'},'person_b');
+  const play=rig.controller.play(); await tick();
+  assert.deepEqual(JSON.parse(rig.calls[0].options.body).assignments,[
+    {profile:'person_a',target:'living',track:'spotify:track:AAA'},
+    {profile:'person_b',target:'office',track:'spotify:track:BBB'},
+  ]);
+  rig.setStatus(actualProfileStatus()); rig.finishPost(); await play;
+  assert.match(rig.elements.spotifyMessage.textContent,/Erlene Spotify: Befehl angenommen/);
+  assert.match(rig.elements.spotifyMessage.textContent,/Mein Spotify: Befehl angenommen/);
+});
+
+test('Profil-Umbenennung und Status-Neuordnung verschieben keine Auswahl zwischen Konten', () => {
+  const rig=createRig(); const state=actualProfileStatus(); rig.controller.applyStatus(state);
+  rig.controller.selectTrack({title:'Song A',uri:'spotify:track:AAA'},'person_a');
+  rig.controller.selectTrack({title:'Song B',uri:'spotify:track:BBB'},'person_b');
+  rig.elements.spotifyProfile.value='person_b';
+  state.profiles.reverse(); state.profiles[0].display_name='Mein neuer Spotify-Name'; state.profiles[1].display_name='Erlene neu';
+  rig.controller.applyStatus(state);
+  assert.deepEqual(rig.cards.map(card=>card.nodes['.spotify-session-profile-label'].textContent),['Erlene neu','Mein neuer Spotify-Name']);
+  assert.deepEqual(rig.cards.map(card=>card.nodes['.spotify-session-track'].textContent),['Song A','Song B']);
+  assert.deepEqual(rig.cards.map(card=>card.nodes['.spotify-session-target-select'].value),['living','office']);
+  assert.equal(rig.elements.spotifyProfile.value,'person_b');
+  assert.equal(rig.cards[1].nodes['.spotify-session-target-select'].attributes['aria-label'],'Spotify-Ziel für Mein neuer Spotify-Name');
+  assert.equal(rig.elements.spotifyPlay.disabled,false);
+});
+
+test('Entferntes Profil wird gesperrt, nicht durch ein neu hinzugekommenes Konto ersetzt', async () => {
+  const rig=createRig(); const state=actualProfileStatus(); rig.controller.applyStatus(state);
+  rig.controller.selectTrack({title:'Privater Titel A',uri:'spotify:track:AAA'},'person_a');
+  rig.elements.spotifyProfile.value='person_a';
+  state.profiles[0]={...state.profiles[0],profile_id:'person_c',display_name:'Fremdes neues Profil'};
+  rig.controller.applyStatus(state); rig.controller.applyStatus(state);
+  assert.equal(rig.cards[0].nodes['.spotify-session-profile-label'].textContent,'Erlene Spotify');
+  assert.equal(rig.cards[0].nodes['.spotify-session-track'].textContent,'Privater Titel A');
+  assert.equal(rig.cards[0].nodes['.spotify-session-enabled'].checked,false);
+  assert.equal(rig.cards[0].nodes['.spotify-session-enabled'].disabled,true);
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/keinem anderen Konto/);
+  assert.equal(rig.elements.spotifyProfile.value,'person_a','Suchprofil wechselt nicht stillschweigend');
+  assert.equal(rig.controller.searchAllowed('person_a'),false);
+  assert.equal(rig.controller.searchAllowed('person_c'),false);
+  assert.equal(rig.controller.profileName('person_c'),'kein verfügbares Profil');
+  assert.match(rig.elements.spotifyMessage.textContent,/Ein weiteres Profil wird nicht automatisch übernommen/);
+  rig.controller.selectTrack({title:'Fremder Titel',uri:'spotify:track:CCC'},'person_c');
+  await rig.controller.play(); assert.equal(rig.calls.length,0);
+  rig.controller.applyStatus(actualProfileStatus());
+  assert.equal(rig.cards[0].nodes['.spotify-session-enabled'].checked,false,'Wiederkehr schaltet nicht automatisch wieder mit');
+  assert.equal(rig.cards[0].nodes['.spotify-session-target-select'].value,'','Ziel verlangt bewusste Neuauswahl nach Entfernung');
+  assert.equal(rig.elements.spotifyPlay.disabled,true);
+});
+
+test('Mehrdeutige Profil-IDs sperren den Controller statt eine Namenszuordnung zu erraten', async () => {
+  const rig=createRig(); rig.controller.applyStatus(actualProfileStatus());
+  rig.controller.selectTrack({title:'Song A',uri:'spotify:track:AAA'},'person_a');
+  const invalid=actualProfileStatus(); invalid.profiles[1].profile_id='person_a'; rig.setStatus(invalid);
+  await rig.controller.refresh();
+  assert.equal(rig.elements.spotifyPlay.disabled,true);
+  assert.equal(rig.controller.searchAllowed('person_a'),false);
+  assert.match(rig.elements.spotifyMessage.textContent,/Mehrdeutige Spotify-Profil-IDs/);
+});
+
+test('Initialer Statusausfall verhindert keine spätere Bindung tatsächlicher Profile', () => {
+  const rig=createRig(); const unavailable=actualProfileStatus(); unavailable.available=false;
+  rig.controller.applyStatus(unavailable);
+  assert.equal(rig.elements.spotifyProfile.value,'');
+  assert.equal(rig.controller.searchAllowed('person_a'),false);
+  assert.equal(rig.elements.spotifyPlay.disabled,true);
+  rig.controller.applyStatus(actualProfileStatus());
+  assert.deepEqual(rig.cards.map(card=>card.nodes['.spotify-session-profile-label'].textContent),['Erlene Spotify','Mein Spotify']);
+  assert.equal(rig.controller.searchAllowed('person_a'),true);
+});
+
+test('Später erstmalig verfügbares zweites Profil bindet nur den noch unbenutzten Slot', () => {
+  const rig=createRig(); const initial=actualProfileStatus(); initial.profiles=[initial.profiles[1]];
+  rig.controller.applyStatus(initial); rig.controller.selectTrack({title:'Titel B',uri:'spotify:track:BBB'},'person_b');
+  rig.controller.applyStatus(actualProfileStatus());
+  assert.deepEqual(rig.cards.map(card=>card.nodes['.spotify-session-profile-label'].textContent),['Mein Spotify','Erlene Spotify']);
+  assert.equal(rig.cards[0].nodes['.spotify-session-track'].textContent,'Titel B');
+  assert.equal(rig.elements.spotifyProfile.value,'person_b');
+});
+
 test('Nach POST erfolgt auch bei noch laufendem älteren GET eine neue Statusabfrage', async () => {
   const rig=createRig(); rig.controller.applyStatus(publicStatus());
-  rig.controller.selectTrack({title:'Song A',uri:'spotify:track:AAA'},'Andreas');
+  rig.controller.selectTrack({title:'Song A',uri:'spotify:track:AAA'},'andreas');
   let finishOld;
   rig.setStatus(new Promise(resolve=>{finishOld=resolve;}));
   const oldRefresh=rig.controller.refresh(); await tick();
@@ -122,7 +220,7 @@ test('Nach POST erfolgt auch bei noch laufendem älteren GET eine neue Statusabf
 
 test('Doppeltes Echo und nicht verfügbare Profile sperren Aktionen', async () => {
   const rig = createRig(); rig.controller.applyStatus(publicStatus());
-  for (const profile of ['Andreas','Erlene Andreia']) rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},profile);
+  for (const profile of ['andreas','erlene']) rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},profile);
   rig.cards[1].nodes['.spotify-session-target-select'].value='living';
   rig.cards[1].nodes['.spotify-session-target-select'].fire('change');
   assert.equal(rig.elements.spotifyPlay.disabled,true); await rig.controller.play();
@@ -154,7 +252,7 @@ test('Nur beobachtetes GET zeigt spielt; Statusausfall löscht veraltete Anzeige
 
 test('HTTP 200 mit failed Bridge-Antwort wird nie als Erfolg angezeigt', async () => {
   const rig=createRig(); rig.controller.applyStatus(publicStatus());
-  rig.controller.selectTrack({title:'Song A',uri:'spotify:track:AAA'},'Andreas');
+  rig.controller.selectTrack({title:'Song A',uri:'spotify:track:AAA'},'andreas');
   rig.setPost({ok:true,json:async()=>({status:'ok',bridge:{status:'failed',error:'Token expired'}})});
   await rig.controller.play();
   assert.match(rig.elements.spotifyMessage.textContent,/abgelehnt/);
@@ -163,7 +261,7 @@ test('HTTP 200 mit failed Bridge-Antwort wird nie als Erfolg angezeigt', async (
 
 test('Ungültige URI löst keine Auswahl und keinen POST aus', async () => {
   const rig=createRig(); rig.controller.applyStatus(publicStatus());
-  rig.controller.selectTrack({title:'Bad',uri:'javascript:alert(1)'},'Andreas');
+  rig.controller.selectTrack({title:'Bad',uri:'javascript:alert(1)'},'andreas');
   assert.equal(rig.cards[0].nodes['.spotify-session-enabled'].checked,false);
   assert.equal(rig.elements.spotifyPlay.disabled,true);
   await rig.controller.play(); assert.equal(rig.calls.length,0);
@@ -171,7 +269,7 @@ test('Ungültige URI löst keine Auswahl und keinen POST aus', async () => {
 
 test('Konfigurierte, aber in Spotify unsichtbare Ziele und fehlende Availability bleiben gesperrt', async () => {
   const rig=createRig(); rig.controller.applyStatus(publicStatus());
-  rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},'Andreas');
+  rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},'andreas');
   const partlyOffline=publicStatus(); partlyOffline.profiles[0].available_targets=['office'];
   rig.controller.applyStatus(partlyOffline);
   const select=rig.cards[0].nodes['.spotify-session-target-select'];
@@ -189,7 +287,7 @@ test('Konfigurierte, aber in Spotify unsichtbare Ziele und fehlende Availability
 
 test('Aus Konfiguration entferntes Ziel wird niemals heimlich auf ein anderes Echo umgelegt', async () => {
   const rig=createRig(); rig.controller.applyStatus(publicStatus());
-  rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},'Andreas');
+  rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},'andreas');
   const changed=publicStatus(); changed.targets=changed.targets.filter(target=>target.target_id!=='living');
   changed.profiles.forEach(profile=>{profile.targets=['office'];profile.available_targets=['office'];});
   rig.controller.applyStatus(changed);
@@ -203,7 +301,7 @@ test('Aus Konfiguration entferntes Ziel wird niemals heimlich auf ein anderes Ec
 
 test('Unklare POST-Antwort ist kein behaupteter Fehlschlag und verlangt bewusste Neuauswahl', async () => {
   const rig=createRig(); rig.controller.applyStatus(publicStatus());
-  rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},'Andreas');
+  rig.controller.selectTrack({title:'Track',uri:'spotify:track:AAA'},'andreas');
   rig.setPost({ok:true,json:async()=>({status:'accepted',assignments:[]})});
   await rig.controller.play();
   assert.match(rig.elements.spotifyMessage.textContent,/Anfrageergebnis unklar/);
@@ -286,7 +384,7 @@ test('Nur bekannte Zimmernamen sind Match-Schlüssel, und leere Titel behaupten 
 test('Album und Playlist bleiben auswählbar; Auswahl schreibt nie direkt einen Befehl', () => {
   const rig=createRig(); rig.controller.applyStatus(publicStatus());
   for (const type of ['album','playlist','artist']) {
-    rig.controller.selectTrack({title:type,uri:'spotify:'+type+':ABC'},'Andreas');
+    rig.controller.selectTrack({title:type,uri:'spotify:'+type+':ABC'},'andreas');
     assert.equal(rig.cards[0].nodes['.spotify-session-track'].textContent,type);
     assert.equal(rig.elements.spotifyPlay.disabled,false);
   }
@@ -341,7 +439,7 @@ function parseDom(markup, root=new DomElement('body')) {
   return root;
 }
 
-async function initializeDashboard(capabilities={ok:true,json:async()=>({mode:'live',home_assistant:true})}, inventory={ok:true,json:async()=>({entities:[]})}, actionResponse=null, alexaResponse=null) {
+async function initializeDashboard(capabilities={ok:true,json:async()=>({mode:'live',home_assistant:true})}, inventory={ok:true,json:async()=>({entities:[]})}, actionResponse=null, alexaResponse=null, spotifyResponse=null) {
   const root=parseDom(html.slice(html.indexOf('<main '),html.indexOf('<script>')));
   const calls=[]; const document={hidden:true,querySelector:selector=>root.querySelector(selector),querySelectorAll:selector=>root.querySelectorAll(selector),
     getElementById:id=>{const walk=node=>node.attributes.id===id?node:node.children.map(walk).find(Boolean);return walk(root)||null;},createElement:tag=>new DomElement(tag)};
@@ -354,13 +452,32 @@ async function initializeDashboard(capabilities={ok:true,json:async()=>({mode:'l
       if(path==='/api/music/status')return {ok:true,json:async()=>({configured:false,available:false})};
       if(path==='/api/action' && actionResponse) { if(actionResponse instanceof Error)throw actionResponse;return actionResponse; }
       if(path==='/api/alexa/speak' && alexaResponse) { if(alexaResponse instanceof Error)throw alexaResponse;return alexaResponse; }
+      if(path==='/api/spotify/search' && spotifyResponse) return spotifyResponse;
       throw new Error('Unexpected diagnostic fetch');
     },
   });
   assert.doesNotThrow(()=>vm.runInContext(script,context));
   await tick(); await tick();
-  return {root,calls,document};
+  return {root,calls,document,controller:vm.runInContext('spotifyController',context)};
 }
+
+test('Realer Such-Handler sendet die Live-Profil-ID statt eines hartcodierten Namens', async () => {
+  const rig=await initializeDashboard(undefined,undefined,null,null,{ok:true,json:async()=>({results:[]})});
+  const state=actualProfileStatus(); state.profiles[0].available_targets=[]; state.profiles[1].available_targets=[];
+  rig.controller.applyStatus(state);
+  const profileSelect=rig.document.getElementById('spotifyProfile'); const query=rig.document.getElementById('spotifyQuery'); const search=rig.document.getElementById('spotifySearch');
+  assert.equal(search.disabled,false,'Suche bleibt ohne sichtbares Echo möglich');
+  query.value='Fields of Gold'; await search.listeners.click();
+  profileSelect.value='person_b'; profileSelect.listeners.change();
+  query.value='Anderer Titel'; await search.listeners.click();
+  assert.deepEqual(rig.calls.filter(call=>call.path==='/api/spotify/search').map(call=>JSON.parse(call.options.body)),[
+    {profile:'person_a',query:'Fields of Gold'}, {profile:'person_b',query:'Anderer Titel'},
+  ]);
+  state.profiles=state.profiles.filter(profile=>profile.profile_id!=='person_b'); rig.controller.applyStatus(state);
+  assert.equal(profileSelect.value,'person_b'); assert.equal(search.disabled,true);
+  await search.listeners.click();
+  assert.equal(rig.calls.filter(call=>call.path==='/api/spotify/search').length,2,'entferntes Suchprofil erzeugt keinen weiteren Request');
+});
 
 test('Gesamtes Dashboard initialisiert Suche, Eigene Musik und Alexa ohne null Listener', async () => {
   const {root,calls,document}=await initializeDashboard();
