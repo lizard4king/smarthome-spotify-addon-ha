@@ -41,6 +41,7 @@ function createRig() {
   });
   const rooms = ['living','office'].map(id => {
     const room = new Element(); room.dataset.roomTarget = id;
+    room.nodes['.room-name'] = new Element(); room.nodes['.room-name'].textContent = id === 'living' ? 'Wohnzimmer' : 'Büro';
     room.nodes['.room-spotify-state'] = new Element(); return room;
   });
   const calls = []; const timers = []; const logs = [];
@@ -48,7 +49,7 @@ function createRig() {
   const context = vm.createContext({
     document: {hidden:true,getElementById:id=>elements[id],createElement:tag=>new Element(tag),
       querySelectorAll:selector=>selector==='[data-spotify-profile]'?cards:selector==='[data-room-target]'?rooms:[]},
-    roomDetails:{living:{spotifyTarget:"Andreas' Echo Show"},office:{spotifyTarget:'Echo Büro'}},
+    roomDetails:{living:{spotifyTarget:"Andreas' Echo Show"},office:{spotifyTarget:'Echo Büro'},bath:{spotifyTarget:'Echo Badezimmer'},bed:{spotifyTarget:'Echo Spot Schlafzimmer'},kitchen:{spotifyTarget:'Echo Küche'}},
     log:message=>logs.push(message), showSpotifyEmbed:()=>{}, AbortController,
     setTimeout:(fn,delay)=>{timers.push({fn,delay});return timers.length;},clearTimeout:()=>{},
     fetch:async(path,options={})=>{
@@ -220,6 +221,66 @@ test('Typografische Apostrophe ordnen Wohnzimmer korrekt zu; fremde undefinierte
   rig.rooms[0].dataset.roomTarget='missing';
   rig.controller.applyStatus(state);
   assert.equal(rig.rooms[0].nodes['.room-spotify-state'].textContent,'Kein Spotify-Ziel für diesen Raum zugeordnet.');
+});
+
+test('Raum-Aliasse ordnen echte Registry-IDs zu; verschiedene Profile bleiben getrennt', () => {
+  const rig=createRig();
+  for(const [id,label] of [['bath','Badezimmer'],['bed','Schlafzimmer'],['kitchen','Küche']]) {
+    const room=new Element(); room.dataset.roomTarget=id;
+    room.nodes['.room-name']=new Element(); room.nodes['.room-name'].textContent=label;
+    room.nodes['.room-spotify-state']=new Element(); rig.rooms.push(room);
+  }
+  const state=publicStatus();
+  state.targets=[
+    {target_id:'buero',display_name:'Echo Dot Büro',spotify_device_name:'Echo Dot Büro',aliases:['Büro']},
+    {target_id:'bad',display_name:'Echo Dot Badezimmer',spotify_device_name:'Echo Dot Badezimmer',aliases:['Badezimmer']},
+    {target_id:'wohnzimmer',display_name:'Echo Show anderer Name',spotify_device_name:'Echo Show anderer Name',aliases:['Wohnzimmer']},
+    {target_id:'schlafzimmer',display_name:'Echo Spot anderer Name',spotify_device_name:'Echo Spot anderer Name',aliases:['Schlafzimmer']},
+    {target_id:'kueche',display_name:'Echo Dot Küche',spotify_device_name:'Echo Dot Küche',aliases:['Küche']},
+  ];
+  for(const profile of state.profiles) { profile.targets=state.targets.map(target=>target.target_id); profile.available_targets=profile.targets; }
+  state.profiles[0]={...state.profiles[0],status:'playing',is_playing:true,active_target_id:'buero',track:{title:'Titel Büro'}};
+  state.profiles[1]={...state.profiles[1],status:'paused',is_playing:false,active_target_id:'bad',track:{title:'Titel Bad'}};
+  rig.controller.applyStatus(state);
+  assert.equal(rig.rooms[1].nodes['.room-spotify-state'].textContent,'Spielt: Titel Büro · Andreas');
+  assert.equal(rig.rooms[2].nodes['.room-spotify-state'].textContent,'Pausiert: Titel Bad · Erlene Andreia');
+  for(const [roomIndex,target] of [[0,'wohnzimmer'],[3,'schlafzimmer'],[4,'kueche']]) {
+    state.profiles[0].active_target_id=target;
+    rig.controller.applyStatus(state);
+    assert.equal(rig.rooms[roomIndex].nodes['.room-spotify-state'].textContent,'Spielt: Titel Büro · Andreas');
+  }
+  state.profiles[0].active_target_id='buero-falsche-id'; rig.controller.applyStatus(state);
+  assert.equal(rig.rooms[1].nodes['.room-spotify-state'].textContent,'Keine bestätigte Wiedergabe.');
+  assert.equal(rig.calls.length,0,'Zuordnung ist ausschließlich Anzeige, kein Gerätebefehl');
+});
+
+test('Ähnliche oder mehrdeutige Raum-Aliasse behaupten keine Wiedergabe', () => {
+  const rig=createRig(); const state=publicStatus();
+  state.targets=[{target_id:'buero',display_name:'Echo Dot Großraumbüro',spotify_device_name:'Echo Dot Großraumbüro',aliases:['Großraumbüro']}];
+  state.profiles[0]={...state.profiles[0],status:'playing',is_playing:true,active_target_id:'buero',track:{title:'Fremder Titel'}};
+  rig.controller.applyStatus(state);
+  assert.equal(rig.rooms[1].nodes['.room-spotify-state'].textContent,'Wiedergabestatus nicht verfügbar.');
+  state.targets[0].aliases=['Büro'];
+  state.targets.push({target_id:'buero-anders',display_name:'Weiteres Echo',spotify_device_name:'Weiteres Echo',aliases:['Büro']});
+  rig.controller.applyStatus(state);
+  assert.equal(rig.rooms[1].nodes['.room-spotify-state'].textContent,'Spotify-Ziel dieses Raums ist nicht eindeutig zugeordnet.');
+  assert.doesNotMatch(rig.rooms[1].nodes['.room-spotify-state'].textContent,/Spielt:|Pausiert:|Fremder Titel/);
+});
+
+test('Nur bekannte Zimmernamen sind Match-Schlüssel, und leere Titel behaupten keine Wiedergabe', () => {
+  const rig=createRig(); const state=publicStatus();
+  rig.rooms[1].nodes['.room-name'].textContent='Großraumbüro';
+  state.targets=[{target_id:'fremd',display_name:'Echo Dot Großraumbüro',spotify_device_name:'Echo Dot Großraumbüro',aliases:['Großraumbüro']}];
+  state.profiles[0]={...state.profiles[0],status:'playing',is_playing:true,active_target_id:'fremd',track:{title:'Fremder Titel'}};
+  rig.controller.applyStatus(state);
+  assert.equal(rig.rooms[1].nodes['.room-spotify-state'].textContent,'Wiedergabestatus nicht verfügbar.');
+  rig.rooms[1].nodes['.room-name'].textContent='Büro'; state.targets[0].aliases=['Büro'];
+  for(const title of ['', '   ']) {
+    state.profiles[0].track.title=title; rig.controller.applyStatus(state);
+    assert.equal(rig.rooms[1].nodes['.room-spotify-state'].textContent,'Keine bestätigte Wiedergabe.');
+  }
+  state.profiles[0].track.title='  Bekannter Titel  '; rig.controller.applyStatus(state);
+  assert.equal(rig.rooms[1].nodes['.room-spotify-state'].textContent,'Spielt: Bekannter Titel · Andreas');
 });
 
 test('Album und Playlist bleiben auswählbar; Auswahl schreibt nie direkt einen Befehl', () => {

@@ -111,13 +111,6 @@ class SpotifyCockpitService:
     """Keep independent profiles independent and reject ambiguous device use."""
 
     def __init__(self, registry, targets, tokens, commands, *, player=None, devices=None) -> None:
-        for profile in registry.profiles.values():
-            if profile.enabled:
-                for target_id in profile.allowed_targets:
-                    try:
-                        targets.require(target_id)
-                    except ValueError:
-                        raise SpotifyCockpitError("Ein freigegebenes Spotify-Ziel fehlt in der Zielkonfiguration.") from None
         self.registry, self.targets, self.tokens, self.commands = registry, targets, tokens, commands
         self.player = player or SpotifyPlayerStateClient()
         self.devices = devices or SpotifyConnectClient(timeout_seconds=8)
@@ -138,13 +131,23 @@ class SpotifyCockpitService:
             self.lock.release()
 
     def _snapshot(self, profile, now, *, catalog=False, availability=False) -> dict:
+        # Legacy profile allowlists can refer to an old logical target ID.
+        # Do not invent an alias or stop the bridge: keep the observed account
+        # state for collision checks, but never offer an unconfigured target.
+        configured_targets = [target_id for target_id in profile.allowed_targets
+                              if target_id in self.targets.targets]
+        missing_targets = [target_id for target_id in profile.allowed_targets
+                           if target_id not in self.targets.targets]
         public = {"profile_id": profile.profile_id, "display_name": profile.display_name,
-                  "targets": list(profile.allowed_targets), "active_target_id": None}
+                  "targets": configured_targets, "active_target_id": None}
+        if missing_targets:
+            public.update(unavailable_targets=missing_targets,
+                          configuration_error="Ein freigegebenes Spotify-Ziel fehlt in der Zielkonfiguration.")
         try:
             token = self.tokens.access_token(profile.connection_id, now=now)
             state = self.player.state(token)
             public.update({key: value for key, value in state.items() if key != "device_id"})
-            matches = [target_id for target_id in profile.allowed_targets
+            matches = [target_id for target_id in configured_targets
                        if state["active_device_name"] and
                        self.targets.match_device_name(target_id, state["active_device_name"])]
             if len(matches) == 1:
@@ -155,7 +158,7 @@ class SpotifyCockpitService:
             if catalog or availability:
                 live_devices = self.devices.devices(token)
                 public["available_targets"] = []
-                for target_id in profile.allowed_targets:
+                for target_id in configured_targets:
                     target = self.targets.require(target_id)
                     try:
                         live_devices.select_any((target.spotify_device_name, *target.aliases))
