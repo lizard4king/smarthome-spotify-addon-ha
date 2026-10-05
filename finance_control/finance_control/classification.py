@@ -243,13 +243,16 @@ def _api_refund_total(store, document_id):
 
 def _document_match_eligible(store, document):
     """Allow reviewed documents and narrow, auditable unreviewed candidates."""
-    if document['status'] == 'confirmed':
-        return True
     try:
         warnings = json.loads(document['warnings'])
     except (TypeError, ValueError):
         return False
-    if document['status'] != 'unreviewed' or not isinstance(warnings, list):
+    if not isinstance(warnings, list) or set(warnings) & {
+            'source_excluded_bonsy', 'not_invoice_like', 'duplicate_source_document'}:
+        return False
+    if document['status'] == 'confirmed':
+        return True
+    if document['status'] != 'unreviewed':
         return False
     if set(warnings) <= {'ocr_output_unreviewed'}:
         return True
@@ -1252,11 +1255,11 @@ def document_match_suggestions(store, data):
     days = timedelta(days=data['max_days'])
     date_to = date.max if issued > date.max - days else issued + days
     params = (issued.isoformat(), date_to.isoformat())
-    eligible = """ FROM transactions t
+    eligible = f""" FROM transactions t
         LEFT JOIN transaction_context c ON (c.account_id=t.account_id AND c.external_id=t.external_id)
         LEFT JOIN classification_overrides o ON (o.account_id=t.account_id AND o.external_id=t.external_id)
-        LEFT JOIN transfer_correction_members tm ON (tm.account_id=t.account_id AND tm.external_id=t.external_id)
-        WHERE (t.transfer_id IS NULL OR t.transfer_id='') AND tm.pair_id IS NULL AND t.currency='EUR' AND t.amount != '0.00'
+        WHERE NOT COALESCE({sql_transfer_predicate(context_alias='c')},0)
+        AND t.currency='EUR' AND t.amount != '0.00'
         AND t.date>=? AND t.date<=?"""
     candidates = []
     group_candidates = {'payment': [], 'refund': []}
@@ -1416,6 +1419,8 @@ def refresh_document_candidate(store, data):
             raise ValueError('source_reference_is_immutable')
         if previous['status'] != 'unreviewed':
             raise ValueError('document_candidate_not_unreviewed')
+        if 'duplicate_source_document' in json.loads(previous['warnings']):
+            raise ValueError('restore_duplicate_before_refresh')
         if store.db.execute('SELECT 1 FROM classification_document_links WHERE document_id=?',
                             (data['id'],)).fetchone():
             raise ValueError('document_candidate_linked')
@@ -1443,7 +1448,8 @@ def list_documents(store, data=None):
         raise ValueError('invalid_document_list')
     # Rows explicitly identified as non-documents remain in the audit trail and
     # external source cache, but no longer belong in the active review queue.
-    clauses, params = ['warnings NOT LIKE ?'], ['%"not_invoice_like"%']
+    clauses = ['warnings NOT LIKE ?', 'warnings NOT LIKE ?', 'warnings NOT LIKE ?']
+    params = ['%"not_invoice_like"%', '%"source_excluded_bonsy"%', '%"duplicate_source_document"%']
     if data.get('query') is not None:
         like = '%' + _text(data['query'], 'query', 240, empty=True).casefold() + '%'
         clauses.append('(lower(vendor) LIKE ? OR lower(title) LIKE ?)')
@@ -1513,8 +1519,9 @@ def document_coverage(store, data=None):
     rows = store.db.execute(
         'SELECT document_date,status,EXISTS('
         'SELECT 1 FROM classification_document_links l WHERE l.document_id=d.id) AS linked '
-        'FROM classification_documents d WHERE warnings NOT LIKE ?',
-        ('%"not_invoice_like"%',)).fetchall()
+        'FROM classification_documents d WHERE warnings NOT LIKE ? '
+        'AND warnings NOT LIKE ? AND warnings NOT LIKE ?',
+        ('%"not_invoice_like"%', '%"source_excluded_bonsy"%', '%"duplicate_source_document"%')).fetchall()
     result = {
         'total': len(rows),
         'confirmed': sum(row['status'] == 'confirmed' for row in rows),
@@ -1574,6 +1581,85 @@ def dismiss_document(store, data):
     return {'document': result}
 
 
+def mark_document_duplicate(store, data):
+    """Explicitly hide a proven source duplicate, or restore only its marker.
+
+    The caller verifies original-source equivalence. This operation performs no
+    heuristic matching and never edits source files, links or bank transactions.
+    The canonical document id is recorded in the audit, avoiding a schema change.
+    """
+    if (not isinstance(data, dict) or set(data) != {'id', 'revision', 'duplicate_of', 'confirmed'}
+            or type(data['id']) is not int or data['id'] < 1
+            or type(data['revision']) is not int or data['revision'] < 1
+            or data['confirmed'] is not True
+            or (data['duplicate_of'] is not None and (
+                type(data['duplicate_of']) is not int or data['duplicate_of'] < 1
+                or data['duplicate_of'] == data['id']))):
+        raise ValueError('invalid_document_duplicate')
+    store.db.execute('BEGIN IMMEDIATE')
+    try:
+        previous = store.db.execute(
+            'SELECT * FROM classification_documents WHERE id=?', (data['id'],)).fetchone()
+        if previous is None:
+            raise ValueError('unknown_document')
+        if previous['revision'] != data['revision']:
+            raise ValueError('stale_revision')
+        warnings = _warnings(json.loads(previous['warnings']))
+        target_id = data['duplicate_of']
+        if target_id is not None:
+            target = store.db.execute(
+                'SELECT * FROM classification_documents WHERE id=?', (target_id,)).fetchone()
+            if target is None:
+                raise ValueError('unknown_duplicate_target')
+            if set(json.loads(target['warnings'])) & {
+                    'source_excluded_bonsy', 'not_invoice_like', 'duplicate_source_document'}:
+                raise ValueError('duplicate_target_excluded')
+            if set(warnings) & {'source_excluded_bonsy', 'not_invoice_like'}:
+                raise ValueError('duplicate_source_excluded')
+            if store.db.execute('SELECT 1 FROM classification_document_links WHERE document_id=?',
+                                (data['id'],)).fetchone():
+                raise ValueError('linked_document_cannot_be_duplicate')
+            if _bonsy_cash_allocated(store, data['id']):
+                raise ValueError('bonsy_receipt_already_cash_allocated')
+            references = store.db.execute(
+                "SELECT a.current FROM classification_audit a "
+                "JOIN classification_documents d ON d.id=a.document_id "
+                "WHERE d.warnings LIKE ? AND a.id=(SELECT MAX(b.id) "
+                "FROM classification_audit b WHERE b.document_id=a.document_id "
+                "AND b.action IN ('document_marked_duplicate','document_duplicate_restored'))",
+                ('%"duplicate_source_document"%',)).fetchall()
+            if any(json.loads(row['current']).get('duplicate_of') == data['id'] for row in references):
+                raise ValueError('duplicate_canonical_is_referenced')
+        latest = store.db.execute(
+            "SELECT current FROM classification_audit WHERE document_id=? "
+            "AND action IN ('document_marked_duplicate','document_duplicate_restored') "
+            'ORDER BY id DESC LIMIT 1', (data['id'],)).fetchone()
+        last_target = None if latest is None else json.loads(latest['current']).get('duplicate_of')
+        marked = 'duplicate_source_document' in warnings
+        if (target_id is None and not marked) or (marked and target_id is not None and target_id == last_target):
+            store.db.commit()
+            return {'document': _document(previous), 'duplicate_of': target_id}
+        if target_id is None:
+            warnings.remove('duplicate_source_document')
+        elif not marked:
+            warnings.append('duplicate_source_document')
+        updated = store.db.execute(
+            'UPDATE classification_documents SET warnings=?,revision=revision+1 WHERE id=? AND revision=?',
+            (json.dumps(sorted(warnings)), data['id'], data['revision']))
+        if updated.rowcount != 1:
+            raise ValueError('stale_revision')
+        result = _document(store.db.execute(
+            'SELECT * FROM classification_documents WHERE id=?', (data['id'],)).fetchone())
+        _audit(store, 'document_duplicate_restored' if target_id is None else 'document_marked_duplicate',
+               {**result, 'duplicate_of': target_id}, document_id=data['id'],
+               previous={**dict(previous), 'duplicate_of': last_target})
+        store.db.commit()
+    except Exception:
+        store.db.rollback()
+        raise
+    return {'document': result, 'duplicate_of': target_id}
+
+
 def confirm_document(store, data):
     editable = {'vendor', 'title', 'document_date', 'amount', 'currency', 'source_reference', 'status'}
     if not isinstance(data, dict) or set(data) != {'id', 'revision', 'confirmed', *editable} or type(data['id']) is not int or type(data['revision']) is not int or data['confirmed'] is not True:
@@ -1626,8 +1712,8 @@ def auto_confirm_documents(store, data):
             raise ValueError('invalid_auto_document_ids')
         ids = sorted(set(ids))
     query = ("SELECT * FROM classification_documents WHERE kind='invoice' AND status='unreviewed' "
-             'AND (document_date IS NULL OR document_date>=?)')
-    params = [DOCUMENT_REVIEW_START_DATE]
+             'AND warnings NOT LIKE ? AND warnings NOT LIKE ? AND (document_date IS NULL OR document_date>=?)')
+    params = ['%"source_excluded_bonsy"%', '%"duplicate_source_document"%', DOCUMENT_REVIEW_START_DATE]
     if ids is not None:
         if not ids:
             return {'confirmed': [], 'rejected': [], 'checked': 0}
@@ -1665,7 +1751,8 @@ def auto_confirm_documents(store, data):
             duplicate = store.db.execute(
                 'SELECT 1 FROM classification_documents WHERE id!=? '
                 'AND lower(trim(vendor))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)) '
-                'AND document_date=? AND amount=? LIMIT 1',
+                'AND document_date=? AND amount=? '
+                'AND warnings NOT LIKE \'%"duplicate_source_document"%\' LIMIT 1',
                 (row['id'], vendor, title, row['document_date'], row['amount'])).fetchone()
             if duplicate:
                 reasons.append('possible_duplicate_document')
@@ -1703,9 +1790,9 @@ def auto_link_documents(store, data):
             raise ValueError('invalid_auto_document_link_ids')
         ids = sorted(set(ids))
     query = ("SELECT id,document_date FROM classification_documents WHERE kind='invoice' "
-             "AND status='confirmed' AND document_date>=? AND NOT EXISTS ("
+             "AND status='confirmed' AND warnings NOT LIKE ? AND document_date>=? AND NOT EXISTS ("
              'SELECT 1 FROM classification_document_links l WHERE l.document_id=classification_documents.id)')
-    params = [DOCUMENT_REVIEW_START_DATE]
+    params = ['%"duplicate_source_document"%', DOCUMENT_REVIEW_START_DATE]
     if ids is not None:
         if not ids:
             return {'linked': [], 'rejected': [], 'checked': 0}
@@ -1786,6 +1873,11 @@ def _bonsy_cash_allocated(store, document_id):
         'WHERE r.document_id=?', (document_id,)).fetchone() is not None
 
 
+def _require_not_duplicate_document(document):
+    if 'duplicate_source_document' in json.loads(document['warnings']):
+        raise ValueError('duplicate_document_cannot_be_linked')
+
+
 def confirm_and_link_document(store, data):
     """Confirm one invoice and its exact debit link in one SQLite transaction."""
     editable = {'vendor', 'title', 'document_date', 'amount', 'currency', 'source_reference', 'status'}
@@ -1804,6 +1896,7 @@ def confirm_and_link_document(store, data):
             raise ValueError('stale_revision')
         if previous['kind'] != 'invoice':
             raise ValueError('confirmed_eur_invoice_required')
+        _require_not_duplicate_document(previous)
         if _source_reference(data['source_reference']) != previous['source_reference']:
             raise ValueError('source_reference_is_immutable')
         amount = _optional_amount(data['amount'])
@@ -1868,6 +1961,7 @@ def allocate_document(store, data):
         if (document is None or document['kind'] != 'invoice' or document['status'] != 'confirmed'
                 or document['currency'] != 'EUR' or document['amount'] is None or money(document['amount']) <= 0):
             raise ValueError('confirmed_eur_invoice_required')
+        _require_not_duplicate_document(document)
         if _bonsy_cash_allocated(store, document['id']):
             raise ValueError('bonsy_receipt_already_cash_allocated')
         if store.db.execute(
@@ -1907,6 +2001,7 @@ def link_document(store, data):
         document = store.db.execute('SELECT * FROM classification_documents WHERE id=?', (data['document_id'],)).fetchone()
         if document is None:
             raise ValueError('unknown_document')
+        _require_not_duplicate_document(document)
         if _bonsy_cash_allocated(store, document['id']):
             raise ValueError('bonsy_receipt_already_cash_allocated')
         is_transfer = bool(effective_transfer_id(store, transaction))

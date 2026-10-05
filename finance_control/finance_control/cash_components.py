@@ -7,7 +7,7 @@ from .core import money
 
 _EUR_AMOUNT = r"\s*[:=]?\s*(?:EUR\s+([+-]?\d[\d.,]*)|([+-]?\d[\d.,]*)\s+EUR\b)"
 _CASH_AMOUNT = re.compile(
-    r"\b(?:Bargeldausz(?:ahlung)?\.?|Barauszahlung|cash\s+withdrawal)" + _EUR_AMOUNT,
+    r"\b(?:Bargeldausz(?:ahlung)?\.?|Barauszahlung|cash\s+withdrawal|Auszahlung)" + _EUR_AMOUNT,
     re.IGNORECASE,
 )
 _CASH_FEE = re.compile(

@@ -1,6 +1,7 @@
 """Read-only comparison of an immutable budget revision with classified ledger data."""
 
 import calendar
+import json
 import re
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -15,7 +16,7 @@ from .budget import (
 from .budget import _shift_month as _budget_shift_month
 from .cash_components import cash_principal as _cash_principal
 from .cash_components import cash_receipt_key
-from .classification import normalize_counterparty
+from .classification import exact_rule_match, normalize_counterparty
 from .core import money
 from .historical_positions import historical_positions
 from .person_attribution import account_allocations, person_label, split_cents
@@ -171,6 +172,46 @@ def _projected_monthly_items(plan, reference_items, month):
     return active + [item.copy() for item in later if item["id"] not in replaced]
 
 
+def _cash_purchase_category(store, item, noncash):
+    """Project a purchase category only from one confirmed, exact Bonsy payment."""
+    links = store.db.execute(
+        "SELECT l.allocation_type,l.allocated_amount,d.amount,d.currency,d.status,"
+        "d.warnings,r.entry_id,r.vendor,r.total,r.currency AS receipt_currency "
+        "FROM classification_document_links l "
+        "JOIN classification_documents d ON d.id=l.document_id AND d.kind='invoice' "
+        "LEFT JOIN bonsy_receipts r ON r.document_id=d.id "
+        "WHERE l.account_id=? AND l.external_id=? "
+        "AND l.allocation_type IN ('payment','refund')",
+        (item["account_id"], item["external_id"]),
+    ).fetchall()
+    if len(links) != 1:
+        return None
+    link = links[0]
+    if (link["allocation_type"] != "payment" or link["entry_id"] is None
+            or link["status"] != "confirmed" or link["currency"] != "EUR"
+            or link["receipt_currency"] != "EUR"):
+        return None
+    try:
+        warnings = json.loads(link["warnings"])
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(warnings, list)
+            or any(value in warnings for value in
+                   ("source_excluded_bonsy", "duplicate_source_document"))):
+        return None
+    if not (money(link["total"]) == money(link["amount"])
+            == money(link["allocated_amount"]) == noncash):
+        return None
+    match = exact_rule_match(store, link["vendor"], item["description"], "expense")
+    if match is None or canonical_category_id(store, match["category"]) == "AUSGABEN_BARGELD":
+        return None
+    category = store.db.execute(
+        "SELECT id,label FROM category_catalog WHERE id=? AND transaction_type='expense'",
+        (match["category"],),
+    ).fetchone()
+    return category
+
+
 def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=None,
                  *, reporting_scope=None, cash_withdrawals=None):
     rows = store.db.execute(
@@ -272,6 +313,10 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
             item["amount"] = _format(-noncash)
             item["category_id"] = None
             item["category_label"] = "Gebühren / Kaufanteil einer Bargeldabhebung"
+            purchase_category = _cash_purchase_category(store, item, noncash)
+            if purchase_category is not None:
+                item["category_id"] = purchase_category["id"]
+                item["category_label"] = purchase_category["label"]
             item["transaction_type"] = "expense"
             # The residual is an ordinary expense, not a transfer or cash receipt.
             transfer = None

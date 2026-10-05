@@ -61,11 +61,12 @@ def _bonsy_recipient_matches(vendor, counterparty, description, title):
 
 def auto_link_timestamped_receipts(store, ids=None):
     """Link a Bonsy receipt when amount and embedded purchase minute are unique."""
-    params = []
+    params = ['%"source_excluded_bonsy"%', '%"duplicate_source_document"%', '%"not_invoice_like"%']
     query = '''SELECT r.entry_id,r.document_id,r.occurred_at,r.total,d.vendor,d.title
                FROM bonsy_receipts r
                JOIN classification_documents d ON d.id=r.document_id
                WHERE d.kind='invoice' AND d.status='confirmed'
+                 AND d.warnings NOT LIKE ? AND d.warnings NOT LIKE ? AND d.warnings NOT LIKE ?
                  AND CAST(r.total AS REAL)>0
                  AND NOT EXISTS (SELECT 1 FROM classification_document_links l
                                  WHERE l.document_id=r.document_id)
@@ -83,9 +84,12 @@ def auto_link_timestamped_receipts(store, ids=None):
         occurred = datetime.fromisoformat(receipt['occurred_at'])
         minute = occurred.strftime('%Y-%m-%dT%H:%M')
         if store.db.execute(
-                '''SELECT count(*) FROM bonsy_receipts
-                   WHERE substr(occurred_at,1,16)=? AND total=?''',
-                (minute, receipt['total'])).fetchone()[0] != 1:
+                '''SELECT count(*) FROM bonsy_receipts r
+                   JOIN classification_documents d ON d.id=r.document_id
+                   WHERE substr(r.occurred_at,1,16)=? AND r.total=?
+                     AND d.warnings NOT LIKE ? AND d.warnings NOT LIKE ? AND d.warnings NOT LIKE ?''',
+                (minute, receipt['total'], '%"source_excluded_bonsy"%',
+                 '%"duplicate_source_document"%', '%"not_invoice_like"%')).fetchone()[0] != 1:
             rejected.append({'id': receipt['document_id'],
                              'reasons': ['unique_receipt_timestamp_amount_required']})
             continue

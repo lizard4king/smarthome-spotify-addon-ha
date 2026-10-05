@@ -3,6 +3,7 @@ function bonsyBase64(file){return new Promise((resolve,reject)=>{const reader=ne
 const bonsyEur=value=>Number(value).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
 function bonsyPaymentAssessment(item){
   const assessment=item.payment_assessment;
+  if(assessment?.method==='cash'&&assessment.confirmed===true&&assessment.basis==='explicit_user_cash_rule_no_exact_payment')return 'cash_by_rule';
   const explicitCash=assessment?.method==='cash'&&assessment.confidence==='very_high'&&assessment.confirmed===false;
   if(item.reason==='pending_bank_posting')return 'pending_bank_posting';
   return explicitCash||['likely_cash','likely_cash_no_direct_payment_found'].includes(item.reason)?'likely_cash':'payment_review';
@@ -21,25 +22,29 @@ async function bonsyCashLoad(){
   if(!summary||!pending||!proposals||!unresolved||!confirmed)return;
   try{
     const data=await api('/api/bonsy-cash',{});
+    const ruleCashItems=data.confirmed.filter(item=>bonsyPaymentAssessment(item)==='cash_by_rule');
+    const linkedItems=data.confirmed.filter(item=>bonsyPaymentAssessment(item)!=='cash_by_rule');
     const pendingItems=data.unresolved.filter(item=>bonsyPaymentAssessment(item)==='pending_bank_posting');
     const likelyCashItems=data.unresolved.filter(item=>bonsyPaymentAssessment(item)==='likely_cash');
     const paymentReviewItems=data.unresolved.filter(item=>bonsyPaymentAssessment(item)==='payment_review');
     const pendingCount=data.counts.pending_posting??pendingItems.length;
     const likelyCash=data.counts.likely_cash??likelyCashItems.length;
     const paymentReview=data.counts.payment_review??paymentReviewItems.length;
-    summary.textContent=`Buchung vermutlich noch ausstehend: ${pendingCount} · Sehr wahrscheinlich bar (unbestätigt): ${likelyCash} · Zahlung prüfen: ${paymentReview} · Bereits zugeordnet: ${data.counts.confirmed}.`;
+    const cashByRule=data.counts.cash_by_rule??ruleCashItems.length;
+    summary.textContent=`Buchung vermutlich noch ausstehend: ${pendingCount} · Bar bezahlt nach Deiner Regel: ${cashByRule} · Zahlung prüfen: ${paymentReview} · Bereits zugeordnet: ${linkedItems.length}.`;
     pending.replaceChildren();
     proposals.replaceChildren();
     unresolved.replaceChildren();
     confirmed.replaceChildren();
-    const waiting=document.createElement('p');waiting.textContent=`${pendingCount} Bons sind höchstens fünf Kalendertage alt. Eine Lastschrift oder Kartenzahlung kann noch ausstehen; bis dahin wird keine Zahlungsart angenommen.`;pending.append(waiting);
+    const waiting=document.createElement('p');waiting.textContent=`${pendingCount} Bons ab 50 € sind höchstens fünf Kalendertage alt. Eine Lastschrift oder Kartenzahlung kann noch ausstehen; bis dahin wird keine Zahlungsart angenommen.`;pending.append(waiting);
     for(const item of pendingItems.slice(0,25)){const p=document.createElement('p');p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)}${bonsyOpenDescription(item)}`;pending.append(p);}
     const review=document.createElement('p');review.textContent=`${paymentReview} Bons haben einen möglichen direkten Zahlungstreffer, einen offenen Zahlungsanteil oder kosten mindestens 50 €. Diese Fälle bleiben „Zahlung prüfen“.`;proposals.append(review);
     for(const item of paymentReviewItems.slice(0,25)){const p=document.createElement('p');p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)}${bonsyOpenDescription(item)}`;proposals.append(p);}
-    const open=document.createElement('p');open.textContent=`${likelyCash} ältere Bons unter 50 € haben keinen direkten Zahlungstreffer und sind deshalb mit sehr hoher Wahrscheinlichkeit bar bezahlt. Die Einschätzung bleibt unbestätigt und erzeugt weder eine Buchung noch eine Zuordnung.`;unresolved.append(open);
+    const open=document.createElement('p');open.textContent=`${cashByRule} Bons unter 50 € ohne identischen Zahlungstreffer auf persönlichen Konten gelten nach Deiner Regel als bar bezahlt. Der Zahlungsstatus erzeugt weder eine Buchung noch eine Zuordnung.`;unresolved.append(open);
+    for(const item of ruleCashItems.slice(0,25)){const p=document.createElement('p');p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)} · bar bezahlt nach Deiner Regel`;unresolved.append(p);}
     for(const item of likelyCashItems.slice(0,25)){const p=document.createElement('p');p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)}${bonsyOpenDescription(item)}`;unresolved.append(p);}
-    const done=document.createElement('p');done.textContent=`${data.counts.confirmed} Bons sind bereits zugeordnet.`;confirmed.append(done);
-    for(const item of data.confirmed.slice(0,25)){const p=document.createElement('p'),kind=item.reason==='legacy_cash_allocation'?'historische Bargeldzuordnung':'direkte Zahlung';p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)} · ${kind}`;confirmed.append(p);}
+    const done=document.createElement('p');done.textContent=`${linkedItems.length} Bons sind bereits zugeordnet.`;confirmed.append(done);
+    for(const item of linkedItems.slice(0,25)){const p=document.createElement('p'),kind=item.reason==='legacy_cash_allocation'?'historische Bargeldzuordnung':'direkte Zahlung';p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)} · ${kind}`;confirmed.append(p);}
   }catch(error){summary.textContent='Bargeldabgleich konnte nicht geladen werden: '+error.message;}
 }
 

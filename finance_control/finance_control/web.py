@@ -196,6 +196,7 @@ class Cockpit:
                     'document-refresh': classification.refresh_document_candidate,
                     'document-save': classification.confirm_document,
                     'document-dismiss': classification.dismiss_document,
+                    'document-duplicate': classification.mark_document_duplicate,
                     'document-auto-review': classification.auto_confirm_documents,
                     'document-auto-link': classification.auto_link_documents,
                     'confirm-link': classification.confirm_and_link_document,
@@ -316,6 +317,15 @@ class Cockpit:
             if route == '/api/bonsy-cash':
                 from . import bonsy_cash
                 return bonsy_cash.overview(store, data)
+            if route == '/api/bonsy-cash-preview':
+                from . import bonsy_cash
+                return bonsy_cash.preview(store, data)
+            if route == '/api/bonsy-cash-apply':
+                from . import bonsy_cash
+                return bonsy_cash.apply(store, data)
+            if route == '/api/bonsy-cash-remove':
+                from . import bonsy_cash
+                return bonsy_cash.remove_allocations(store, data)
             if route == '/api/accounts':
                 existing = store.accounts()
                 opening_date = date.fromisoformat(data['opening_date']).isoformat()

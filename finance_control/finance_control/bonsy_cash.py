@@ -7,13 +7,17 @@ from decimal import ROUND_DOWN, Decimal
 
 from .cash_components import cash_principal
 from .classification import (
+    _audit,
     _cash_withdrawal_evidence,
     _document_link_rejected,
     document_match_suggestions,
 )
 from .core import money
+from .transfer_corrections import sql_transfer_predicate
 
-_EXCLUDED_BONSY_WARNING = 'source_excluded_bonsy'
+_EXCLUDED_BONSY_WARNINGS = {
+    'source_excluded_bonsy', 'duplicate_source_document', 'not_invoice_like',
+}
 
 
 def _source_excluded(warnings):
@@ -21,12 +25,12 @@ def _source_excluded(warnings):
         values = json.loads(warnings or '[]')
     except (TypeError, ValueError):
         return False
-    return isinstance(values, list) and _EXCLUDED_BONSY_WARNING in values
+    return isinstance(values, list) and any(value in values for value in _EXCLUDED_BONSY_WARNINGS)
 
 
 def _withdrawals(store):
     rows = store.db.execute(
-        """SELECT t.account_id,t.external_id,t.date,t.amount,a.owner,
+        f"""SELECT t.account_id,t.external_id,t.date,t.amount,a.owner,
                   t.category AS source_category,o.category_id AS category,
                   c.counterparty,c.description,
                   COALESCE(NULLIF(a.display_name,''),a.id) AS account_label
@@ -37,10 +41,8 @@ def _withdrawals(store):
             AND o.confirmed=1 AND o.category_id='AUSGABEN_BARGELD'
            LEFT JOIN transaction_context c
              ON c.account_id=t.account_id AND c.external_id=t.external_id
-           LEFT JOIN transfer_correction_members tm
-             ON tm.account_id=t.account_id AND tm.external_id=t.external_id
            WHERE CAST(t.amount AS REAL)<0 AND t.currency='EUR'
-             AND (t.transfer_id IS NULL OR t.transfer_id='') AND tm.pair_id IS NULL
+             AND NOT COALESCE({sql_transfer_predicate(context_alias='c')},0)
            ORDER BY t.date,t.account_id,t.external_id""").fetchall()
     result = []
     for row in rows:
@@ -60,22 +62,36 @@ def _withdrawals(store):
     return result
 
 
-def _has_broad_exact_payment_candidate(store, document_id, document_date, amount):
+def _has_broad_exact_payment_candidate(
+        store, document_id, document_date, amount, *, personal_only=False):
     """Catch processor-labelled payments that lack the receipt vendor text."""
-    issued = date.fromisoformat(document_date)
-    date_to = (issued + timedelta(days=45)).isoformat()
+    try:
+        issued = date.fromisoformat(document_date)
+        date_to = (issued + timedelta(days=45)).isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return False
     rows = store.db.execute(
-        """SELECT t.account_id,t.external_id,t.amount
+        f"""SELECT t.account_id,t.external_id,t.amount,t.date
            FROM transactions t
-           LEFT JOIN transfer_correction_members tm
-             ON tm.account_id=t.account_id AND tm.external_id=t.external_id
+           JOIN accounts a ON a.id=t.account_id
+           LEFT JOIN transaction_context c
+             ON c.account_id=t.account_id AND c.external_id=t.external_id
            WHERE CAST(t.amount AS REAL)<0 AND t.currency='EUR'
-             AND t.amount=?
+             AND CAST(t.amount AS REAL)=CAST(? AS REAL)
              AND t.date>=? AND t.date<=?
-             AND (t.transfer_id IS NULL OR t.transfer_id='') AND tm.pair_id IS NULL""",
-        (format(-amount, '.2f'), document_date, date_to),
+             AND NOT COALESCE({sql_transfer_predicate(context_alias='c')},0)
+             AND (?=0 OR a.owner IN (SELECT id FROM persons))""",
+        (format(-amount, '.2f'), document_date, date_to, int(personal_only)),
     ).fetchall()
     for row in rows:
+        try:
+            payment_date = date.fromisoformat(row['date'])
+        except (TypeError, ValueError):
+            continue
+        if payment_date.isoformat() != row['date']:
+            continue
+        if abs(money(row['amount'])) != amount:
+            continue
         if (_document_link_rejected(
                 store, row['account_id'], row['external_id'], document_id)
                 or _cash_withdrawal_evidence(
@@ -90,10 +106,13 @@ def _has_broad_exact_payment_candidate(store, document_id, document_date, amount
     return False
 
 
-def _has_payment_candidate(store, document_id, document_date, amount):
+def _has_payment_candidate(
+        store, document_id, document_date, amount, *, exact_only=False):
     if _has_broad_exact_payment_candidate(
-            store, document_id, document_date, amount):
+            store, document_id, document_date, amount, personal_only=exact_only):
         return True
+    if exact_only:
+        return False
     page = 0
     while True:
         matches = document_match_suggestions(
@@ -228,7 +247,9 @@ def _build_allocation_preview(store, date_from, date_to, *, today=None):
             planned.append(item)
             continue
         if _has_payment_candidate(
-                store, receipt['document_id'], receipt['date'], remaining):
+                store, receipt['document_id'], receipt['date'],
+                amount if amount < Decimal('50.00') else remaining,
+                exact_only=amount < Decimal('50.00')):
             item['reason'] = 'direct_payment_candidate_requires_review'
             planned.append(item)
             continue
@@ -236,7 +257,7 @@ def _build_allocation_preview(store, date_from, date_to, *, today=None):
             age = (today - date.fromisoformat(receipt['date'])).days
         except ValueError:
             age = -1
-        if age <= 5:
+        if age < 0 or (age <= 5 and amount >= Decimal('50.00')):
             item['reason'] = 'pending_bank_posting'
             planned.append(item)
             continue
@@ -346,6 +367,74 @@ def apply(store, data, *, _today=None):
     return result
 
 
+def remove_allocations(store, data):
+    """Remove one explicitly confirmed, unchanged Bonsy cash allocation set."""
+    if (not isinstance(data, dict)
+            or set(data) != {'entry_id', 'expected_allocations', 'confirmed'}
+            or data['confirmed'] is not True
+            or not isinstance(data['entry_id'], str) or not data['entry_id'].strip()
+            or not isinstance(data['expected_allocations'], list)
+            or not data['expected_allocations']):
+        raise ValueError('invalid_bonsy_cash_allocation_removal')
+
+    expected = {}
+    for item in data['expected_allocations']:
+        if (not isinstance(item, dict)
+                or set(item) != {'account_id', 'external_id', 'allocated_amount'}
+                or not isinstance(item['account_id'], str) or not item['account_id'].strip()
+                or not isinstance(item['external_id'], str) or not item['external_id'].strip()
+                or not isinstance(item['allocated_amount'], str)):
+            raise ValueError('invalid_bonsy_cash_allocation_removal')
+        key = (item['account_id'], item['external_id'])
+        if key in expected:
+            raise ValueError('duplicate_bonsy_cash_allocation')
+        try:
+            amount = money(item['allocated_amount'])
+        except ValueError as error:
+            raise ValueError('invalid_bonsy_cash_allocation_amount') from error
+        if amount <= 0:
+            raise ValueError('invalid_bonsy_cash_allocation_amount')
+        expected[key] = amount
+
+    store.db.execute('BEGIN IMMEDIATE')
+    try:
+        receipt = store.db.execute(
+            'SELECT document_id FROM bonsy_receipts WHERE entry_id=?',
+            (data['entry_id'],)).fetchone()
+        if receipt is None:
+            raise ValueError('unknown_bonsy_receipt')
+        rows = store.db.execute(
+            'SELECT account_id,external_id,allocated_amount FROM bonsy_cash_allocations '
+            'WHERE entry_id=? ORDER BY account_id,external_id',
+            (data['entry_id'],)).fetchall()
+        current = {
+            (row['account_id'], row['external_id']): money(row['allocated_amount'])
+            for row in rows
+        }
+        if current != expected:
+            raise ValueError('stale_bonsy_cash_allocations')
+        previous_allocations = [
+            {'account_id': account_id, 'external_id': external_id,
+             'allocated_amount': format(amount, '.2f')}
+            for (account_id, external_id), amount in sorted(current.items())
+        ]
+        deleted = store.db.execute(
+            'DELETE FROM bonsy_cash_allocations WHERE entry_id=?',
+            (data['entry_id'],)).rowcount
+        if deleted != len(previous_allocations):
+            raise ValueError('stale_bonsy_cash_allocations')
+        current_state = {'entry_id': data['entry_id'], 'allocations': []}
+        _audit(store, 'bonsy_cash_allocations_removed', current_state,
+               document_id=receipt['document_id'],
+               previous={'entry_id': data['entry_id'],
+                         'allocations': previous_allocations})
+        store.db.commit()
+    except Exception:
+        store.db.rollback()
+        raise
+    return {'entry_id': data['entry_id'], 'removed': len(previous_allocations)}
+
+
 def _missing_payment_assessment(document_date, amount, *, today=None):
     """Classify a receipt only after all stronger payment evidence is absent."""
     today = today or datetime.now().astimezone().date()
@@ -355,19 +444,19 @@ def _missing_payment_assessment(document_date, amount, *, today=None):
         return 'no_direct_payment_found_requires_review', None
     if age_days < 0:
         return 'no_direct_payment_found_requires_review', None
+    if amount < Decimal('50.00'):
+        return 'cash_by_explicit_user_rule', {
+            'method': 'cash',
+            'confidence': 'explicit_user_rule',
+            'confirmed': True,
+            'basis': 'explicit_user_cash_rule_no_exact_payment',
+        }
     if age_days <= 5:
         return 'pending_bank_posting', {
             'method': 'bank_debit_or_card',
             'confidence': 'pending',
             'confirmed': False,
             'basis': 'receipt_younger_than_or_equal_5_days',
-        }
-    if amount < Decimal('50.00'):
-        return 'likely_cash_no_direct_payment_found', {
-            'method': 'cash',
-            'confidence': 'very_high',
-            'confirmed': False,
-            'basis': 'no_direct_payment_candidate',
         }
     return 'no_direct_payment_found_requires_review', None
 
@@ -385,6 +474,7 @@ def overview(store, _data=None, *, _today=None):
            FROM bonsy_receipts r
            JOIN classification_documents d ON d.id=r.document_id
            WHERE d.kind='invoice' AND d.status='confirmed'
+             AND r.currency='EUR'
              AND CAST(r.total AS REAL)>0
            ORDER BY r.occurred_at,r.entry_id""").fetchall()
     receipts = [row for row in receipts if not _source_excluded(row['warnings'])]
@@ -427,10 +517,18 @@ def overview(store, _data=None, *, _today=None):
             reason = 'partial_direct_transaction_link'
         elif cash_allocated > 0:
             reason = 'partial_legacy_cash_allocation'
+            if (amount < Decimal('50.00') and not evidence_links
+                    and not _has_payment_candidate(
+                        store, row['document_id'], row['date'], amount, exact_only=True)):
+                rule_reason, rule_assessment = _missing_payment_assessment(
+                    row['date'], amount, today=_today)
+                if rule_reason == 'cash_by_explicit_user_rule':
+                    reason, assessment = rule_reason, rule_assessment
         elif evidence_links:
             reason = 'evidence_link_requires_manual_review'
         elif _has_payment_candidate(
-                store, row['document_id'], row['date'], amount):
+                store, row['document_id'], row['date'], amount,
+                exact_only=amount < Decimal('50.00')):
             reason = 'direct_payment_review'
         else:
             reason, assessment = _missing_payment_assessment(
@@ -446,7 +544,10 @@ def overview(store, _data=None, *, _today=None):
         }
         if assessment is not None:
             item['payment_assessment'] = assessment
-        unresolved.append(item)
+        if reason == 'cash_by_explicit_user_rule':
+            confirmed.append(item)
+        else:
+            unresolved.append(item)
     remaining = []
     for row in withdrawals:
         value = available[(row['account_id'], row['external_id'])]
@@ -458,6 +559,8 @@ def overview(store, _data=None, *, _today=None):
         'counts': {
             'proposals': 0, 'unresolved': len(unresolved),
             'confirmed': len(confirmed), 'withdrawals': len(withdrawals),
+            'cash_by_rule': sum(
+                item['reason'] == 'cash_by_explicit_user_rule' for item in confirmed),
             'likely_cash': sum(
                 item['reason'] == 'likely_cash_no_direct_payment_found'
                 for item in unresolved),

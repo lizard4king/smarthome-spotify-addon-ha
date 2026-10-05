@@ -1,5 +1,5 @@
 {
-  "addon_version": "0.2.11",
+  "addon_version": "0.2.12",
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
@@ -18,11 +18,11 @@
     "backup_package.py": "2e14e217dc28ea6b903802c9f853ec944de4377492371db7edd4d4c76689200a",
     "bank_archive.py": "c26d45d7642e21af36f1d94576c77e30437b4f5aa14f9ec393c2d6a6da9922bf",
     "bank_archive_import.py": "0dde7148b89737b9738f0ef280c35a30d5dd0e5c4a99fe3c1c333f91dae0ce2f",
-    "bonsy_cash.py": "792ec684fda016a65d8abebea92a5402a34e63c96a78d37f7591648c656dda92",
-    "bonsy_import.py": "aa460b623f60277fa69b0990ae3a6050251dc6131436a6b9e4b47dd5c3a95174",
+    "bonsy_cash.py": "de53bbe905927b315168ca00d30203fa05ce6947176cd8059747f0c383fb499c",
+    "bonsy_import.py": "2b7d190eefac847125e69e3ea641ff769b8a4aa1803c7f1205613ff16e87d448",
     "budget.py": "be532e730be0e132986224eba2105cc20b198f758dd505c9791be86262c24687",
-    "cash_components.py": "f4cf99c8700bc87c50dd28d1b7566cd373a035b1e001ce0af9b7004fb9577732",
-    "classification.py": "996a62c9d0b47be3945af833245f23b10c2a9d978e76fa747fd1455e7aecab9f",
+    "cash_components.py": "481e65b457f9c06a5d997dedfa816009bd4e607982eff8152c8c5f10c020800a",
+    "classification.py": "c341d9b6229e0e6a1bf33ee4c2ca355099970567729b728e04c4447e0ab197ed",
     "connectors/__init__.py": "08cf17751c829a655e6f692ca5dbdb56b22418b5defabdddf8d13ba555a36263",
     "connectors/amazon_portability.py": "066ddc8afb9d8786e3c0fd53fca0a80cec53e1111ba154d8b5dd1ddb1a62e8a6",
     "connectors/fints_readonly.py": "364ca6dcd53a68216bab3bb875d7ae102a2432db5dba0898cf89dcc8a6186b8e",
@@ -92,7 +92,7 @@
     "payment_status.py": "a5b618b67d96d05a0c0025bc7a40ecf849aed3b9e45c0f5b01f33cc51dfbaefc",
     "payment_status_sync.py": "72d3c22909c57e5540ddd6cb440ece90188a17a53fece5e7102547bdc00b58af",
     "person_attribution.py": "5a2f895f2b4fb54daef9459103a9c4c3b8e27c9fd23bd1a57f0ef68be70ef1d1",
-    "plan_actual.py": "39a92238995303ff9dcfcf8f263bb49696c41c908ee651175e7a866b5505f343",
+    "plan_actual.py": "95a7b265a7fcbe6b1b2bbbdb8abe4a8e0a55f02ddeef5523f477334a123a3f66",
     "planning.py": "ed9e7ac506108e0bab36327a153040f6510993ece89c8c519f4b721b797e6fb4",
     "providers.py": "55025deb5dba67e64b7f12849a64da144da9bc722b699c89eec1cd3781cbc4ef",
     "read_api.py": "9b768baeca1987803ea64d4f2d758c9ca169ba61bebd037d7b6ea0151cc6f89e",
@@ -108,7 +108,7 @@
     "static/analytics.js": "c5f2309bba6f3d2c26d9bb4ab28a5776c120cd26f4f5c5a0eb0045473d3de2af",
     "static/app.js": "c4cb72969134d822a6d10b3b44683ba661fdde68881bf60b384c753a9c142349",
     "static/approvals.js": "b2ae174b568681202a90312f91a0509771052044b4164ae213ad37609dee8029",
-    "static/bonsy.js": "19bb8e7a11b3f55f79d17dddacab3c6bc1e5d5c00ca9f6b4fc3a720365915cb6",
+    "static/bonsy.js": "a797358b69e39efa78bfed17c097ff374c423680006f67cf67fbaec83cb09d43",
     "static/booking_editor.css": "f13e76007fd1bba5c27e1192a56f43897988d1857961254a03caeb747feb3d8a",
     "static/booking_editor.js": "a0eee6b8e2ac16f737ea39681e72a19ae4920f3a12f11efc7f27396f89d3f518",
     "static/budget-section.html": "434132ef28f6ee4d14957dcc12aa042b54e27127101ca1d2e058f66cc731eb78",
@@ -117,7 +117,7 @@
     "static/classification.js": "d527801655acf59904c5807eebb459c02fc84ba461bf5cc69970e3e7647865d2",
     "static/classification_mobile.css": "b5aa35f4a1cbfa496ea24b0651f4a19fad35c3b780151c466ce3b33708477e6f",
     "static/finanzguru.js": "93be375aba7e94f8952b0fde451d130db36e6ff815dbffcc560438ae3ca8c5fb",
-    "static/index.html": "96e95c73232c601140efff32ac7b2a2647000d5968022c73c961fd33722220a1",
+    "static/index.html": "8f2f1eb8e9d7a30c7426b07213b3087e022d870e99fe0e70d746110e0dae532b",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
     "static/plan_actual.js": "5bf0d1381027ad9b8ce94d9479dca98b6be172b58bdef01ada60dfdbb93a00fe",
@@ -127,9 +127,9 @@
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "1eb55db0d79e7cdbf2d069a204cdd784c097cec7e4c1f76b072ded7b32dc51c9",
     "wealth.py": "3c420811efd92f40a97de2a0f1f570f5fe358c17c245c9f65b197871d7cf7179",
-    "web.py": "da4786ff5717257eadbfd7797b025eab4936c67b0e9ed60b564f0dfef8ccbc35"
+    "web.py": "ee7401204be4f701ee5b49acd066fd90e982ab4b3c631988d2fe4f7c5dc9bfd6"
   },
   "schema_version": 1,
-  "source_commit": "63d3fbd4ee631faba5dcd1a231fc5cc30d69574f",
-  "source_tree_sha256": "3c80e479bb8c9446486e49e731bb8f6da75baf32323f7f385005edba4573c886"
+  "source_commit": "06d1d7c9acad57aee4dcc613622c6e2ecd99bd5e",
+  "source_tree_sha256": "a08803e52994148e5510331f2459a7c363cb3a0d942af66ee4cf472c14b35992"
 }
