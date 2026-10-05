@@ -91,6 +91,16 @@ def _load_options_fallback() -> None:
         os.environ["HOME_ASSISTANT_ALLOW_WRITES"] = str(options["allow_writes"]).lower()
     if "music_assistant_allow_playback" in options:
         os.environ["MUSIC_ASSISTANT_ALLOW_PLAYBACK"] = str(options["music_assistant_allow_playback"]).lower()
+    for key, env_name in (("codex_control_secret", "CODEX_CONTROL_SECRET"),
+                          ("home_assistant_entities_json", "HOME_ASSISTANT_ENTITIES_JSON")):
+        value = options.get(key)
+        if not os.environ.get(env_name) and isinstance(value, str):
+            os.environ[env_name] = value
+    for key, env_name in (("home_assistant_write_allowlist", "HOME_ASSISTANT_WRITE_ALLOWLIST"),
+                          ("codex_spotify_profiles", "CODEX_SPOTIFY_PROFILES")):
+        value = options.get(key)
+        if not os.environ.get(env_name) and isinstance(value, list) and all(isinstance(item, str) and "," not in item for item in value):
+            os.environ[env_name] = ",".join(value)
     _load_private_music_fallback(options)
 
 def main() -> None:

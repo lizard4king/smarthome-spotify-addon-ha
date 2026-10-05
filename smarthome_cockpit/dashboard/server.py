@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from smarthome.home_assistant import HomeAssistantAdapter, HomeAssistantConfig, HomeAssistantError
 from dashboard.music_assistant import MusicAssistant, MusicAssistantError
+from dashboard.codex_control import handle as handle_codex_control
 
 
 ROOT = Path(__file__).resolve().parent
@@ -46,14 +47,14 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        if not urlsplit(self.path).path.startswith("/api/music/"):
+        if not urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/")):
             self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib API
-        if urlsplit(self.path).path.startswith("/api/music/"):
+        if urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/")):
             self._send_json(405, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
             return
         self.send_response(204)
@@ -63,6 +64,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/codex/"):
+            self._send_json(404, {"error": "POST required."})
+            return
         if urlsplit(self.path).path.startswith("/api/music/"):
             self._handle_music_get()
             return
@@ -113,6 +117,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/codex/"):
+            handle_codex_control(self)
+            return
         if self.path not in {"/api/action", "/api/alexa/speak", "/api/spotify", "/api/spotify/search", "/api/music/play", "/api/music/control"}:
             self._send_json(404, {"error": "Unbekannter Cockpit-Endpunkt."})
             return

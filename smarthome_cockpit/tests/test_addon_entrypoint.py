@@ -193,6 +193,33 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(os.environ["MUSIC_ASSISTANT_TOKEN"], "ma-option")
         self.assertEqual(os.environ["MUSIC_ASSISTANT_ALLOW_PLAYBACK"], "true")
 
+    def test_default_control_options_preserve_legacy_entity_mapping(self):
+        from smarthome.home_assistant import HomeAssistantConfig
+        os.environ.update(HOME_ASSISTANT_URL="http://127.0.0.1:8123",
+                          HOME_ASSISTANT_TOKEN="offline-test-token",
+                          HOME_ASSISTANT_WOHNZIMMERLICHT="light.legacy_lamp")
+        options = {"home_assistant_entities_json": "", "home_assistant_write_allowlist": []}
+        with patch("builtins.open", mock_open(read_data=json.dumps(options))), \
+                patch.object(entry, "_load_private_music_fallback"):
+            entry._load_options_fallback()
+        config = HomeAssistantConfig.from_environment()
+        self.assertEqual(config.entities, {"wohnzimmerlicht": "light.legacy_lamp"})
+        self.assertIsNone(config.write_allowlist)
+
+    def test_control_options_do_not_replace_existing_process_mapping(self):
+        os.environ.update(HOME_ASSISTANT_ENTITIES_JSON='{"existing":"light.existing"}',
+                          HOME_ASSISTANT_WRITE_ALLOWLIST="existing",
+                          CODEX_CONTROL_SECRET="offline-existing-secret")
+        options = {"home_assistant_entities_json": '{"new":"light.new"}',
+                   "home_assistant_write_allowlist": ["new"],
+                   "codex_control_secret": "offline-new-secret"}
+        with patch("builtins.open", mock_open(read_data=json.dumps(options))), \
+                patch.object(entry, "_load_private_music_fallback"):
+            entry._load_options_fallback()
+        self.assertEqual(os.environ["HOME_ASSISTANT_ENTITIES_JSON"], '{"existing":"light.existing"}')
+        self.assertEqual(os.environ["HOME_ASSISTANT_WRITE_ALLOWLIST"], "existing")
+        self.assertEqual(os.environ["CODEX_CONTROL_SECRET"], "offline-existing-secret")
+
 
 if __name__ == "__main__":
     unittest.main()

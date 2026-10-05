@@ -1,5 +1,5 @@
 name: Smart Home Cockpit
-version: "0.1.7"
+version: "0.1.8"
 slug: smarthome_cockpit
 description: Privates Smart-Home-Cockpit auf Home Assistant
 arch:
@@ -17,14 +17,24 @@ map:
   - data:rw
 options:
   home_assistant_token: ""
+  home_assistant_entities_json: ""
+  home_assistant_write_allowlist: []
   bridge_secret: ""
+  codex_control_secret: ""
+  codex_spotify_profiles: []
   allow_writes: false
   music_assistant_url: ""
   music_assistant_token: ""
   music_assistant_allow_playback: false
 schema:
   home_assistant_token: password
+  home_assistant_entities_json: str
+  home_assistant_write_allowlist:
+    - str
   bridge_secret: password
+  codex_control_secret: password
+  codex_spotify_profiles:
+    - str
   allow_writes: bool
   music_assistant_url: str
   music_assistant_token: password
