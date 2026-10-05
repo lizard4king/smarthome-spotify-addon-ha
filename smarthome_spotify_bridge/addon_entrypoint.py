@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from smarthome.spotify_search import SpotifyMediaSearchClient
 from smarthome.spotify_file_store import SpotifyFileStore
 from smarthome.spotify_targets import load_spotify_target_registry
 from smarthome.spotify_transport import SpotifyTokenEndpoint
+from smarthome.spotify_cockpit import SpotifyCockpitService
 
 
 DATA = Path("/data")
@@ -26,13 +28,15 @@ CONFIG = Path("/config")
 class TokenProvider:
     def __init__(self, client_id: str) -> None:
         store = SpotifyFileStore()
-        endpoint = SpotifyTokenEndpoint(client_id)
+        endpoint = SpotifyTokenEndpoint(client_id, timeout_seconds=8)
         self._manager = SpotifyTokenManager(
             store, refresher=lambda token: endpoint.refresh(token)
         )
+        self._lock = threading.RLock()
 
     def access_token(self, connection_id: str, *, now: datetime) -> str:
-        return self._manager.access_token(connection_id, now=now)
+        with self._lock:
+            return self._manager.access_token(connection_id, now=now)
 
 
 def main() -> None:
@@ -43,21 +47,28 @@ def main() -> None:
         profiles,
         targets,
         token_provider,
-        SpotifyMediaSearchClient(),
-        SpotifyPlaybackService(token_provider, SpotifyConnectClient(), SpotifyPlaybackClient()),
+        SpotifyMediaSearchClient(timeout_seconds=8),
+        SpotifyPlaybackService(token_provider, SpotifyConnectClient(timeout_seconds=8), SpotifyPlaybackClient(timeout_seconds=8)),
     )
+    cockpit = SpotifyCockpitService(profiles, targets, token_provider, service)
 
     class Dispatcher:
         def dispatch(self, command, *, voice_identity, session, now):
-            return service.play(
+            return cockpit.play_command(
                 command,
                 voice_identity=voice_identity,
                 session=session,
                 now=now,
-            )[0]
+            )
 
         def search(self, profile_alias, query, *, now):
             return service.search(profile_alias, query, now=now)
+
+        def status(self, *, now):
+            return cockpit.status(now=now)
+
+        def play_assignments(self, assignments, *, now):
+            return cockpit.play(assignments, now=now)
 
     # Bind inside the isolated add-on network so Cloudflared can proxy the
     # authenticated endpoint. The bridge is not exposed directly to the LAN.

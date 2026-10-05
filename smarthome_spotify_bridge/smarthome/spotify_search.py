@@ -36,6 +36,11 @@ class SpotifyMediaSearchClient:
         self._timeout = timeout_seconds
 
     def resolve(self, query: str, *, access_token: str) -> SpotifyPlaybackRequest:
+        # Search-result selections already carry a validated Spotify URI. Do
+        # not search the URI as spoken text and replace it with a different hit.
+        if isinstance(query, str) and query.startswith("spotify:"):
+            return (SpotifyPlaybackRequest(track_uris=(query,)) if query.startswith("spotify:track:")
+                    else SpotifyPlaybackRequest(context_uri=query))
         results = self.search(query, access_token=access_token, limit=1)
         if not results:
             raise SpotifySearchError("Spotify hat keinen passenden Inhalt gefunden.")

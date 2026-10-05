@@ -28,12 +28,25 @@
     .spotify-brand { display:flex; align-items:center; gap:10px; }
     .spotify-logo { display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:#1ed760; color:#07150d; font-weight:900; font-size:18px; }
     .system-ok { display:inline-flex; vertical-align:middle; align-items:center; gap:6px; margin-left:10px; padding:5px 9px; border:1px solid #28645e; border-radius:999px; color:#cffff0; background:#12302e; font-size:13px; letter-spacing:0; }
+    .system-ok.offline { color:var(--warn); border-color:#806737; }
+    .system-ok.offline .dot, .pill.offline .dot { background:var(--warn); box-shadow:none; }
     .spotify-search { display:flex; gap:10px; margin-top:14px; }
     .spotify-search input { flex:1; min-width:0; background:#0d1729; border:1px solid #35634f; border-radius:10px; padding:11px 12px; color:var(--text); font:inherit; }
     .spotify-search button { background:#1ed760; border-color:#1ed760; color:#07150d; font-weight:750; }
     .spotify-routing { display:grid; grid-template-columns:1fr 1fr auto; gap:10px; margin-top:14px; align-items:end; }
     .spotify-routing label { display:grid; gap:5px; color:var(--muted); font-size:12px; }
     .spotify-routing select { width:100%; background:#0d1729; border:1px solid #35634f; border-radius:10px; padding:10px; color:var(--text); font:inherit; }
+    .spotify-search-profile { display:grid; gap:5px; color:var(--muted); font-size:12px; margin-top:14px; max-width:300px; }
+    .spotify-search-profile select, .spotify-session select { width:100%; min-height:44px; background:#0d1729; border:1px solid #35634f; border-radius:10px; padding:10px; color:var(--text); font:inherit; }
+    .spotify-sessions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:16px; }
+    .spotify-session { min-width:0; padding:14px; border:1px solid #35634f; border-radius:12px; background:rgba(7,21,13,.18); }
+    .spotify-session-heading { display:flex; align-items:center; gap:9px; font-weight:700; }
+    .spotify-session-heading input { width:20px; height:20px; accent-color:#1ed760; }
+    .spotify-session-target { display:grid; gap:5px; margin-top:12px; font-size:12px; color:var(--muted); }
+    .spotify-session-track { margin:10px 0 4px; overflow-wrap:anywhere; }
+    .spotify-message { margin-top:10px; min-height:1.5em; }
+    .spotify-embed-note { display:block; padding:9px 12px; font-size:12px; color:var(--muted); }
+    .spotify-embed-wrap[hidden] { display:none; }
     .spotify-now { display:grid; grid-template-columns:84px minmax(0,1fr); gap:14px; align-items:center; margin-top:16px; }
     .spotify-art { width:84px; height:84px; border-radius:12px; background:linear-gradient(145deg,#1ed760,#116b49 45%,#0b1220); display:grid; place-items:center; color:#d9fff4; font-size:30px; box-shadow:0 8px 18px rgba(0,0,0,.25); }
     .spotify-track { font-size:18px; font-weight:750; }
@@ -87,10 +100,14 @@
     .room:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
     .room.expanded { border-color:var(--accent-2); }
     .room-details { position:relative; z-index:2; display:grid; gap:9px; margin-top:16px; padding-top:12px; border-top:1px solid rgba(38,55,84,.8); }
-    .room-detail-row { display:flex; justify-content:space-between; align-items:center; gap:10px; color:#cbd7e8; font-size:13px; }
+    .room-details[hidden] { display:none; }
+    .room-detail-row { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; color:#cbd7e8; font-size:13px; padding:7px 0; }
     .room-detail-row .room-detail-label { color:var(--muted); }
-    .room-detail-row button { padding:6px 9px; font-size:12px; }
-    .room-detail-row input[type=range] { width:105px; accent-color:var(--accent); }
+    .room-detail-row button { min-height:44px; padding:9px 12px; font-size:13px; }
+    .room-temperature-controls { display:grid; grid-template-columns:minmax(80px,1fr) auto auto; align-items:center; gap:9px; }
+    .room-detail-row input[type=range] { width:100%; min-width:0; accent-color:var(--accent); }
+    .room-temp-value { white-space:nowrap; color:var(--accent); }
+    .room-spotify-state { overflow-wrap:anywhere; }
     .room::after { content:""; position:absolute; width:120px; height:120px; border-radius:50%; right:-42px; top:-38px; background:rgba(121,167,255,.12); }
     .room-top { display:flex; justify-content:space-between; gap:10px; align-items:center; }
     .room-name { font-size:18px; font-weight:700; }
@@ -144,6 +161,8 @@
     @media (max-width:950px) { .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .layout { grid-template-columns:1fr; } }
     @media (max-width:620px) { .shell { padding:18px 12px 28px; } header { display:block; } .header-actions { margin-top:18px; } .rooms { grid-template-columns:1fr; } .metrics { gap:10px; } .metric-value { font-size:24px; } .form-grid { grid-template-columns:1fr; } .field.full { grid-column:auto; } .card { padding:14px; } .control-row { align-items:flex-start; } .range-row { min-width:145px; } .spotify-routing, .music-routing { grid-template-columns:1fr; } .music-search { gap:7px; } .music-search button { min-width:78px; } .music-result { grid-template-columns:46px minmax(0,1fr); } .music-result .music-result-duration { grid-column:2; margin-top:-8px; } .music-art { width:46px; height:46px; } }
     @media (max-width:620px) { .alexa-controls { grid-template-columns:1fr; } }
+    @media (max-width:620px) { .spotify-sessions { grid-template-columns:1fr; } .section-title { gap:10px; flex-wrap:wrap; } .spotify-search button { min-height:44px; } }
+    @media (max-width:620px) { .header-actions { flex-wrap:wrap; min-width:0; } .header-actions .pill { max-width:100%; white-space:normal; overflow-wrap:anywhere; } .header-actions .dot { flex-shrink:0; } }
   </style>
 </head>
 <body>
@@ -151,11 +170,11 @@
     <header>
       <div>
         <div class="eyebrow">Privater Leitstand</div>
-        <h1>Smart Home <span class="system-ok"><span class="dot"></span>OK</span></h1>
+        <h1>Smart Home <span id="systemState" class="system-ok"><span class="dot"></span><span id="systemStateLabel">Prüfen …</span></span></h1>
         <p class="subtitle">Eine ruhige, kompakte Übersicht über Räume, Licht, Klima und Systemstatus.</p>
       </div>
       <div class="header-actions">
-        <span class="pill"><span class="dot"></span> Home Assistant verbunden</span>
+        <span class="pill"><span class="dot"></span> Verbindung wird geprüft …</span>
         <button id="refresh" type="button">↻ Aktualisieren</button>
       </div>
     </header>
@@ -165,17 +184,28 @@
     </nav>
 
     <section class="card spotify-card" aria-label="Spotify">
-      <div class="section-title"><div class="spotify-brand"><span class="spotify-logo">●</span><h2>Spotify</h2></div><span class="meta">Titel zentral · Ziel und Profil im Raum</span></div>
+      <div class="section-title"><div class="spotify-brand"><span class="spotify-logo">●</span><h2>Spotify</h2></div><span class="meta">Zentrale Steuerung · Räume zeigen nur den Status</span></div>
+      <label class="spotify-search-profile" for="spotifyProfile">Titel auswählen für<select id="spotifyProfile"><option value="Andreas">Andreas</option><option value="Erlene Andreia">Erlene Andreia</option></select></label>
       <div class="spotify-search"><input id="spotifyQuery" type="search" placeholder="Titel, Interpret, Album oder Playlist suchen …" aria-label="Spotify-Suche"><button id="spotifySearch" type="button">Suchen</button></div>
-      <div class="spotify-routing" aria-label="Spotify-Wiedergabeziel">
-        <label for="spotifyProfile">Profil<select id="spotifyProfile"><option value="Andreas">Andreas</option><option value="Erlene Andreia">Erlene Andreia</option></select></label>
-        <label for="spotifyTarget">Abspielen auf<select id="spotifyTarget"><option value="Andreas' Echo Show">Wohnzimmer · Andreas' Echo Show</option><option value="Echo Spot Schlafzimmer">Schlafzimmer · Echo Spot Schlafzimmer</option><option value="Echo Küche">Küche · Echo Küche</option><option value="Echo Badezimmer">Badezimmer · Echo Badezimmer</option><option value="Echo Büro">Büro · Echo Büro</option></select></label>
-        <button id="spotifyPlay" class="primary" type="button">Abspielen</button>
+      <div class="spotify-sessions" aria-label="Unabhängige Spotify-Profile">
+        <div class="spotify-session" data-spotify-profile="Andreas">
+          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled>Andreas · mit starten</label>
+          <div class="spotify-session-track">Noch kein Titel ausgewählt.</div>
+          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für Andreas" disabled><option value="">Ziele werden geprüft …</option></select></label>
+          <div class="spotify-session-status meta" aria-live="polite">Wiedergabestatus wird geprüft …</div>
+        </div>
+        <div class="spotify-session" data-spotify-profile="Erlene Andreia">
+          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled>Erlene Andreia · mit starten</label>
+          <div class="spotify-session-track">Noch kein Titel ausgewählt.</div>
+          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für Erlene Andreia" disabled><option value="">Ziele werden geprüft …</option></select></label>
+          <div class="spotify-session-status meta" aria-live="polite">Wiedergabestatus wird geprüft …</div>
+        </div>
       </div>
-      <div class="spotify-embed-wrap" id="spotifyEmbedWrap"><iframe id="spotifyEmbed" class="spotify-embed" title="Spotify-Player" src="https://open.spotify.com/embed/track/0I1DJdLt9BKOb7GWmWxCjo?utm_source=generator&theme=0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>
-      <div class="spotify-now"><div class="spotify-art" aria-hidden="true">♪</div><div><input id="track" class="spotify-track spotify-track-hidden" type="text" value="Fields of Gold – Sting" aria-label="Ausgewählter Titel"><div id="nowPlaying" class="meta">Ausgewählt: Fields of Gold – Sting</div></div></div>
+      <div class="actions"><button id="spotifyPlay" class="primary" type="button" disabled>Ausgewählte Profile starten</button></div>
+      <div id="spotifyMessage" class="meta spotify-message" role="status" aria-live="polite">Pro Profil einen Titel und ein Ziel wählen. Ein Profil spielt auf genau einem Echo; zwei Profile können unterschiedliche Titel abspielen.</div>
+      <div class="spotify-embed-wrap" id="spotifyEmbedWrap" hidden><span class="spotify-embed-note">Spotify-Vorschau im Browser. Die Wiedergabe hier steuert keine Alexa.</span><iframe id="spotifyEmbed" class="spotify-embed" title="Spotify-Vorschau im Browser, kein Alexa-Player" allow="clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>
+      <input id="track" class="spotify-track-hidden" type="text" value="" aria-label="Ausgewählter Titel"><div id="nowPlaying" class="meta">Noch kein Titel für die Vorschau ausgewählt.</div>
       <div id="spotifyResults" class="spotify-results"><div class="meta">Suche nach einem Titel, um Treffer und Coverbilder anzuzeigen.</div></div>
-      <div class="actions"><button id="pause" type="button">Ⅱ Pause</button><button id="stop" class="danger" type="button">■ Stopp</button></div>
     </section>
 
     <section class="card own-music-card" aria-labelledby="ownMusicTitle">
@@ -213,7 +243,7 @@
         <label for="alexaCommand">Befehl vorbereiten<input id="alexaCommand" class="alexa-command" type="text" value="Alexa, starte Lumi Chat."></label>
       </div>
       <div class="alexa-actions">
-        <button id="alexaSpeak" class="primary" type="button">Alexa sprechen lassen</button>
+        <button id="alexaSpeak" class="primary" type="button" disabled>Alexa sprechen lassen</button>
         <button id="alexaCopy" type="button">Befehl kopieren</button>
         <a class="quick-link" href="https://alexa.amazon.de/spa/index.html#settings" target="_blank" rel="noopener">Alexa-App öffnen ↗</a>
         <a class="quick-link" href="https://developer.amazon.com/alexa/console/ask/build/custom/amzn1.ask.skill.897aac99-b445-4e97-8011-fd344f46ab17/development/de_DE/dashboard" target="_blank" rel="noopener">Skill-Konsole ↗</a>
@@ -230,11 +260,11 @@
       <section>
         <div class="section-title"><h2>Räume</h2><span class="meta">Geräte nach Bereich</span></div>
         <div class="grid rooms">
-          <article class="card room" data-room-target="wohnzimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Wohnzimmer</div><div class="room-icon">◒</div></div><div class="room-count">Echo Show · Robbi · Thermostat · Licht</div><div class="room-status"><span class="tag good">22,1 °C</span><span class="tag" data-room-light-state="living">Licht: Aus</span><span class="tag">Spotify-Ziel</span></div></article>
-          <article class="card room" data-room-target="schlafzimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Schlafzimmer</div><div class="room-icon">☾</div></div><div class="room-count">Dr. Staub · Thermostat · Licht</div><div class="room-status"><span class="tag good">Klima verfügbar</span><span class="tag" data-room-light-state="bed">Licht: Aus</span></div></article>
-          <article class="card room" data-room-target="kuechenheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Küche</div><div class="room-icon">⌂</div></div><div class="room-count">Echo Küche · Thermostat · LG ThinQ</div><div class="room-status"><span class="tag good">Batterie normal</span></div></article>
-          <article class="card room" data-room-target="badezimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Badezimmer</div><div class="room-icon">▦</div></div><div class="room-count">Echo Badezimmer · Thermostat</div><div class="room-status"><span class="tag good">Batterie normal</span></div></article>
-          <article class="card room" data-room-target="bueroheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Büro</div><div class="room-icon">▤</div></div><div class="room-count">Echo Büro · Thermostat · Arbeitsnotebooks</div><div class="room-status"><span class="tag good">Batterie normal</span></div></article>
+          <article class="card room" data-room-target="wohnzimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Wohnzimmer</div><div class="room-icon">◒</div></div><div class="room-count">Echo Show · Robbi · Thermostat · Licht</div><div class="room-status"><span class="tag" data-room-temperature>Temperatur: —</span><span class="tag" data-room-light-state="living">Licht: Aus</span></div></article>
+          <article class="card room" data-room-target="schlafzimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Schlafzimmer</div><div class="room-icon">☾</div></div><div class="room-count">Dr. Staub · Thermostat · Licht</div><div class="room-status"><span class="tag" data-room-temperature>Temperatur: —</span><span class="tag" data-room-light-state="bed">Licht: Aus</span></div></article>
+          <article class="card room" data-room-target="kuechenheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Küche</div><div class="room-icon">⌂</div></div><div class="room-count">Echo Küche · Thermostat · LG ThinQ</div><div class="room-status"><span class="tag" data-room-temperature>Temperatur: —</span></div></article>
+          <article class="card room" data-room-target="badezimmerheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Badezimmer</div><div class="room-icon">▦</div></div><div class="room-count">Echo Badezimmer · Thermostat</div><div class="room-status"><span class="tag" data-room-temperature>Temperatur: —</span></div></article>
+          <article class="card room" data-room-target="bueroheizung" tabindex="0" role="button"><div class="room-top"><div class="room-name">Büro</div><div class="room-icon">▤</div></div><div class="room-count">Echo Büro · Thermostat · Arbeitsnotebooks</div><div class="room-status"><span class="tag" data-room-temperature>Temperatur: —</span></div></article>
         </div>
       </section>
 
@@ -247,14 +277,19 @@
   </main>
   <script>
     let cockpitMode = 'simulation';
+    let homeAssistantConfigured = false;
+    let homeAssistantConnected = false;
+    let homeAssistantWritesAllowed = false;
     const activity = document.getElementById('activity');
-    const lightState = { living:false, bed:false };
+    const lightState = { living:null, bed:null };
     function renderRoomLights() {
       for (const [key, label] of [['living','Wohnzimmer'],['bed','Schlafzimmer']]) {
-        const on = Boolean(lightState[key]);
-        document.querySelectorAll('[data-room-light-state="' + key + '"]').forEach((node) => { node.textContent = 'Licht: ' + (on ? 'Ein' : 'Aus'); });
+        const known = typeof lightState[key] === 'boolean';
+        const on = lightState[key] === true;
+        document.querySelectorAll('[data-room-light-state="' + key + '"]').forEach((node) => { node.textContent = known ? 'Licht: ' + (on ? 'Ein' : 'Aus') : 'Licht: —'; });
         document.querySelectorAll('[data-room-light-key="' + key + '"]').forEach((button) => {
-          button.textContent = on ? 'Ausschalten' : 'Einschalten';
+          button.textContent = known ? (on ? 'Ausschalten' : 'Einschalten') : 'Status nicht verfügbar';
+          button.disabled = !known || !homeAssistantConnected || !homeAssistantWritesAllowed || button.dataset.commandPending === 'true';
           button.classList.toggle('on', on);
           button.setAttribute('aria-pressed', String(on));
         });
@@ -268,39 +303,56 @@
       activity.prepend(row);
       document.getElementById('updated').textContent = 'Stand: gerade eben · lokal';
     }
-    async function api(path, payload) {
-      try {
-        const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Unbekannter Fehler');
-        return result;
-      } catch (error) {
-        if (cockpitMode === 'live') throw error;
-        return { mode:'simulation' };
-      }
-    }
-    fetch('/api/capabilities').then(response => response.json()).then(capabilities => {
-      cockpitMode = capabilities.mode || 'simulation';
+    function setHomeAssistantStatus(connected, text) {
+      homeAssistantConnected = connected;
+      const state = document.getElementById('systemState');
+      document.getElementById('systemStateLabel').textContent = connected ? 'OK' : 'HA offline';
+      state.classList.toggle('offline', !connected);
       const pill = document.querySelector('.pill');
-      pill.innerHTML = '<span class="dot"></span> ' + (cockpitMode === 'live' ? 'Live-Anbindung bereit' : 'Lokale Simulation');
+      pill.classList.toggle('offline', !connected);
+      pill.innerHTML = '<span class="dot"></span> ' + text;
+      if (!connected) {
+        document.querySelectorAll('[data-room-temperature]').forEach(node => { node.textContent = 'Temperatur: —'; node.classList.toggle('good', false); });
+        lightState.living = null; lightState.bed = null;
+      }
+      document.querySelectorAll('.room-temp-set, .room-temp').forEach(node => { node.disabled = !connected || !homeAssistantWritesAllowed || node.dataset.commandPending === 'true'; });
+      const speakButton = document.getElementById('alexaSpeak');
+      speakButton.disabled = !connected || !homeAssistantWritesAllowed || speakButton.dataset.commandPending === 'true';
+      renderRoomLights();
+    }
+    async function api(path, payload) {
+      if (path === '/api/action' && (!homeAssistantConnected || !homeAssistantWritesAllowed)) throw new Error('Gerätesteuerung ist nicht verfügbar oder nicht freigegeben.');
+      const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unbekannter Fehler');
+      if (path === '/api/action' && (result.mode !== 'live' || result.status !== 'ok')) throw new Error('Kein bestätigter Live-Befehl.');
+      return result;
+    }
+    fetch('/api/capabilities').then(response => { if (!response.ok) throw new Error('Statusdienst nicht erreichbar'); return response.json(); }).then(capabilities => {
+      cockpitMode = capabilities.mode || 'simulation';
+      homeAssistantConfigured = capabilities.home_assistant === true;
+      homeAssistantWritesAllowed = capabilities.home_assistant_writes === true;
+      if (!homeAssistantConfigured) setHomeAssistantStatus(false, cockpitMode === 'simulation' ? 'Lokale Vorschau · kein Live-Status' : 'Home Assistant nicht konfiguriert');
       document.querySelectorAll('.mode').forEach(node => node.textContent = cockpitMode === 'live' ? 'Live' : 'Simulation');
       const climateHelp = document.getElementById('climateHelp');
       if (climateHelp) climateHelp.textContent = capabilities.home_assistant_writes ? 'Über Homematic-IP-Cloud' : 'Nur lokale Cockpit-Vorschau';
-    }).then(refreshHomeAssistantInventory).catch(() => {});
+    }).then(refreshHomeAssistantInventory).catch(() => { setHomeAssistantStatus(false, 'Home Assistant nicht erreichbar'); });
     async function refreshHomeAssistantInventory() {
-      if (cockpitMode !== 'live') return;
+      if (cockpitMode !== 'live' || !homeAssistantConfigured) return;
       try {
         const response = await fetch('/api/ha/entities', { cache:'no-store' });
         if (!response.ok) throw new Error('Inventar nicht erreichbar');
         const payload = await response.json();
-        const entities = Array.isArray(payload.entities) ? payload.entities : [];
+        if (!payload || !Array.isArray(payload.entities)) throw new Error('Ungültiges Inventar');
+        const entities = payload.entities;
+        setHomeAssistantStatus(true, 'Home Assistant verbunden');
         const climates = entities.filter(item => typeof item.entity_id === 'string' && item.entity_id.startsWith('climate.'));
         const sensors = entities.filter(item => typeof item.entity_id === 'string' && item.entity_id.startsWith('sensor.'));
         const lights = entities.filter(item => typeof item.entity_id === 'string' && item.entity_id.startsWith('light.'));
         const livingLight = lights.find(item => item.entity_id === 'light.h618c');
         const bedroomLight = lights.find(item => item.entity_id === 'light.h618c_2');
-        if (livingLight) lightState.living = livingLight.state === 'on';
-        if (bedroomLight) lightState.bed = bedroomLight.state === 'on';
+        lightState.living = livingLight && ['on','off'].includes(livingLight.state) ? livingLight.state === 'on' : null;
+        lightState.bed = bedroomLight && ['on','off'].includes(bedroomLight.state) ? bedroomLight.state === 'on' : null;
         renderRoomLights();
         // Bekannte Wandthermostat-Entity-IDs: sie haben Vorrang vor den Heizkörperthermostaten.
         // Die Zuordnung entspricht der aktuell in Home Assistant sichtbaren Gerätefolge.
@@ -319,6 +371,13 @@
           });
           return { item: radiator, wall: false };
         };
+        document.querySelectorAll('[data-room-target]').forEach(roomCard => {
+          const node = roomCard.querySelector('[data-room-temperature]');
+          const temperature = preferredTemperature(roomCard.querySelector('.room-name').textContent.trim()).item;
+          const measured = temperature && typeof temperature.state === 'string' && temperature.state.trim() ? Number(temperature.state) : NaN;
+          const valid = Number.isFinite(measured);
+          if (node) { node.textContent = valid ? measured.toLocaleString('de-DE', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' °C' : 'Temperatur: —'; node.classList.toggle('good', valid); }
+        });
         const rows = document.querySelectorAll('.thermostat-row');
         rows.forEach((row) => {
           const room = row.querySelector('.device-name')?.textContent?.trim() || '';
@@ -340,6 +399,7 @@
         });
         log('Home-Assistant-Inventar aktualisiert: ' + climates.length + ' Thermostate');
       } catch (error) {
+        setHomeAssistantStatus(false, 'Home Assistant nicht erreichbar');
         log('Home-Assistant-Inventar konnte nicht aktualisiert werden.');
       }
     }
@@ -357,47 +417,44 @@
       const details = document.createElement('div');
       details.className = 'room-details';
       details.hidden = true;
-      details.innerHTML = '<div class="room-detail-row"><span class="room-detail-label">Temperatur · ' + definition.source + '</span><span><input class="room-temp" type="range" min="16" max="28" step="0.5" value="21.5"><span class="room-temp-value">21,5 °C</span> <button class="primary room-temp-set" type="button">Setzen</button></span></div>'
+      details.innerHTML = '<div class="room-detail-row"><span class="room-detail-label">Neue Solltemperatur · ' + definition.source + '</span><span class="room-temperature-controls"><input class="room-temp" aria-label="Neue Solltemperatur für ' + roomName + '" type="range" min="16" max="28" step="0.5" value="21.5"><span class="room-temp-value">21,5 °C</span> <button class="primary room-temp-set" type="button">Setzen</button></span></div>'
         + (definition.light ? '<div class="room-detail-row"><span class="room-detail-label">Licht · Govee</span><button class="room-light" data-room-light-key="' + definition.light + '" type="button">Einschalten</button></div>' : '<div class="room-detail-row"><span class="room-detail-label">Licht / Steckdose</span><span>' + (definition.extra.includes('Keine') ? 'Nicht erkannt' : 'Keine Entity hinterlegt') + '</span></div>')
-        + '<div class="room-detail-row room-spotify-row"><span class="room-detail-label">Spotify · ' + definition.spotifyTarget + '</span><span><select class="room-spotify-profile" aria-label="Spotify-Profil für ' + roomName + '"><option>Andreas</option><option>Erlene Andreia</option></select> <button class="primary room-spotify-play" type="button">Abspielen</button></span></div>'
-        + '<div class="room-detail-row"><span class="room-detail-label">Weitere Geräte</span><span>' + definition.extra + '</span></div>';
+        + '<div class="room-detail-row room-spotify-row"><span class="room-detail-label">Spotify · ' + definition.spotifyTarget + '</span><span class="room-spotify-state" aria-live="polite">Wiedergabestatus wird geprüft …</span></div>'
+        + '<div class="room-detail-row"><span class="room-detail-label">Weitere Geräte</span><span>' + definition.extra + '</span></div><div class="room-action-status meta" role="status" aria-live="polite"></div>';
       roomCard.append(details);
-      const toggleDetails = () => { details.hidden = !details.hidden; roomCard.classList.toggle('expanded', !details.hidden); };
+      roomCard.setAttribute('aria-expanded', 'false');
+      const toggleDetails = () => { details.hidden = !details.hidden; roomCard.classList.toggle('expanded', !details.hidden); roomCard.setAttribute('aria-expanded', String(!details.hidden)); };
       roomCard.addEventListener('click', (event) => { if (!event.target.closest('button, input, select')) toggleDetails(); });
-      roomCard.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleDetails(); } });
+      roomCard.addEventListener('keydown', (event) => { if (event.target === roomCard && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); toggleDetails(); } });
       const slider = details.querySelector('.room-temp');
       const value = details.querySelector('.room-temp-value');
+      const actionStatus = details.querySelector('.room-action-status');
+      slider.disabled = true;
+      details.querySelector('.room-temp-set').disabled = true;
       slider.addEventListener('input', () => { value.textContent = Number(slider.value).toLocaleString('de-DE',{minimumFractionDigits:1}) + ' °C'; });
       details.querySelector('.room-temp-set').addEventListener('click', async (event) => {
         event.stopPropagation();
-        try { await api('/api/action', { action:'set_temperature', device_id:key, temperature:Number(slider.value) }); log(roomName + '-Sollwert auf ' + value.textContent + (cockpitMode === 'live' ? ' gesetzt' : ' gesetzt (Simulation)')); }
-        catch (error) { log(roomName + '-Sollwert abgelehnt: ' + error.message); }
+        const button = event.currentTarget;
+        if (button.disabled) return;
+        const temperature = Number(slider.value); const temperatureLabel = value.textContent;
+        button.disabled = true; slider.disabled = true; button.dataset.commandPending = 'true'; slider.dataset.commandPending = 'true';
+        try { await api('/api/action', { action:'set_temperature', device_id:key, temperature }); actionStatus.textContent = 'Sollwert-Befehl für ' + temperatureLabel + ' gesendet.'; log(roomName + ': ' + actionStatus.textContent); }
+        catch (error) { actionStatus.textContent = 'Sollwert-Befehl abgelehnt: ' + error.message; log(roomName + ': ' + actionStatus.textContent); }
+        finally { button.dataset.commandPending = 'false'; slider.dataset.commandPending = 'false'; button.disabled = slider.disabled = !homeAssistantConnected || !homeAssistantWritesAllowed; }
       });
       details.querySelector('.room-light')?.addEventListener('click', async (event) => {
         event.stopPropagation();
         const key = definition.light;
+        const button = event.currentTarget;
+        if (typeof lightState[key] !== 'boolean' || button.disabled) return;
         const next = !lightState[key];
-        try { await api('/api/action', { action:'set_light', device_id:definition.lightDevice, is_on:next }); lightState[key] = next; renderRoomLights(); log(roomName + '-Licht ' + (next ? 'eingeschaltet' : 'ausgeschaltet')); }
-        catch (error) { log(roomName + '-Lichtbefehl abgelehnt: ' + error.message); }
-      });
-      details.querySelector('.room-spotify-play')?.addEventListener('click', async (event) => {
-        event.stopPropagation();
-        const track = document.getElementById('track').value || 'Unbekannter Titel';
-        const profile = details.querySelector('.room-spotify-profile').value;
-        try { await api('/api/spotify', { profile, target:definition.spotifyTarget, track }); document.getElementById('nowPlaying').textContent = '▶ ' + track + ' · ' + profile + ' · ' + definition.spotifyTarget; log('Spotify: ' + track + ' auf ' + definition.spotifyTarget + ' mit ' + profile + (cockpitMode === 'live' ? '' : ' (Simulation)')); }
-        catch (error) { log('Spotify-Befehl abgelehnt: ' + error.message); }
+        button.disabled = true; button.dataset.commandPending = 'true';
+        try { await api('/api/action', { action:'set_light', device_id:definition.lightDevice, is_on:next }); actionStatus.textContent = (next ? 'Einschaltbefehl' : 'Ausschaltbefehl') + ' gesendet. Zustand wird geprüft.'; log(roomName + ': ' + actionStatus.textContent); await refreshHomeAssistantInventory(); }
+        catch (error) { actionStatus.textContent = 'Lichtbefehl abgelehnt: ' + error.message; log(roomName + ': ' + actionStatus.textContent); }
+        finally { button.dataset.commandPending = 'false'; renderRoomLights(); }
       });
     });
     renderRoomLights();
-    document.getElementById('pause').addEventListener('click', () => { document.getElementById('nowPlaying').textContent = 'Ⅱ Wiedergabe pausiert'; log('Spotify pausiert (Simulation)'); });
-    document.getElementById('stop').addEventListener('click', () => { document.getElementById('nowPlaying').textContent = '■ Keine Wiedergabe'; log('Spotify gestoppt (Simulation)'); });
-    document.getElementById('spotifyPlay').addEventListener('click', async () => {
-      const track = document.getElementById('track').value || 'Unbekannter Titel';
-      const profile = document.getElementById('spotifyProfile').value;
-      const target = document.getElementById('spotifyTarget').value;
-      try { await api('/api/spotify', { profile, target, track }); document.getElementById('nowPlaying').textContent = '▶ ' + track + ' · ' + profile + ' · ' + target; log('Spotify: ' + track + ' auf ' + target + ' mit ' + profile + (cockpitMode === 'live' ? '' : ' (Simulation)')); }
-      catch (error) { log('Spotify-Befehl abgelehnt: ' + error.message); }
-    });
     function updateAlexaStatus() {
       const profile = document.getElementById('alexaProfile').value;
       const device = document.getElementById('alexaDevice').value;
@@ -410,30 +467,235 @@
       try { await navigator.clipboard.writeText(command); document.getElementById('alexaStatus').textContent = 'Befehl kopiert: „' + command + '“'; log('Alexa-Befehl kopiert'); }
       catch (error) { document.getElementById('alexaStatus').textContent = 'Kopieren nicht möglich; bitte den Befehl markieren und kopieren.'; }
     });
-    document.getElementById('alexaSpeak').addEventListener('click', async () => {
+    document.getElementById('alexaSpeak').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      if (button.disabled || button.dataset.commandPending === 'true' || !homeAssistantConnected || !homeAssistantWritesAllowed) return;
       const targetMap = {"Andreas' Echo Show":"media_player.andreas_echo_show", "Echo Spot Schlafzimmer":"media_player.echo_spot_schlafzimmer", "Echo Küche":"media_player.echo_dot_kuche", "Echo Badezimmer":"media_player.echo_dot_badezimmer", "Echo Büro":"media_player.echo_dot_buro"};
-      const target = targetMap[document.getElementById('alexaDevice').value];
+      const deviceName = document.getElementById('alexaDevice').value;
+      const target = targetMap[deviceName];
       const message = document.getElementById('alexaCommand').value.trim();
-      if (!message) return;
+      if (!message || !target) { document.getElementById('alexaStatus').textContent = 'Bitte einen Ansagetext und ein zugeordnetes Echo wählen.'; return; }
+      button.dataset.commandPending = 'true'; button.disabled = true;
       try {
         const response = await fetch('/api/alexa/speak', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({target, message})});
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Ansage fehlgeschlagen.');
-        document.getElementById('alexaStatus').textContent = 'Alexa spricht jetzt auf ' + document.getElementById('alexaDevice').value + '.';
+        if (result.status !== 'ok' || result.mode !== 'live') throw new Error('Kein bestätigter Live-Ansagebefehl.');
+        document.getElementById('alexaStatus').textContent = 'Ansage an ' + deviceName + ' gesendet.';
         log('Alexa-Ansage gesendet');
       } catch (error) { document.getElementById('alexaStatus').textContent = error.message; }
+      finally { button.dataset.commandPending = 'false'; button.disabled = !homeAssistantConnected || !homeAssistantWritesAllowed; }
     });
     async function loadCameras() {
       const grid = document.getElementById('cameraGrid');
       try {
-        const response = await fetch('/api/ha/entities');
+        const response = await fetch('/api/ha/entities', {cache:'no-store'});
         const result = await response.json();
-        const cameras = (result.entities || []).filter(item => String(item.entity_id || '').startsWith('camera.'));
+        if (!response.ok || !Array.isArray(result.entities)) throw new Error('Kamera-Inventar nicht verfügbar.');
+        const cameras = result.entities.filter(item => item && typeof item.entity_id === 'string' && item.entity_id.startsWith('camera.'));
         if (!cameras.length) { grid.innerHTML = '<p class="meta">Keine Kamera-Entity in Home Assistant gefunden.</p>'; return; }
-        grid.innerHTML = cameras.map(camera => '<article class="card room"><div class="room-top"><div class="room-name">' + (camera.name || camera.entity_id) + '</div><div class="room-icon">▣</div></div><img loading="lazy" alt="' + (camera.name || 'Kamera') + '" style="width:100%;border-radius:10px;margin-top:10px;background:#091221;min-height:120px;object-fit:cover" src="/api/ha/camera_image?entity_id=' + encodeURIComponent(camera.entity_id) + '&t=' + Date.now() + '"><div class="meta" style="margin-top:8px">' + camera.entity_id + '</div></article>').join('');
+        grid.replaceChildren();
+        for (const camera of cameras) {
+          const card = document.createElement('article'); card.className = 'card room';
+          const top = document.createElement('div'); top.className = 'room-top';
+          const name = document.createElement('div'); name.className = 'room-name';
+          name.textContent = typeof camera.name === 'string' ? camera.name : camera.entity_id;
+          const icon = document.createElement('div'); icon.className = 'room-icon'; icon.textContent = '▣';
+          top.append(name, icon);
+          const image = document.createElement('img'); image.loading = 'lazy'; image.alt = name.textContent;
+          image.style.cssText = 'width:100%;border-radius:10px;margin-top:10px;background:#091221;min-height:120px;object-fit:cover';
+          image.src = '/api/ha/camera_image?entity_id=' + encodeURIComponent(camera.entity_id) + '&t=' + Date.now();
+          const id = document.createElement('div'); id.className = 'meta'; id.style.marginTop = '8px'; id.textContent = camera.entity_id;
+          card.append(top, image, id); grid.append(card);
+        }
       } catch (error) { grid.innerHTML = '<p class="meta">Kameras konnten nicht geladen werden.</p>'; }
     }
     loadCameras();
+    const spotifyController = (() => {
+      const profileSelect = document.getElementById('spotifyProfile');
+      const playButton = document.getElementById('spotifyPlay');
+      const message = document.getElementById('spotifyMessage');
+      const slots = new Map(Array.from(document.querySelectorAll('[data-spotify-profile]'), card => [card.dataset.spotifyProfile, {
+        card, enabled:card.querySelector('.spotify-session-enabled'), target:card.querySelector('.spotify-session-target-select'),
+        trackNode:card.querySelector('.spotify-session-track'), statusNode:card.querySelector('.spotify-session-status'),
+        selected:null, ready:false, profileId:null, availableTargets:new Set(), requiresTargetSelection:false,
+      }]));
+      let pending = false;
+      let refreshPromise = null;
+      const normalize = value => String(value || '').normalize('NFKC').replace(/[‘’]/g, "'").trim().toLocaleLowerCase('de-DE');
+      function setMessage(text, error = false) { message.textContent = text; message.style.color = error ? '#ffb1b1' : ''; }
+      function selectedAssignments() {
+        return Array.from(slots, ([profile, slot]) => ({profile, slot})).filter(({slot}) => slot.enabled.checked)
+          .map(({profile, slot}) => ({profile, target:slot.target.value, track:slot.selected?.uri || '', slot}));
+      }
+      function updateControls() {
+        const assignments = selectedAssignments();
+        const chosenTargets = assignments.map(item => item.target).filter(Boolean);
+        const duplicateTarget = new Set(chosenTargets).size !== chosenTargets.length;
+        playButton.disabled = pending || !assignments.length || duplicateTarget || assignments.some(item => !item.slot.ready || !item.slot.availableTargets.has(item.target) || !item.target || !item.track);
+        profileSelect.disabled = pending;
+        document.getElementById('spotifySearch').disabled = pending;
+        document.getElementById('spotifyQuery').disabled = pending;
+        for (const slot of slots.values()) {
+          slot.enabled.disabled = pending || !slot.ready || !slot.selected;
+          slot.target.disabled = pending || !slot.ready || !slot.availableTargets.size;
+        }
+        document.querySelectorAll('.spotify-result').forEach(button => { button.disabled = pending; });
+        if (!pending && duplicateTarget) setMessage('Für zwei Profile bitte zwei unterschiedliche Echo-Ziele wählen.', true);
+        else if (!pending && message.textContent === 'Für zwei Profile bitte zwei unterschiedliche Echo-Ziele wählen.') setMessage('Zielauswahl korrigiert. Noch kein Befehl gesendet.');
+      }
+      async function request(path, options = {}) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 90000);
+        try {
+          const response = await fetch(path, {...options, cache:'no-store', signal:controller.signal});
+          const payload = await response.json();
+          if (!response.ok) { const error = new Error(payload.error || 'Spotify-Anfrage abgelehnt.'); error.httpStatus = response.status; throw error; }
+          return payload;
+        } finally { clearTimeout(timer); }
+      }
+      function renderRoomStatus(profiles, targets, available) {
+        for (const roomCard of document.querySelectorAll('[data-room-target]')) {
+          const node = roomCard.querySelector('.room-spotify-state');
+          if (!node) continue;
+          const definition = roomDetails[roomCard.dataset.roomTarget];
+          if (typeof definition?.spotifyTarget !== 'string' || !definition.spotifyTarget.trim()) { node.textContent = 'Kein Spotify-Ziel für diesen Raum zugeordnet.'; continue; }
+          const target = targets.find(item => [item.display_name, item.spotify_device_name, ...(Array.isArray(item.aliases) ? item.aliases : [])]
+            .some(alias => typeof alias === 'string' && alias.trim() && normalize(alias) === normalize(definition.spotifyTarget)));
+          if (!available || !target) { node.textContent = 'Wiedergabestatus nicht verfügbar.'; continue; }
+          const active = profiles.filter(profile => profile.active_target_id === target.target_id && profile.track
+            && typeof profile.track.title === 'string'
+            && ((profile.status === 'playing' && profile.is_playing === true) || profile.status === 'paused'));
+          node.textContent = active.length ? active.map(profile => {
+            const name = profile.display_name || profile.profile_id;
+            return (profile.status === 'playing' && profile.is_playing === true ? 'Spielt: ' : 'Pausiert: ')
+              + profile.track.title + ' · ' + name;
+          }).join(' / ') : 'Keine bestätigte Wiedergabe.';
+        }
+      }
+      function applyStatus(payload) {
+        if (!payload || !Array.isArray(payload.profiles) || !Array.isArray(payload.targets)) throw new Error('Ungültiger Spotify-Status.');
+        const available = payload.available === true;
+        const targets = payload.targets.filter(target => target && typeof target.target_id === 'string' && target.target_id
+          && typeof target.display_name === 'string' && target.display_name);
+        const profiles = payload.profiles.filter(profile => profile && typeof profile.profile_id === 'string' && typeof profile.display_name === 'string');
+        for (const [name, slot] of slots) {
+          const profile = profiles.find(item => normalize(item.display_name) === normalize(name));
+          const allowed = profile && Array.isArray(profile.targets) ? new Set(profile.targets) : new Set();
+          const deviceAvailabilityKnown = Boolean(profile) && Array.isArray(profile.available_targets);
+          slot.availableTargets = new Set(deviceAvailabilityKnown ? profile.available_targets.filter(id => allowed.has(id)) : []);
+          const usable = targets.filter(target => allowed.has(target.target_id));
+          const previous = slot.target.value;
+          slot.target.replaceChildren();
+          for (const target of usable) {
+            const option = document.createElement('option');
+            option.value = target.target_id;
+            option.disabled = !slot.availableTargets.has(target.target_id);
+            option.textContent = target.display_name + (option.disabled ? ' · in Spotify nicht sichtbar' : '');
+            slot.target.append(option);
+          }
+          if (!usable.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Kein freigegebenes Ziel verfügbar'; slot.target.append(option); }
+          const occupied = new Set(Array.from(slots.values()).filter(other => other !== slot).map(other => other.target.value));
+          const visible = usable.filter(target => slot.availableTargets.has(target.target_id));
+          if (previous && !usable.some(target => target.target_id === previous)) {
+            slot.requiresTargetSelection = true;
+          }
+          if (slot.requiresTargetSelection) {
+            const missing = document.createElement('option'); missing.value = '';
+            missing.textContent = 'Zuvor gewähltes Ziel nicht mehr konfiguriert'; missing.disabled = true;
+            slot.target.append(missing); slot.target.value = ''; slot.enabled.checked = false;
+          } else slot.target.value = previous || (visible.find(target => !occupied.has(target.target_id)) || visible[0])?.target_id || '';
+          slot.profileId = profile?.profile_id || null;
+          slot.ready = available && Boolean(profile) && deviceAvailabilityKnown && ['playing','paused','idle'].includes(profile.status) && usable.length > 0;
+          if (!profile || profile.status === 'unavailable' || !available) slot.statusNode.textContent = 'Wiedergabestatus nicht verfügbar.';
+          else if (profile.track && typeof profile.track.title === 'string' && profile.status === 'playing' && profile.is_playing === true)
+            slot.statusNode.textContent = 'Spielt: ' + profile.track.title + ' · ' + (profile.active_device_name || 'Ziel unbekannt');
+          else if (profile.track && typeof profile.track.title === 'string' && profile.status === 'paused')
+            slot.statusNode.textContent = 'Pausiert: ' + profile.track.title + ' · ' + (profile.active_device_name || 'Ziel unbekannt');
+          else slot.statusNode.textContent = 'Keine bestätigte Wiedergabe.';
+          if (!deviceAvailabilityKnown) slot.statusNode.textContent += ' Zielverfügbarkeit nicht bestätigt.';
+          else if (!visible.length) slot.statusNode.textContent += ' Kein Echo-Ziel ist derzeit in Spotify sichtbar.';
+        }
+        renderRoomStatus(profiles, targets, available);
+        updateControls();
+      }
+      function refresh() {
+        if (refreshPromise) return refreshPromise;
+        refreshPromise = (async () => {
+          try { applyStatus(await request('/api/spotify/status')); }
+          catch (error) {
+            for (const slot of slots.values()) { slot.ready = false; slot.statusNode.textContent = 'Wiedergabestatus nicht verfügbar.'; }
+            renderRoomStatus([], [], false);
+            updateControls();
+            if (!pending) setMessage('Spotify-Status nicht erreichbar. Es wird keine Wiedergabe behauptet.', true);
+          } finally { refreshPromise = null; }
+        })();
+        return refreshPromise;
+      }
+      async function refreshAfterCommand() {
+        // A GET begun before POST is not the required post-command observation.
+        if (refreshPromise) await refreshPromise;
+        await refresh();
+      }
+      function selectTrack(item, forProfile = profileSelect.value) {
+        const slot = slots.get(forProfile);
+        if (!slot || pending || typeof item.title !== 'string' || !item.title.trim()
+            || !/^spotify:(track|album|playlist|artist):[A-Za-z0-9]+$/.test(String(item.uri || ''))) {
+          setMessage('Dieser Treffer kann nicht als eindeutiger Spotify-Inhalt gestartet werden.', true);
+          return;
+        }
+        slot.selected = {uri:item.uri, title:item.title, subtitle:item.subtitle || ''};
+        slot.trackNode.textContent = item.title + (item.subtitle ? ' · ' + item.subtitle : '');
+        slot.enabled.checked = true;
+        document.getElementById('track').value = item.uri;
+        showSpotifyEmbed(item.uri);
+        document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + item.title + ' · für ' + forProfile;
+        setMessage('Titel für ' + forProfile + ' ausgewählt. Erst „Ausgewählte Profile starten“ sendet einen Echo-Befehl.');
+        updateControls();
+      }
+      async function play() {
+        const assignments = selectedAssignments();
+        if (pending || playButton.disabled || assignments.some(item => !item.slot.ready || !item.slot.availableTargets.has(item.target) || !item.target || !item.track)) return;
+        pending = true;
+        updateControls();
+        setMessage('Wiedergabebefehle werden gesendet …');
+        try {
+          const payload = await request('/api/spotify', {method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({assignments:assignments.map(({profile, target, track}) => ({profile, target, track}))})});
+          if (payload.bridge?.status === 'failed') { const error = new Error(payload.bridge.error || 'Spotify hat den Befehl abgelehnt.'); error.commandRejected = true; throw error; }
+          if (!Array.isArray(payload.assignments) || !['accepted','partial','failed'].includes(payload.status)) throw new Error('Ungültige Antwort der Spotify-Steuerung.');
+          const results = assignments.map(assignment => {
+            const result = payload.assignments.find(item => item.target_id === assignment.target && item.profile_id === assignment.slot.profileId)
+              || payload.assignments.find(item => item.profile === assignment.profile && item.target === assignment.target);
+            if (!result || !['accepted','failed','not_attempted'].includes(result.status)) throw new Error('Unvollständige Antwort der Spotify-Steuerung.');
+            return assignment.profile + ': ' + (result.status === 'accepted' ? 'Befehl angenommen; Status wird geprüft'
+              : result.status === 'failed' ? 'fehlgeschlagen' + (typeof result.error === 'string' ? ' · ' + result.error : '') : 'nicht gestartet');
+          });
+          setMessage(results.join(' / '), payload.status !== 'accepted');
+          log('Spotify: ' + results.join(' / '));
+        } catch (error) {
+          const rejected = error.commandRejected || (error.httpStatus >= 400 && error.httpStatus < 500);
+          const text = rejected ? 'Spotify-Befehl abgelehnt: ' + error.message
+            : 'Anfrageergebnis unklar: ' + error.message + ' Wiedergabestatus wird geprüft. Vor erneutem Start bitte die Profile bewusst neu auswählen.';
+          if (!rejected) for (const assignment of assignments) assignment.slot.enabled.checked = false;
+          setMessage(text, true); log(text);
+        }
+        finally { await refreshAfterCommand(); pending = false; updateControls(); }
+      }
+      for (const slot of slots.values()) {
+        slot.enabled.addEventListener('change', updateControls);
+        slot.target.addEventListener('change', () => { if (slot.availableTargets.has(slot.target.value)) slot.requiresTargetSelection = false; setMessage('Zielauswahl geändert. Noch kein Befehl gesendet.'); updateControls(); });
+      }
+      playButton.addEventListener('click', play);
+      const poll = async () => { if (!document.hidden && !pending) await refresh(); setTimeout(poll, 30000); };
+      if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) { renderRoomStatus([], [], false); for (const slot of slots.values()) { slot.ready = false; slot.statusNode.textContent = 'Wiedergabestatus wird neu geprüft …'; } updateControls(); refresh(); }
+      });
+      poll();
+      return {selectTrack, refresh, applyStatus, play};
+    })();
+    function selectSpotifyTrack(item, profile) { spotifyController.selectTrack(item, profile); }
+
     const ownMusic = (() => {
       const availability = document.getElementById('musicAvailability');
       const playerSelect = document.getElementById('musicPlayer');
@@ -584,6 +846,8 @@
           }
         } catch (error) {
           loading.remove();
+          nextOffset = null;
+          moreButton.hidden = true;
           const failure = document.createElement('div');
           failure.className = 'meta';
           failure.textContent = 'Suche fehlgeschlagen: ' + error.message;
@@ -604,6 +868,7 @@
           let result;
           try { result = await response.json(); } catch { throw new Error('Ungültige Antwort des Musikdienstes.'); }
           if (!response.ok) throw new Error(result.error || 'Befehl abgelehnt.');
+          if (result.status !== 'ok' || (result.mode !== undefined && result.mode !== 'live')) throw new Error(result.error || 'Kein bestätigter Musikbefehl.');
           setMessage(success);
           log('Eigene Musik: ' + success);
         } catch (error) { setMessage('Befehl fehlgeschlagen: ' + error.message, true); }
@@ -657,12 +922,12 @@
       return { search };
     })();
     function showSpotifyEmbed(uri) {
-      const match = String(uri || '').match(/(?:spotify:track:|open\.spotify\.com\/track\/)([A-Za-z0-9]+)/);
-      if (!match) return;
-      document.getElementById('spotifyEmbed').src = 'https://open.spotify.com/embed/track/' + match[1] + '?utm_source=generator&theme=0';
+      const match = String(uri || '').match(/^spotify:(track|album|playlist):([A-Za-z0-9]+)$/);
+      if (!match) { document.getElementById('spotifyEmbedWrap').hidden = true; document.getElementById('spotifyEmbed').src = 'about:blank'; return; }
+      document.getElementById('spotifyEmbed').src = 'https://open.spotify.com/embed/' + match[1] + '/' + match[2] + '?utm_source=generator&theme=0';
       document.getElementById('spotifyEmbedWrap').hidden = false;
     }
-    function renderSpotifyResults(results, items) {
+    function renderSpotifyResults(results, items, forProfile = document.getElementById('spotifyProfile').value) {
       results.replaceChildren();
       if (!items.length) {
         const empty = document.createElement('div');
@@ -707,28 +972,42 @@
         meta.append(titleNode, subtitleNode);
         button.append(art, meta);
         button.addEventListener('click', () => {
-          document.getElementById('track').value = title;
-          showSpotifyEmbed(uri);
-          document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + title;
-          log('Spotify-Titel ausgewählt: ' + title);
+          selectSpotifyTrack({title, subtitle, uri}, forProfile);
+          log('Spotify-Titel ausgewählt für ' + forProfile + ': ' + title);
         });
         results.append(button);
       }
     }
+    let spotifySearchGeneration = 0;
+    document.getElementById('spotifyProfile').addEventListener('change', () => {
+      spotifySearchGeneration += 1;
+      const results = document.getElementById('spotifyResults');
+      results.replaceChildren();
+      const note = document.createElement('div'); note.className = 'meta';
+      note.textContent = 'Suche nach einem Titel für ' + document.getElementById('spotifyProfile').value + '.';
+      results.append(note);
+      document.getElementById('spotifyEmbedWrap').hidden = true;
+      document.getElementById('spotifyEmbed').src = 'about:blank';
+      document.getElementById('nowPlaying').textContent = 'Die Titelauswahl des anderen Profils bleibt erhalten.';
+    });
     document.getElementById('spotifySearch').addEventListener('click', async () => {
       const query = document.getElementById('spotifyQuery').value.trim();
+      const profile = document.getElementById('spotifyProfile').value;
+      const generation = ++spotifySearchGeneration;
       const results = document.getElementById('spotifyResults');
       if (!query) { results.innerHTML = '<div class="meta">Bitte einen Titel oder Interpreten eingeben.</div>'; return; }
       results.innerHTML = '<div class="meta">Spotify-Suche läuft …</div>';
       try {
-        const response = await fetch('/api/spotify/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ profile:document.getElementById('spotifyProfile').value, query }) });
+        const response = await fetch('/api/spotify/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ profile, query }) });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Suche nicht verfügbar');
+        if (generation !== spotifySearchGeneration) return;
         const items = Array.isArray(payload.results) ? payload.results : [];
-        renderSpotifyResults(results, items.filter(item => item && typeof item === 'object' && !Array.isArray(item)));
-      } catch (error) { results.innerHTML = '<div class="meta">Spotify-Suche derzeit nicht erreichbar.</div>'; log('Spotify-Suche: ' + error.message); }
+        renderSpotifyResults(results, items.filter(item => item && typeof item === 'object' && !Array.isArray(item)), profile);
+      } catch (error) { if (generation === spotifySearchGeneration) results.innerHTML = '<div class="meta">Spotify-Suche derzeit nicht erreichbar.</div>'; log('Spotify-Suche: ' + error.message); }
     });
-    document.getElementById('refresh').addEventListener('click', async () => { log('Status aktualisiert (lokal)'); await refreshHomeAssistantInventory(); });
+    document.getElementById('spotifyQuery').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); document.getElementById('spotifySearch').click(); } });
+    document.getElementById('refresh').addEventListener('click', async () => { log('Status aktualisiert (lokal)'); await Promise.all([refreshHomeAssistantInventory(), spotifyController.refresh()]); });
   </script>
 </body>
 </html>
