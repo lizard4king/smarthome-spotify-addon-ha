@@ -555,21 +555,27 @@
         } finally { clearTimeout(timer); }
       }
       function renderRoomStatus(profiles, targets, available) {
+        const knownRoomLabels = new Set(['wohnzimmer', 'schlafzimmer', 'küche', 'badezimmer', 'büro']);
         for (const roomCard of document.querySelectorAll('[data-room-target]')) {
           const node = roomCard.querySelector('.room-spotify-state');
           if (!node) continue;
           const definition = roomDetails[roomCard.dataset.roomTarget];
           if (typeof definition?.spotifyTarget !== 'string' || !definition.spotifyTarget.trim()) { node.textContent = 'Kein Spotify-Ziel für diesen Raum zugeordnet.'; continue; }
-          const target = targets.find(item => [item.display_name, item.spotify_device_name, ...(Array.isArray(item.aliases) ? item.aliases : [])]
-            .some(alias => typeof alias === 'string' && alias.trim() && normalize(alias) === normalize(definition.spotifyTarget)));
+          const roomLabel = normalize(roomCard.querySelector('.room-name')?.textContent);
+          const roomLabels = [definition.spotifyTarget, knownRoomLabels.has(roomLabel) ? roomLabel : null]
+            .filter(label => typeof label === 'string' && label.trim()).map(normalize);
+          const matches = targets.filter(item => [item.display_name, item.spotify_device_name, ...(Array.isArray(item.aliases) ? item.aliases : [])]
+            .some(alias => typeof alias === 'string' && alias.trim() && roomLabels.includes(normalize(alias))));
+          if (available && matches.length > 1) { node.textContent = 'Spotify-Ziel dieses Raums ist nicht eindeutig zugeordnet.'; continue; }
+          const target = matches[0];
           if (!available || !target) { node.textContent = 'Wiedergabestatus nicht verfügbar.'; continue; }
           const active = profiles.filter(profile => profile.active_target_id === target.target_id && profile.track
-            && typeof profile.track.title === 'string'
+            && typeof profile.track.title === 'string' && profile.track.title.trim()
             && ((profile.status === 'playing' && profile.is_playing === true) || profile.status === 'paused'));
           node.textContent = active.length ? active.map(profile => {
             const name = profile.display_name || profile.profile_id;
             return (profile.status === 'playing' && profile.is_playing === true ? 'Spielt: ' : 'Pausiert: ')
-              + profile.track.title + ' · ' + name;
+              + profile.track.title.trim() + ' · ' + name;
           }).join(' / ') : 'Keine bestätigte Wiedergabe.';
         }
       }

@@ -235,10 +235,76 @@ class PlaybackIsolation(unittest.TestCase):
         self.reject([{**self.requests[0], "access_token": "forbidden"}])
         self.reject([{**self.requests[0], "track": "x" * 513}])
 
-    def test_missing_configured_allowed_target_rejected_before_network(self):
+    def legacy_targets(self, a_targets=("missing", "living", "office"), b_targets=("living", "office")):
+        registry = SpotifyProfileRegistry([
+            SpotifyProfile("a", "Alice", "conn_a", allowed_targets=a_targets),
+            SpotifyProfile("b", "Bob", "conn_b", allowed_targets=b_targets)])
+        self.service = SpotifyCockpitService(registry, self.service.targets, self.service.tokens,
+            self.commands, player=self.player, devices=self.devices)
+        return registry
+
+    def test_missing_configured_allowed_target_does_not_abort_startup_or_call_network(self):
         registry = SpotifyProfileRegistry([SpotifyProfile("a", "Alice", "conn", allowed_targets=("unknown",))])
-        with self.assertRaises(SpotifyCockpitError):
-            SpotifyCockpitService(registry, self.service.targets, None, None)
+        service = SpotifyCockpitService(registry, self.service.targets, None, None)
+        self.assertIs(service.registry, registry)
+        self.assertEqual(registry.profiles["a"].allowed_targets, ("unknown",))
+
+    def test_legacy_missing_target_is_diagnostic_not_an_available_target(self):
+        registry = self.legacy_targets()
+        self.player.values["a"].update(status="playing", is_playing=True, active_device_name="Echo Office",
+                                       device_id="device-office", track={"title": "Observed Song"})
+        status = self.service.status(now=NOW)
+        profile = status["profiles"][0]
+        self.assertTrue(status["available"])
+        self.assertEqual(profile["status"], "playing")
+        self.assertEqual(profile["active_target_id"], "office")
+        self.assertEqual(profile["track"]["title"], "Observed Song")
+        self.assertEqual(profile["targets"], ["living", "office"])
+        self.assertEqual(profile["available_targets"], ["living", "office"])
+        self.assertEqual(profile["unavailable_targets"], ["missing"])
+        self.assertEqual(profile["configuration_error"],
+                         "Ein freigegebenes Spotify-Ziel fehlt in der Zielkonfiguration.")
+        self.assertEqual(registry.profiles["a"].allowed_targets, ("missing", "living", "office"))
+
+    def test_missing_target_play_is_rejected_before_token_or_player_network(self):
+        self.legacy_targets()
+        self.service.tokens = SimpleNamespace(access_token=lambda *a, **kw: self.fail("Token call is forbidden"))
+        self.player.state = lambda *a: self.fail("Player call is forbidden")
+        self.devices.devices = lambda *a: self.fail("Device call is forbidden")
+        self.reject([{**self.requests[0], "target": "missing"}])
+
+    def test_valid_target_remains_usable_with_missing_legacy_target(self):
+        self.legacy_targets(a_targets=("missing", "office"))
+        result = self.service.play([{**self.requests[0], "target": "office"}], now=NOW)
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(self.commands.calls, [("a", "office", "spotify:track:AAAA")])
+
+    def test_profile_with_only_missing_target_still_protects_active_physical_device(self):
+        self.legacy_targets(b_targets=("missing",))
+        self.player.values["b"].update(status="playing", is_playing=True, active_device_name="Unmapped Echo",
+                                       device_id="device-living")
+        self.reject(self.requests[:1])
+
+    def test_profile_with_only_missing_target_still_protects_active_device_name(self):
+        self.legacy_targets(b_targets=("missing",))
+        self.player.values["b"].update(status="playing", is_playing=True, active_device_name="Echo Living",
+                                       device_id=None)
+        self.reject(self.requests[:1])
+
+    def test_profile_with_only_missing_target_still_protects_active_account(self):
+        self.legacy_targets(b_targets=("missing",))
+        self.player.accounts["b"] = self.player.accounts["a"]
+        self.player.values["b"].update(status="playing", is_playing=True, active_device_name="Unmapped Echo",
+                                       device_id="unmapped-device")
+        self.reject(self.requests[:1])
+
+    def test_unrelated_active_target_of_legacy_profile_is_not_assumed_a_collision(self):
+        self.legacy_targets(b_targets=("missing",))
+        self.player.values["b"].update(status="playing", is_playing=True, active_device_name="Unmapped Echo",
+                                       device_id="unmapped-device")
+        result = self.service.play(self.requests[:1], now=NOW)
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(self.commands.calls, [("a", "living", "spotify:track:AAAA")])
 
     def test_expired_preflight_does_not_start_a_late_command(self):
         with patch("smarthome.spotify_cockpit.time.monotonic", side_effect=[0, 41, 41]):
