@@ -5,6 +5,7 @@ import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
 
+from .bonsy_vouchers import voucher_total
 from .cash_components import cash_principal
 from .classification import (
     _audit,
@@ -227,16 +228,20 @@ def _build_allocation_preview(store, date_from, date_to, *, today=None):
     for receipt in receipts:
         amount = money(receipt['total'])
         existing = _cash_allocations(store, receipt['entry_id'])
-        covered = sum(existing.values(), Decimal('0.00'))
+        voucher_allocated = voucher_total(store, receipt['document_id'])
+        covered = sum(existing.values(), Decimal('0.00')) + voucher_allocated
         remaining = max(amount - covered, Decimal('0.00'))
         item = {
             'entry_id': receipt['entry_id'], 'document_id': receipt['document_id'],
             'date': receipt['date'], 'vendor': receipt['vendor'],
             'amount': format(amount, '.2f'), 'covered': format(covered, '.2f'),
-            'remaining': format(remaining, '.2f'), 'reason': None, 'allocations': [],
+            'remaining': format(remaining, '.2f'),
+            'voucher_allocated': format(voucher_allocated, '.2f'),
+            'reason': None, 'allocations': [],
         }
         if remaining <= 0:
-            item['reason'] = 'already_covered'
+            item['reason'] = ('voucher_payment_linked' if voucher_allocated > 0
+                              else 'already_covered')
             planned.append(item)
             continue
         links = _receipt_links(store, receipt['document_id'])
@@ -312,7 +317,8 @@ def _build_allocation_preview(store, date_from, date_to, *, today=None):
             'ready': sum(item['reason'] == 'ready' for item in planned),
             'partial': sum(item['reason'] == 'partial_cash_available' for item in planned),
             'blocked': sum(item['reason'] not in {'ready', 'partial_cash_available',
-                                                  'already_covered'} for item in planned),
+                                                  'already_covered', 'voucher_payment_linked'}
+                           for item in planned),
             'proposed': format(sum((money(item.get('proposed', '0.00'))
                                    for item in planned), Decimal(0)), '.2f'),
             'unmatched': format(sum((money(item.get('unmatched', '0.00'))
@@ -497,7 +503,8 @@ def overview(store, _data=None, *, _today=None):
         cash_allocated = sum((money(link[0]) for link in store.db.execute(
             'SELECT allocated_amount FROM bonsy_cash_allocations WHERE entry_id=?',
             (row['entry_id'],))), Decimal(0))
-        allocated = direct_allocated + cash_allocated
+        voucher_allocated = voucher_total(store, row['document_id'])
+        allocated = direct_allocated + cash_allocated + voucher_allocated
         source_items = [{
             'account_id': link['account_id'], 'external_id': link['external_id'],
             'date': link['date'], 'account_label': link['account_label'],
@@ -507,17 +514,20 @@ def overview(store, _data=None, *, _today=None):
         if allocated >= amount:
             confirmed.append({'entry_id': row['entry_id'], 'date': row['date'],
                               'vendor': row['vendor'], 'amount': format(amount, '.2f'),
-                              'reason': ('direct_payment_linked' if direct_allocated >= amount
+                              'reason': ('voucher_payment_linked' if voucher_allocated > 0
+                                         else 'direct_payment_linked' if direct_allocated >= amount
                                          else 'legacy_cash_allocation'),
                               'sources': source_items,
-                              'direct_allocated': format(direct_allocated, '.2f')})
+                              'direct_allocated': format(direct_allocated, '.2f'),
+                              'cash_allocated': format(cash_allocated, '.2f'),
+                              'voucher_allocated': format(voucher_allocated, '.2f')})
             continue
         assessment = None
         if direct_links:
             reason = 'partial_direct_transaction_link'
         elif cash_allocated > 0:
             reason = 'partial_legacy_cash_allocation'
-            if (amount < Decimal('50.00') and not evidence_links
+            if (amount < Decimal('50.00') and not evidence_links and not voucher_allocated
                     and not _has_payment_candidate(
                         store, row['document_id'], row['date'], amount, exact_only=True)):
                 rule_reason, rule_assessment = _missing_payment_assessment(
@@ -526,6 +536,8 @@ def overview(store, _data=None, *, _today=None):
                     reason, assessment = rule_reason, rule_assessment
         elif evidence_links:
             reason = 'evidence_link_requires_manual_review'
+        elif voucher_allocated > 0:
+            reason = 'partial_voucher_payment'
         elif _has_payment_candidate(
                 store, row['document_id'], row['date'], amount,
                 exact_only=amount < Decimal('50.00')):
@@ -539,6 +551,9 @@ def overview(store, _data=None, *, _today=None):
             'amount': format(amount, '.2f'),
             'sources': source_items,
             'covered': format(allocated, '.2f'),
+            'direct_allocated': format(direct_allocated, '.2f'),
+            'cash_allocated': format(cash_allocated, '.2f'),
+            'voucher_allocated': format(voucher_allocated, '.2f'),
             'remaining': format(amount - allocated, '.2f'),
             'reason': reason,
         }

@@ -1,6 +1,6 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.12` runs the current `src/finance_control` package inside a Home
+Version `0.2.13` runs the current `src/finance_control` package inside a Home
 Assistant add-on. Build an installable add-on context from the repository with
 `scripts/build_homeassistant_addon.py`; the resulting `.tar.gz` is written outside
 the repository and includes a source manifest. The package keeps source provenance in `build-manifest.json`; no private data
@@ -59,3 +59,5 @@ Version `0.2.7` hides payday spending caps and remainder amounts when salary-cyc
 Original bookings in Plan & Ist now support direct category and document editing. Mobile booking cards use compact SVG pictograms and labeled actions.
 
 Small Bonsy receipts without an exact personal-account debit are immediately marked cash by the explicit user rule. Excluded receipts and reversible duplicate markers remain protected; wallet funding is excluded from document payment candidates.
+
+Version `0.2.13` records user-confirmed Bonsy voucher payments separately from bank and cash, preserves receipt gross amounts, and does not create another expense.

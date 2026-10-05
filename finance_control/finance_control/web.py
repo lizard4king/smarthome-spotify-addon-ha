@@ -326,6 +326,9 @@ class Cockpit:
             if route == '/api/bonsy-cash-remove':
                 from . import bonsy_cash
                 return bonsy_cash.remove_allocations(store, data)
+            if route == '/api/bonsy-voucher-payment':
+                from .bonsy_vouchers import set_payment
+                return set_payment(store, data)
             if route == '/api/accounts':
                 existing = store.accounts()
                 opening_date = date.fromisoformat(data['opening_date']).isoformat()

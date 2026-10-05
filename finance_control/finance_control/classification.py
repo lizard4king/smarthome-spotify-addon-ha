@@ -1156,7 +1156,8 @@ def match_suggestions(store, data):
         allocated = sum((money(link['allocated_amount']) for link in store.db.execute(
             "SELECT allocated_amount FROM classification_document_links WHERE document_id=? AND allocation_type='payment'",
             (document['id'],))), Decimal(0))
-        document_remaining = money(document['amount']) - allocated
+        from .bonsy_vouchers import voucher_total
+        document_remaining = money(document['amount']) - allocated - voucher_total(store, document['id'])
         if document_remaining <= 0:
             continue
         candidate = {
@@ -1237,8 +1238,10 @@ def document_match_suggestions(store, data):
     refund_supported = _supports_refund_suggestion(store, document) or used_by_type['refund'] > 0
     api_refund_total = _api_refund_total(store, document['id'])
     refund_limit = min(document_amount, api_refund_total) if api_refund_total else document_amount
+    from .bonsy_vouchers import voucher_total
+    voucher_amount = voucher_total(store, document['id'])
     remaining = {
-        'payment': max(document_amount - used_by_type['payment'], Decimal(0)),
+        'payment': max(document_amount - used_by_type['payment'] - voucher_amount, Decimal(0)),
         'refund': max(refund_limit - used_by_type['refund'], Decimal(0))
         if refund_supported else Decimal(0),
     }
@@ -1491,6 +1494,8 @@ def list_documents(store, data=None):
             + ' ORDER BY document_date IS NULL,document_date DESC,id DESC LIMIT ? OFFSET ?',
             params + [_PAGE, page * _PAGE]):
         document = _document(row)
+        from .bonsy_vouchers import voucher_total
+        document['voucher_amount'] = format(voucher_total(store, document['id']), '.2f')
         document['links'] = [dict(link) for link in store.db.execute(
             'SELECT account_id,external_id,allocated_amount,allocation_type FROM classification_document_links '
             'WHERE document_id=? ORDER BY account_id,external_id', (document['id'],))]
@@ -1506,6 +1511,8 @@ def get_document(store, data):
     if row is None:
         raise ValueError('unknown_document')
     document = _document(row)
+    from .bonsy_vouchers import voucher_total
+    document['voucher_amount'] = format(voucher_total(store, document['id']), '.2f')
     document['links'] = [dict(link) for link in store.db.execute(
         'SELECT account_id,external_id,allocated_amount,allocation_type FROM classification_document_links '
         'WHERE document_id=? ORDER BY account_id,external_id', (document['id'],))]
@@ -1561,6 +1568,9 @@ def dismiss_document(store, data):
                 'SELECT 1 FROM classification_document_links WHERE document_id=?',
                 (data['id'],)).fetchone():
             raise ValueError('linked_document_cannot_be_dismissed')
+        from .bonsy_vouchers import voucher_total
+        if voucher_total(store, data['id']) > 0:
+            raise ValueError('voucher_payment_document_cannot_be_dismissed')
         warnings = _warnings(json.loads(previous['warnings']))
         if 'not_invoice_like' not in warnings:
             warnings.append('not_invoice_like')
@@ -1607,6 +1617,9 @@ def mark_document_duplicate(store, data):
         warnings = _warnings(json.loads(previous['warnings']))
         target_id = data['duplicate_of']
         if target_id is not None:
+            from .bonsy_vouchers import voucher_total
+            if voucher_total(store, data['id']) > 0:
+                raise ValueError('voucher_payment_document_cannot_be_duplicate')
             target = store.db.execute(
                 'SELECT * FROM classification_documents WHERE id=?', (target_id,)).fetchone()
             if target is None:
@@ -1685,6 +1698,11 @@ def confirm_document(store, data):
         linked = store.db.execute('SELECT 1 FROM classification_document_links WHERE document_id=?', (data['id'],)).fetchone()
         if previous['kind'] == 'invoice' and linked and (amount != previous['amount'] or _optional_date(data['document_date'], 'document_date') != previous['document_date']):
             raise ValueError('unlink_invoice_before_money_or_date_edit')
+        if (previous['kind'] == 'invoice'
+                and (amount != previous['amount'] or _optional_date(data['document_date'], 'document_date') != previous['document_date'])):
+            from .bonsy_vouchers import voucher_total
+            if voucher_total(store, data['id']) > 0:
+                raise ValueError('voucher_payment_prevents_invoice_edit')
         values = (_text(data['vendor'], 'vendor'), _text(data['title'], 'title'), _optional_date(data['document_date'], 'document_date'), amount,
                   currency, _source_reference(data['source_reference']), status, previous['revision'] + 1, data['id'])
         store.db.execute('UPDATE classification_documents SET vendor=?,title=?,document_date=?,amount=?,currency=?,source_reference=?,status=?,revision=? WHERE id=?', values)
@@ -1791,7 +1809,9 @@ def auto_link_documents(store, data):
         ids = sorted(set(ids))
     query = ("SELECT id,document_date FROM classification_documents WHERE kind='invoice' "
              "AND status='confirmed' AND warnings NOT LIKE ? AND document_date>=? AND NOT EXISTS ("
-             'SELECT 1 FROM classification_document_links l WHERE l.document_id=classification_documents.id)')
+             'SELECT 1 FROM classification_document_links l WHERE l.document_id=classification_documents.id) '
+             'AND NOT EXISTS (SELECT 1 FROM bonsy_receipts r JOIN bonsy_voucher_payments v USING(entry_id) '
+             'WHERE r.document_id=classification_documents.id)')
     params = ['%"duplicate_source_document"%', DOCUMENT_REVIEW_START_DATE]
     if ids is not None:
         if not ids:
@@ -1910,6 +1930,9 @@ def confirm_and_link_document(store, data):
         if (transaction['currency'] != 'EUR' or money(transaction['amount']) >= 0
                 or -money(transaction['amount']) != money(amount)):
             raise ValueError('invoice_amount_must_match_debit')
+        from .bonsy_vouchers import voucher_total
+        if voucher_total(store, data['id']) > 0:
+            raise ValueError('voucher_payment_prevents_full_invoice_link')
         if store.db.execute('SELECT 1 FROM classification_document_links WHERE document_id=?', (data['id'],)).fetchone():
             raise ValueError('invoice_already_linked')
         if _bonsy_cash_allocated(store, data['id']):
@@ -1977,7 +2000,9 @@ def allocate_document(store, data):
         used_document = sum((money(row['allocated_amount']) for row in store.db.execute(
             'SELECT allocated_amount FROM classification_document_links WHERE document_id=? AND allocation_type=?',
             (document['id'], data['allocation_type']))), Decimal(0))
-        if used_document + money(allocated_amount) > money(document['amount']):
+        from .bonsy_vouchers import voucher_total
+        voucher_amount = voucher_total(store, document['id']) if data['allocation_type'] == 'payment' else Decimal(0)
+        if used_document + money(allocated_amount) + voucher_amount > money(document['amount']):
             raise ValueError('invoice_allocation_exceeds_amount')
         result = {'account_id': account_id, 'external_id': external_id, 'document_id': document['id'],
                   'allocated_amount': allocated_amount, 'allocation_type': data['allocation_type']}
@@ -2014,6 +2039,9 @@ def link_document(store, data):
                 raise ValueError('confirmed_eur_invoice_required')
             if money(transaction['amount']) >= 0 or -money(transaction['amount']) != money(document['amount']):
                 raise ValueError('invoice_amount_must_match_debit')
+            from .bonsy_vouchers import voucher_total
+            if voucher_total(store, document['id']) > 0:
+                raise ValueError('voucher_payment_prevents_full_invoice_link')
             if store.db.execute('SELECT 1 FROM classification_document_links WHERE document_id=?', (document['id'],)).fetchone():
                 raise ValueError('invoice_already_linked')
             if store.db.execute('SELECT 1 FROM classification_document_links l JOIN classification_documents d ON d.id=l.document_id WHERE l.account_id=? AND l.external_id=? AND d.kind=\'invoice\'', (account_id, external_id)).fetchone():

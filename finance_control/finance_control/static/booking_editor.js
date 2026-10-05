@@ -20,7 +20,7 @@ function bookingEditorKey(tx) { return {account_id: tx.account_id, external_id: 
 function bookingEditorActive(session) { return bookingEditorSession === session && session.dialog.open; }
 function bookingEditorApprovalSignature(value, type) {
   const fields = type === 'transaction' ? ['account_id', 'external_id', 'revision', 'amount', 'currency', 'is_transfer', 'transfer_id', 'category', 'confirmed'] :
-    ['id', 'revision', 'kind', 'status', 'amount', 'currency', 'document_date', 'vendor', 'title', 'source_reference'];
+    ['id', 'revision', 'kind', 'status', 'amount', 'currency', 'document_date', 'vendor', 'title', 'source_reference', 'voucher_amount'];
   return JSON.stringify([fields.map(field => value[field] ?? null), (value.links || []).map(link =>
     [link.id ?? null, link.account_id ?? null, link.external_id ?? null, link.allocated_amount ?? null, link.allocation_type ?? null,
       link.title ?? null, link.kind ?? null, link.vendor ?? null]).sort()]);
@@ -256,7 +256,7 @@ async function bookingEditorSelectDocument(session, id, duringMutation = false) 
       const rest = await api('/api/classification-document-matches', {document_id: doc.id, max_days: 45, page: 0});
       if (!bookingEditorActive(session) || epoch !== session.documentEpoch) return;
       session.documentRest = JSON.stringify([rest.remaining_payment, rest.remaining_refund]);
-      session.restNote.textContent = `Offener Zahlungsrest ${rest.remaining_payment ?? 'offen'} EUR · offener Erstattungsrest ${rest.remaining_refund ?? 'offen'} EUR`;
+      session.restNote.textContent = `${Number(doc.voucher_amount)>0?`Gutschein separat: ${doc.voucher_amount} EUR · `:''}Offener Zahlungsrest ${rest.remaining_payment ?? 'offen'} EUR · offener Erstattungsrest ${rest.remaining_refund ?? 'offen'} EUR`;
     }
     session.documentReady = true; bookingEditorUpdateDocumentActions(session);
     session.source.textContent = 'Quelltext wird geladen …';

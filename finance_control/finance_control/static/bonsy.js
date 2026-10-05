@@ -3,6 +3,7 @@ function bonsyBase64(file){return new Promise((resolve,reject)=>{const reader=ne
 const bonsyEur=value=>Number(value).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
 function bonsyPaymentAssessment(item){
   const assessment=item.payment_assessment;
+  if(item.reason==='voucher_payment_linked')return 'voucher_linked';
   if(assessment?.method==='cash'&&assessment.confirmed===true&&assessment.basis==='explicit_user_cash_rule_no_exact_payment')return 'cash_by_rule';
   const explicitCash=assessment?.method==='cash'&&assessment.confidence==='very_high'&&assessment.confirmed===false;
   if(item.reason==='pending_bank_posting')return 'pending_bank_posting';
@@ -11,11 +12,19 @@ function bonsyPaymentAssessment(item){
 function bonsyOpenDescription(item){
   if(bonsyPaymentAssessment(item)==='pending_bank_posting')return ' · Bankbuchung vermutlich noch ausstehend';
   if(bonsyPaymentAssessment(item)==='likely_cash')return ' · sehr wahrscheinlich bar bezahlt · unbestätigt';
-  if(Number(item.covered)>0)return item.reason==='partial_legacy_cash_allocation'
-    ?` · historische Bargeldzuordnung ${bonsyEur(item.covered)}, offen ${bonsyEur(item.remaining)} · Zahlung prüfen`
-    :` · direkt belegt ${bonsyEur(item.covered)}, offen ${bonsyEur(item.remaining)} · Zahlung prüfen`;
+  if(Number(item.covered)>0||Number(item.voucher_allocated)>0||Number(item.cash_allocated)>0)
+    return ` · ${bonsyPaymentParts(item)} · offen ${bonsyEur(item.remaining)} · Zahlung prüfen`;
   if(item.reason==='evidence_link_requires_manual_review')return ' · Zahlungsnachweis vorhanden · Zahlung prüfen';
   return ' · Zahlung prüfen';
+}
+function bonsyPaymentParts(item){
+  const parts=[];
+  const bank=Number(item.direct_allocated)||0,voucher=Number(item.voucher_allocated)||0,cash=Number(item.cash_allocated)||0;
+  if(bank>0)parts.push(`Bank ${bonsyEur(bank)}`);
+  if(voucher>0)parts.push(`Gutschein ${bonsyEur(voucher)}`);
+  if(cash>0)parts.push(`${item.reason==='partial_legacy_cash_allocation'?'historisches Bargeld':'Bargeld'} ${bonsyEur(cash)}`);
+  if(!parts.length&&Number(item.covered)>0)parts.push(item.reason==='partial_legacy_cash_allocation'?`historische Bargeldzuordnung ${bonsyEur(item.covered)}`:`direkt belegt ${bonsyEur(item.covered)}`);
+  return parts.join(' + ');
 }
 async function bonsyCashLoad(){
   const summary=$('bonsy-cash-summary'),pending=$('bonsy-cash-pending'),proposals=$('bonsy-cash-proposals'),unresolved=$('bonsy-cash-unresolved'),confirmed=$('bonsy-cash-confirmed');
@@ -24,6 +33,7 @@ async function bonsyCashLoad(){
     const data=await api('/api/bonsy-cash',{});
     const ruleCashItems=data.confirmed.filter(item=>bonsyPaymentAssessment(item)==='cash_by_rule');
     const linkedItems=data.confirmed.filter(item=>bonsyPaymentAssessment(item)!=='cash_by_rule');
+    const voucherItems=linkedItems.filter(item=>Number(item.voucher_allocated)>0||item.reason==='voucher_payment_linked');
     const pendingItems=data.unresolved.filter(item=>bonsyPaymentAssessment(item)==='pending_bank_posting');
     const likelyCashItems=data.unresolved.filter(item=>bonsyPaymentAssessment(item)==='likely_cash');
     const paymentReviewItems=data.unresolved.filter(item=>bonsyPaymentAssessment(item)==='payment_review');
@@ -44,7 +54,9 @@ async function bonsyCashLoad(){
     for(const item of ruleCashItems.slice(0,25)){const p=document.createElement('p');p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)} · bar bezahlt nach Deiner Regel`;unresolved.append(p);}
     for(const item of likelyCashItems.slice(0,25)){const p=document.createElement('p');p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)}${bonsyOpenDescription(item)}`;unresolved.append(p);}
     const done=document.createElement('p');done.textContent=`${linkedItems.length} Bons sind bereits zugeordnet.`;confirmed.append(done);
-    for(const item of linkedItems.slice(0,25)){const p=document.createElement('p'),kind=item.reason==='legacy_cash_allocation'?'historische Bargeldzuordnung':'direkte Zahlung';p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)} · ${kind}`;confirmed.append(p);}
+    const voucherIds=new Set(voucherItems.map(item=>item.entry_id));
+    if(voucherItems.length){const heading=document.createElement('p');heading.textContent='Mit Gutschein bezahlt';confirmed.append(heading);for(const item of voucherItems){const p=document.createElement('p');p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)} · ${bonsyPaymentParts(item)}`;confirmed.append(p);}}
+    for(const item of linkedItems.filter(item=>!voucherIds.has(item.entry_id)).slice(0,25)){const p=document.createElement('p'),kind=item.reason==='legacy_cash_allocation'?'historische Bargeldzuordnung':'direkte Zahlung';p.textContent=`${item.date} · ${item.vendor} · ${bonsyEur(item.amount)} · ${kind}`;confirmed.append(p);}
   }catch(error){summary.textContent='Bargeldabgleich konnte nicht geladen werden: '+error.message;}
 }
 

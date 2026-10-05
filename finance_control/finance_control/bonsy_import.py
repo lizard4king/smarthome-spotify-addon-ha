@@ -71,7 +71,9 @@ def auto_link_timestamped_receipts(store, ids=None):
                  AND NOT EXISTS (SELECT 1 FROM classification_document_links l
                                  WHERE l.document_id=r.document_id)
                  AND NOT EXISTS (SELECT 1 FROM bonsy_cash_allocations a
-                                 WHERE a.entry_id=r.entry_id)'''
+                                 WHERE a.entry_id=r.entry_id)
+                 AND NOT EXISTS (SELECT 1 FROM bonsy_voucher_payments v
+                                 WHERE v.entry_id=r.entry_id)'''
     if ids is not None:
         ids = sorted(set(ids))
         if not ids:
@@ -386,11 +388,13 @@ def _reconcile_excluded_receipts(store, entry_ids):
             'SELECT entry_id,account_id,external_id,allocated_amount,confirmed_at '
             'FROM bonsy_cash_allocations WHERE entry_id=? ORDER BY account_id,external_id',
             (entry_id,)).fetchall()
+        from .bonsy_vouchers import payment
+        voucher = payment(store, entry_id)
         warnings = json.loads(document['warnings'])
         if not isinstance(warnings, list) or any(not isinstance(item, str) for item in warnings):
             raise ValueError('invalid_bonsy_document_warnings')
         if (document['status'] == 'unreviewed' and _EXCLUDED_BONSY_WARNING in warnings
-                and not links and not allocations):
+                and not links and not allocations and voucher is None):
             result['unchanged_receipt_ids'].append(entry_id)
             continue
 
@@ -422,6 +426,12 @@ def _reconcile_excluded_receipts(store, entry_ids):
             store.db.execute(
                 'DELETE FROM bonsy_cash_allocations WHERE entry_id=? AND account_id=? AND external_id=?',
                 (entry_id, allocation['account_id'], allocation['external_id']))
+        if voucher is not None:
+            _audit(store, 'bonsy_voucher_payment_removed_on_source_exclusion',
+                   {'entry_id': entry_id, 'removed': True}, document_id=document['id'],
+                   previous=voucher)
+            store.db.execute(
+                'DELETE FROM bonsy_voucher_payments WHERE entry_id=?', (entry_id,))
         result['reconciled_receipt_ids'].append(entry_id)
     return result
 
