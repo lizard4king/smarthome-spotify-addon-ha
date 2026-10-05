@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -14,14 +16,17 @@ from typing import Protocol
 
 from smarthome.alexa_spotify import AlexaVoiceIdentity, SpotifySkillSession
 from smarthome.spotify_alexa_commands import parse_spotify_alexa_intent
+from smarthome.spotify_cockpit import SpotifyCockpitError, validate_control
 
 
 MAX_BODY_BYTES = 16 * 1024
 MAX_CLOCK_SKEW_SECONDS = 300
+MAX_CONTROL_NONCES = 4096
 BRIDGE_PATH = "/api/spotify/command"
 SEARCH_PATH = "/api/spotify/search"
 STATUS_PATH = "/api/spotify/status"
 ASSIGNMENTS_PATH = "/api/spotify/assignments"
+CONTROL_PATH = "/api/spotify/control"
 HEALTH_PATH = "/health"
 
 
@@ -48,6 +53,9 @@ class SpotifyCommandDispatcher(Protocol):
 
     def play_assignments(self, assignments: object, *, now: datetime) -> dict[str, object]:
         """Start distinct-account, distinct-target assignments after preflight."""
+
+    def control(self, payload: dict, *, now: datetime) -> dict[str, object]:
+        """Control one verified profile/device after authenticated preflight."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +90,8 @@ class SpotifyBridge:
         self._dispatcher = dispatcher
         self._secret = shared_secret.encode("utf-8")
         self._clock = clock
+        self._control_nonces: dict[str, int] = {}
+        self._control_nonce_lock = threading.Lock()
 
     def handle(
         self,
@@ -149,28 +159,60 @@ class SpotifyBridge:
             })
         return {"status": "ok", "results": results}
 
-    def _verify_signature(self, headers: Mapping[str, str], body: bytes) -> None:
+    def _verify_signature(
+        self, headers: Mapping[str, str], body: bytes, *, method: str = "POST", path: str = BRIDGE_PATH
+    ) -> None:
         signature = headers.get("X-SmartHome-Signature", "")
         timestamp = headers.get("X-SmartHome-Timestamp", "")
+        nonce = headers.get("X-SmartHome-Nonce", "")
+        control = path == CONTROL_PATH
+        if control and (
+            headers.get("X-SmartHome-Signature-Version") != "2"
+            or not isinstance(timestamp, str)
+            or re.fullmatch(r"[0-9]{1,12}", timestamp) is None
+            or not isinstance(nonce, str)
+            or re.fullmatch(r"[0-9a-f]{32}", nonce) is None
+        ):
+            raise SpotifyBridgeError("Die Bridge-Signatur ist ungültig.")
         try:
             timestamp_value = int(timestamp)
             supplied = bytes.fromhex(signature)
         except (TypeError, ValueError):
             raise SpotifyBridgeError("Die Bridge-Signatur ist ungültig.") from None
-        if abs(self._clock() - timestamp_value) > MAX_CLOCK_SKEW_SECONDS:
+        now = self._clock()
+        if abs(now - timestamp_value) > MAX_CLOCK_SKEW_SECONDS:
             raise SpotifyBridgeError("Die Bridge-Anfrage ist abgelaufen.")
         message = f"{timestamp_value}.".encode("ascii") + body
+        if control:
+            if method != "POST" or timestamp != str(timestamp_value):
+                raise SpotifyBridgeError("Die Bridge-Signatur ist ungültig.")
+            message = f"v2.{method}.{path}.{timestamp}.{nonce}.".encode("ascii") + body
         expected = hmac.new(self._secret, message, hashlib.sha256).digest()
         if not hmac.compare_digest(expected, supplied):
             raise SpotifyBridgeError("Die Bridge-Signatur ist ungültig.")
+        if control:
+            # Claim only authenticated requests. Keep future-dated nonces until
+            # their complete acceptance window closes; never evict live entries.
+            with self._control_nonce_lock:
+                now = self._clock()
+                if abs(now - timestamp_value) > MAX_CLOCK_SKEW_SECONDS:
+                    raise SpotifyBridgeError("Die Bridge-Anfrage ist abgelaufen.")
+                expired = [key for key, expires in self._control_nonces.items() if expires <= now]
+                for key in expired:
+                    del self._control_nonces[key]
+                if nonce in self._control_nonces:
+                    raise SpotifyBridgeError("Die Spotify-Steueranfrage wurde bereits verwendet.")
+                if len(self._control_nonces) >= MAX_CONTROL_NONCES:
+                    raise SpotifyBridgeError("Die Spotify-Steuerung ist vorübergehend ausgelastet.")
+                self._control_nonces[nonce] = timestamp_value + MAX_CLOCK_SKEW_SECONDS + 1
 
     def handle_cockpit(self, *, method: str, path: str, headers: Mapping[str, str], body: bytes) -> dict:
         """Authenticated status or independent assignments; no token fields."""
-        if method.upper() != "POST" or path not in {STATUS_PATH, ASSIGNMENTS_PATH}:
+        if method.upper() != "POST" or path not in {STATUS_PATH, ASSIGNMENTS_PATH, CONTROL_PATH}:
             raise SpotifyBridgeError("Der Cockpit-Endpunkt ist nicht verfügbar.")
         if len(body) > MAX_BODY_BYTES:
             raise SpotifyBridgeError("Die Cockpit-Anfrage ist zu groß.")
-        self._verify_signature(headers, body)
+        self._verify_signature(headers, body, method=method, path=path)
         try:
             payload = json.loads(body.decode("utf-8"))
         except (UnicodeError, ValueError):
@@ -179,6 +221,8 @@ class SpotifyBridge:
             if payload != {}:
                 raise SpotifyBridgeError("Die Statusanfrage enthält unerwartete Felder.")
             return self._dispatcher.status(now=datetime.now(UTC))
+        if path == CONTROL_PATH:
+            return self._dispatcher.control(validate_control(payload), now=datetime.now(UTC))
         if not isinstance(payload, dict) or set(payload) != {"assignments"}:
             raise SpotifyBridgeError("Die Cockpit-Anfrage enthält unerwartete Felder.")
         return self._dispatcher.play_assignments(payload["assignments"], now=datetime.now(UTC))
@@ -252,7 +296,7 @@ def make_server(
             length = int(self.headers.get("Content-Length", "-1"))
             body = self.rfile.read(max(0, min(length, MAX_BODY_BYTES + 1)))
             try:
-                if self.path in {STATUS_PATH, ASSIGNMENTS_PATH}:
+                if self.path in {STATUS_PATH, ASSIGNMENTS_PATH, CONTROL_PATH}:
                     payload = bridge.handle_cockpit(method="POST", path=self.path, headers=self.headers, body=body)
                 elif self.path == SEARCH_PATH:
                     payload = bridge.handle_search(method="POST", path=self.path, headers=self.headers, body=body)
@@ -264,6 +308,8 @@ def make_server(
                 status = 200
             except SpotifyBridgeError as exc:
                 payload = {"error": str(exc)}
+                if self.path == CONTROL_PATH:
+                    payload["outcome"] = "not_sent"
                 status = 400
             except RuntimeError as exc:
                 # Playback/provider failures must not tear down the HTTP
@@ -271,6 +317,12 @@ def make_server(
                 # callers can report the failure instead of seeing a proxy
                 # timeout (for example Cloudflare 524).
                 payload = {"status": "failed", "error": str(exc)}
+                if self.path == CONTROL_PATH:
+                    if isinstance(exc, SpotifyCockpitError):
+                        payload["outcome"] = exc.outcome
+                    else:
+                        payload = {"status": "failed", "outcome": "unknown",
+                                   "error": "Der Ausgang der Spotify-Steueraktion ist unbekannt. Prüfe den Wiedergabestatus."}
                 status = 200
             encoded = json.dumps(payload, ensure_ascii=True).encode("utf-8")
             self.send_response(status)

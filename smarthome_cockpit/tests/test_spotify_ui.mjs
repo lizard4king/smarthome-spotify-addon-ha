@@ -30,13 +30,13 @@ const publicStatus = () => ({available:true, profiles:[
   {target_id:'office',display_name:'Echo Büro',spotify_device_name:'Echo Büro',aliases:[]},
 ]});
 
-function createRig() {
+function createRig({missingSeek=false}={}) {
   const ids = 'spotifyProfile spotifyPlay spotifyMessage spotifySearch spotifyQuery track nowPlaying'.split(' ');
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   elements.spotifyProfile.value = '';
   const cards = ['1', '2'].map(slot => {
     const card = new Element(); card.dataset.spotifySlot = slot;
-    card.nodes = Object.fromEntries(['.spotify-session-enabled','.spotify-session-track','.spotify-session-status','.spotify-session-target-select','.spotify-session-profile-label']
+    card.nodes = Object.fromEntries(['.spotify-session-enabled','.spotify-session-track','.spotify-session-status','.spotify-session-target-select','.spotify-session-profile-label','.spotify-live-title','.spotify-live-artist','.spotify-live-room','.spotify-live-art','.spotify-previous','.spotify-toggle','.spotify-next','.spotify-seek-input','.spotify-progress','.spotify-duration']
       .map(selector => [selector,new Element(selector.endsWith('-select') ? 'select' : 'div')]));
     return card;
   });
@@ -46,12 +46,17 @@ function createRig() {
     room.nodes['.room-spotify-state'] = new Element(); return room;
   });
   const calls = []; const timers = []; const logs = [];
-  let status = publicStatus(); let nextPost = null; let postResponse = null;
+  let clockNow=1000000;
+  class ClockDate extends Date { static now() { return clockNow; } }
+  if (missingSeek) delete cards[0].nodes['.spotify-seek-input'];
+  let status = publicStatus(); let nextPost = null; let postResponse = null; let controlResponse = null; const pendingControls = [];
   const context = vm.createContext({
     document: {hidden:true,getElementById:id=>elements[id],createElement:tag=>new Element(tag),
       querySelectorAll:selector=>selector==='[data-spotify-slot]'?cards:selector==='[data-room-target]'?rooms:[]},
     roomDetails:{living:{spotifyTarget:"Andreas' Echo Show"},office:{spotifyTarget:'Echo Büro'},bath:{spotifyTarget:'Echo Badezimmer'},bed:{spotifyTarget:'Echo Spot Schlafzimmer'},kitchen:{spotifyTarget:'Echo Küche'}},
     log:message=>logs.push(message), showSpotifyEmbed:()=>{}, AbortController,
+    URL,
+    Date:ClockDate,
     setTimeout:(fn,delay)=>{timers.push({fn,delay});return timers.length;},clearTimeout:()=>{},
     fetch:async(path,options={})=>{
       calls.push({path,options});
@@ -64,13 +69,252 @@ function createRig() {
         if (postResponse) return postResponse;
         return new Promise(resolve=>{nextPost=()=>resolve({ok:true,json:async()=>({status:'accepted',assignments:JSON.parse(options.body).assignments.map(item=>({...item,status:'accepted',playback_verified:false}))})});});
       }
+      if (path==='/api/spotify/control') {
+        if (controlResponse) return controlResponse;
+        return new Promise(resolve => pendingControls.push(() => resolve({ok:true,json:async()=>({status:'accepted',playback_verified:false})})));
+      }
       throw new Error('Unexpected URL');
     },
   });
   vm.runInContext(controllerSource, context);
-  return {controller:context.controller,elements,cards,rooms,calls,timers,logs,setStatus:value=>{status=value;},setPost:value=>{postResponse=value;},finishPost:()=>nextPost?.()};
+  return {controller:context.controller,elements,cards,rooms,calls,timers,logs,setStatus:value=>{status=value;},setPost:value=>{postResponse=value;},finishPost:()=>nextPost?.(),setControl:value=>{controlResponse=value;},finishControl:()=>pendingControls.shift()?.(),advance:ms=>{clockNow+=ms;}};
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+const controllableStatus = () => {
+  const state=actualProfileStatus();
+  state.profiles=state.profiles.map((profile,index)=>({...profile,status:'playing',is_playing:true,controls_available:true,seek_available:true,disallowed_actions:[],active_target_id:index?'office':'living',progress_ms:63000,track:{uri:'spotify:track:LIVE'+index,title:'Live '+index,artists:['Artist '+index],duration_ms:180000,image_url:'https://images.example/cover.jpg'}}));
+  return state;
+};
+
+test('Player nutzt nur beobachtetes Ziel, hat echte Metadaten und getrennte nächste Auswahl', async () => {
+  const rig=createRig(); rig.controller.applyStatus(controllableStatus());
+  rig.cards[0].nodes['.spotify-session-target-select'].value='office';
+  rig.controller.selectTrack({title:'Später',uri:'spotify:track:CCC'},'person_a');
+  assert.equal(rig.cards[0].nodes['.spotify-live-title'].textContent,'Live 0');
+  assert.equal(rig.cards[0].nodes['.spotify-live-artist'].textContent,'Artist 0');
+  assert.equal(rig.cards[0].nodes['.spotify-progress'].textContent,'1:03');
+  assert.equal(rig.cards[0].nodes['.spotify-duration'].textContent,'3:00');
+  assert.equal(rig.cards[0].nodes['.spotify-live-art'].children[0].src,'https://images.example/cover.jpg');
+  const pause=rig.controller.control('person_a','pause'); await tick();
+  assert.deepEqual(JSON.parse(rig.calls[0].options.body),{profile:'person_a',target:'living',action:'pause'});
+  await rig.controller.control('person_a','next');
+  assert.equal(rig.calls.filter(call=>call.path==='/api/spotify/control').length,1);
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].disabled,true);
+  assert.equal(rig.cards[1].nodes['.spotify-toggle'].disabled,false,'anderes Profil bleibt steuerbar');
+  const paused=controllableStatus(); paused.profiles[0].status='paused'; paused.profiles[0].is_playing=false;
+  rig.setStatus(paused); rig.finishControl(); await pause;
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].textContent,'▶ Fortsetzen');
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/derselben Stelle/);
+  const resume=rig.controller.control('person_a','resume'); await tick(); rig.finishControl(); await resume;
+  assert.equal(JSON.parse(rig.calls.filter(call=>call.path==='/api/spotify/control')[1].options.body).action,'resume');
+});
+
+test('Seek sendet integer ms, respektiert Grenzen und Poll überschreibt keine Slider-Auswahl', async () => {
+  const rig=createRig(); rig.controller.applyStatus(controllableStatus());
+  const slider=rig.cards[0].nodes['.spotify-seek-input'];
+  slider.value='97000'; slider.fire('input'); rig.controller.applyStatus(controllableStatus());
+  assert.equal(slider.value,'97000');
+  slider.fire('change'); await tick();
+  assert.deepEqual(JSON.parse(rig.calls[0].options.body),{profile:'person_a',target:'living',action:'seek',position_ms:97000,track_uri:'spotify:track:LIVE0'});
+  rig.finishControl(); await tick(); await tick();
+  for(const ms of [-1,180000,2.5]) await rig.controller.control('person_a','seek',ms);
+  assert.equal(rig.calls.filter(call=>call.path==='/api/spotify/control').length,1);
+});
+
+test('Ältere Statusfelder, unbekanntes Ziel und Disallows sperren passende Transportaktionen', async () => {
+  const rig=createRig(); const state=controllableStatus();
+  delete state.profiles[0].controls_available; rig.controller.applyStatus(state);
+  await rig.controller.control('person_a','pause'); assert.equal(rig.calls.length,0);
+  const allowed=controllableStatus(); allowed.profiles[0].disallowed_actions=['next']; allowed.profiles[0].seek_available=false;
+  rig.controller.applyStatus(allowed);
+  assert.equal(rig.cards[0].nodes['.spotify-next'].disabled,true);
+  assert.equal(rig.cards[0].nodes['.spotify-previous'].disabled,false);
+  assert.equal(rig.cards[0].nodes['.spotify-seek-input'].disabled,true);
+  await rig.controller.control('person_a','next'); assert.equal(rig.calls.length,0);
+  allowed.profiles[0].active_target_id='not-observed'; rig.controller.applyStatus(allowed);
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].disabled,true);
+});
+
+test('Ausgefallenes anderes Profil lässt bestätigte Pause und Seek zu und zeigt Einschränkung', () => {
+  const rig=createRig(); const state=controllableStatus();
+  state.profiles[1].status='unavailable'; state.profiles[1].controls_available=false;
+  state.profiles[0].disallowed_actions=['resume','next','previous'];
+  state.profiles[0].degradation_note='Anderes Profil nicht verfügbar · nur Stoppen und Position ändern möglich.';
+  rig.controller.applyStatus(state);
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].disabled,false,'Pause bleibt beim bestätigten aktiven Ziel verfügbar');
+  assert.equal(rig.cards[0].nodes['.spotify-seek-input'].disabled,false);
+  assert.equal(rig.cards[0].nodes['.spotify-next'].disabled,true);
+  assert.equal(rig.cards[0].nodes['.spotify-previous'].disabled,true);
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Anderes Profil nicht verfügbar/);
+  state.profiles[0].status='paused'; state.profiles[0].is_playing=false; rig.controller.applyStatus(state);
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].disabled,true,'Resume bleibt bis unabhängiger Profilprüfung gesperrt');
+  assert.equal(rig.cards[0].nodes['.spotify-seek-input'].disabled,false);
+});
+
+test('Control wartet auf frischen GET nach altem GET; Ausfall behauptet keine Pause oder Wiedergabe', async () => {
+  const rig=createRig(); rig.controller.applyStatus(controllableStatus());
+  let finishOld; rig.setStatus(new Promise(resolve=>{finishOld=resolve;}));
+  const old=rig.controller.refresh(); await tick();
+  const control=rig.controller.control('person_a','pause'); await tick(); rig.finishControl(); await tick();
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].disabled,true);
+  rig.setStatus(new Error('offline')); finishOld(controllableStatus()); await old; await control;
+  assert.equal(rig.calls.filter(call=>call.path==='/api/spotify/status').length,2);
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].disabled,true);
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Ergebnis unklar/);
+  assert.equal(rig.cards[0].nodes['.spotify-live-title'].textContent,'Keine bestätigte Wiedergabe');
+});
+
+test('Control-Ablehnung bleibt explizit unklar und Browser-Vorschau ist einklappbar', async () => {
+  const rig=createRig(); rig.controller.applyStatus(controllableStatus());
+  rig.setStatus(new Error('offline'));
+  rig.setControl({ok:true,json:async()=>({status:'failed',error:'rejected'})});
+  await rig.controller.control('person_a','next');
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Ergebnis unklar/);
+  assert.match(html,/<details class="spotify-embed-wrap"/);
+  assert.match(html,/min-height:48px/);
+  rig.setStatus(controllableStatus()); await rig.controller.refresh();
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/Ergebnis unklar/,'frischer gesunder Status löst alte Fehlermeldung ab');
+});
+
+test('Während Seek bleiben Cover, bisheriger Fortschritt und Slider bestehen; spätere Position bestätigt ihn', async () => {
+  const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+  const slider=rig.cards[0].nodes['.spotify-seek-input']; slider.value='97000'; slider.fire('input'); slider.fire('change'); await tick();
+  rig.controller.applyStatus(controllableStatus());
+  assert.equal(slider.value,'97000');
+  assert.equal(rig.cards[0].nodes['.spotify-progress'].textContent,'1:37');
+  assert.equal(rig.cards[0].nodes['.spotify-live-title'].textContent,'Live 0');
+  rig.finishControl(); await tick(); await tick();
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Änderung noch nicht bestätigt/);
+  const observed=controllableStatus(); observed.profiles[0].progress_ms=97000;
+  rig.controller.applyStatus(observed);
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt/);
+});
+
+test('Track-Wechsel während Slider-Auswahl sendet keinen Seek auf den neuen Titel', async () => {
+  const rig=createRig(); rig.controller.applyStatus(controllableStatus());
+  const slider=rig.cards[0].nodes['.spotify-seek-input']; slider.value='97000'; slider.fire('input');
+  const next=controllableStatus(); next.profiles[0].track.uri='spotify:track:NEW';
+  rig.setStatus(next); rig.controller.applyStatus(next); slider.fire('change'); await tick();
+  assert.equal(rig.calls.some(call=>call.path==='/api/spotify/control'),false);
+  slider.value='42000'; slider.fire('input'); slider.fire('change'); await tick();
+  assert.equal(JSON.parse(rig.calls.find(call=>call.path==='/api/spotify/control').options.body).track_uri,'spotify:track:NEW');
+  rig.finishControl(); await tick();
+});
+
+test('Fehlender Track, Dauer oder Slider verhindern Seek ohne Ausnahme', async () => {
+  for (const track of [null,{uri:'spotify:track:AAA'},{uri:'spotify:track:AAA',duration_ms:null}]) {
+    const rig=createRig(); const state=controllableStatus(); state.profiles[0].track=track;
+    rig.controller.applyStatus(state); await rig.controller.control('person_a','seek',1000);
+    assert.equal(rig.calls.length,0);
+  }
+  const rig=createRig({missingSeek:true});
+  rig.controller.applyStatus(controllableStatus()); await rig.controller.control('person_a','seek',1000);
+  assert.equal(rig.calls.length,0);
+});
+
+test('Angenommene Pause mit noch spielendem GET bleibt unbestätigt bis beobachteter Pause', async () => {
+  const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+  const pause=rig.controller.control('person_a','pause'); await tick(); rig.finishControl(); await pause;
+  assert.match(rig.cards[0].nodes['.spotify-live-room'].textContent,/Spielt/);
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Änderung noch nicht bestätigt/);
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/Wiedergabestatus bestätigt/);
+  const state=controllableStatus(); state.profiles[0].status='paused'; state.profiles[0].is_playing=false;
+  rig.controller.applyStatus(state);
+  assert.match(rig.cards[0].nodes['.spotify-live-room'].textContent,/Pausiert/);
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt/);
+});
+
+test('Angenommener nächster Titel bleibt unbestätigt bis Track-Identität wechselt', async () => {
+  const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+  const next=rig.controller.control('person_a','next'); await tick(); rig.finishControl(); await next;
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Änderung noch nicht bestätigt/);
+  const state=controllableStatus(); state.profiles[0].track.uri='spotify:track:NEXT'; state.profiles[0].track.title='Neuer Titel';
+  rig.controller.applyStatus(state);
+  assert.equal(rig.cards[0].nodes['.spotify-live-title'].textContent,'Neuer Titel');
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt/);
+});
+
+test('Seek bestätigt zeitversetzte Wiedergabeposition mit kontrollierter Uhr', async () => {
+  const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+  const seek=rig.controller.control('person_a','seek',97000); await tick(); rig.finishControl(); await seek;
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt/);
+  rig.advance(20000); const state=controllableStatus(); state.profiles[0].progress_ms=117000;
+  rig.controller.applyStatus(state);
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt|Änderung nicht bestätigt/);
+});
+
+test('Unveränderter Titel und Fortschritt bestätigen keinen Sprung und Meldung endet nach drei Beobachtungen', async () => {
+  const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+  const next=rig.controller.control('person_a','next'); await tick(); rig.finishControl(); await next;
+  rig.controller.applyStatus(controllableStatus());
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt/);
+  const state=controllableStatus(); state.profiles[0].degradation_note='Anderes Profil nicht verfügbar.';
+  rig.controller.applyStatus(state);
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt/);
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Änderung nicht bestätigt/);
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Anderes Profil nicht verfügbar/);
+  rig.advance(31000); rig.controller.applyStatus(state);
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/Änderung nicht bestätigt/);
+  assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Anderes Profil nicht verfügbar/);
+});
+
+test('Unveränderte Pause endet nach Zeitlimit; idle endet sofort und neutraler Hinweis läuft aus', async () => {
+  for (const status of ['paused','idle']) {
+    const rig=createRig(); const initial=controllableStatus(); initial.profiles[0].status='paused'; initial.profiles[0].is_playing=false;
+    rig.setStatus(initial); rig.controller.applyStatus(initial);
+    const resume=rig.controller.control('person_a','resume'); await tick(); rig.finishControl(); await resume;
+    const observed=controllableStatus(); observed.profiles[0].status=status; observed.profiles[0].is_playing=false;
+    if(status==='paused') rig.advance(60001);
+    rig.controller.applyStatus(observed);
+    assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt/);
+    assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Änderung nicht bestätigt/);
+    rig.advance(31000); rig.controller.applyStatus(observed);
+    assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/Änderung nicht bestätigt/);
+  }
+});
+
+test('Zurück kann beobachteten Fortschrittsreset im selben Titel erkennen', async () => {
+  const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+  const previous=rig.controller.control('person_a','previous'); await tick(); rig.finishControl(); await previous;
+  const state=controllableStatus(); state.profiles[0].progress_ms=1000;
+  rig.controller.applyStatus(state);
+  assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/noch nicht bestätigt|Änderung nicht bestätigt/);
+});
+
+test('Strukturierte Ablehnung bleibt Ablehnung; fehlende Unterscheidung bleibt unklar ohne Retry', async () => {
+  for(const outcome of ['not_sent','unknown',undefined]) {
+    const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+    rig.setControl({ok:false,status:409,json:async()=>({error:'provider rejected',outcome})});
+    await rig.controller.control('person_a','pause');
+    assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,outcome==='not_sent'?/Befehl abgelehnt:/ : /Ergebnis unklar/);
+    assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/nicht gesendet|nichts gesendet/);
+    assert.equal(rig.calls.filter(call=>call.path==='/api/spotify/control').length,1);
+    if(outcome==='not_sent') {
+      const state=controllableStatus(); state.profiles[0].degradation_note='Anderes Profil nicht verfügbar.';
+      rig.controller.applyStatus(state);
+      assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Befehl abgelehnt:/);
+      assert.match(rig.cards[0].nodes['.spotify-session-status'].textContent,/Anderes Profil nicht verfügbar/);
+      rig.advance(10001); rig.controller.applyStatus(state);
+      assert.doesNotMatch(rig.cards[0].nodes['.spotify-session-status'].textContent,/Befehl abgelehnt:/);
+    }
+  }
+});
+
+test('Zwei Profile steuern unabhängig; Zurück und Weiter senden genau eine Aktion je Profil', async () => {
+  const rig=createRig(); rig.setStatus(controllableStatus()); rig.controller.applyStatus(controllableStatus());
+  const first=rig.controller.control('person_a','previous');
+  const second=rig.controller.control('person_b','next'); await tick();
+  assert.deepEqual(rig.calls.filter(call=>call.path==='/api/spotify/control').map(call=>JSON.parse(call.options.body)),[
+    {profile:'person_a',target:'living',action:'previous'},
+    {profile:'person_b',target:'office',action:'next'},
+  ]);
+  rig.finishControl(); await first;
+  assert.equal(rig.cards[1].nodes['.spotify-toggle'].disabled,true,'zweites Profil bleibt bis zu seiner eigenen Antwort gesperrt');
+  rig.finishControl(); await second;
+  assert.equal(rig.cards[0].nodes['.spotify-toggle'].disabled,false);
+  assert.equal(rig.cards[1].nodes['.spotify-toggle'].disabled,false);
+});
 
 test('Räume haben nur Spotify-Status, keine redundante Spotify-Steuerung', () => {
   assert.doesNotMatch(html, /room-spotify-play|room-spotify-profile|id="pause"|id="stop"/);

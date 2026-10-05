@@ -39,7 +39,32 @@
     .spotify-search-profile { display:grid; gap:5px; color:var(--muted); font-size:12px; margin-top:14px; max-width:300px; }
     .spotify-search-profile select, .spotify-session select { width:100%; min-height:44px; background:#0d1729; border:1px solid #35634f; border-radius:10px; padding:10px; color:var(--text); font:inherit; }
     .spotify-sessions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:16px; }
-    .spotify-session { min-width:0; padding:14px; border:1px solid #35634f; border-radius:12px; background:rgba(7,21,13,.18); }
+    .spotify-session { min-width:0; padding:20px; background:#101e27; border:1px solid #345446; border-radius:18px; }
+    .spotify-session-profile-label { font-size:18px; letter-spacing:-.3px; }
+    .spotify-live { display:grid; grid-template-columns:80px minmax(0,1fr); gap:16px; align-items:center; margin:20px 0; }
+    .spotify-live-art { width:80px; height:80px; border-radius:12px; background:linear-gradient(135deg,#234b39,#142234); display:grid; place-items:center; overflow:hidden; color:#8ac7a4; font-size:30px; }
+    .spotify-live-art img { width:100%; height:100%; object-fit:cover; }
+    .spotify-live-title { font-size:20px; font-weight:750; line-height:1.25; overflow-wrap:anywhere; }
+    .spotify-live-artist { color:var(--muted); margin-top:6px; overflow-wrap:anywhere; }
+    .spotify-live-room { font-size:12px; color:#9ce3b7; margin-top:7px; }
+    .spotify-transport { display:grid; grid-template-columns:1fr 1.35fr 1fr; gap:8px; }
+    .spotify-transport button { min-height:48px; padding:10px 6px; font-size:13px; }
+    .spotify-transport .spotify-toggle { background:#1ed760; border-color:#1ed760; color:#07150d; font-weight:750; }
+    .spotify-seek { margin-top:16px; }
+    .spotify-seek input { width:100%; min-height:44px; accent-color:#1ed760; margin:0; }
+    .spotify-seek-times { display:flex; justify-content:space-between; color:var(--muted); font-size:12px; }
+    .spotify-session-status { min-height:1.4em; margin-top:12px; font-size:12px; }
+    .spotify-selection { border-top:1px solid #2d4149; margin-top:18px; padding-top:16px; }
+    .spotify-selection-label { color:var(--muted); font-size:11px; letter-spacing:1px; text-transform:uppercase; }
+    .spotify-session-track { min-height:1.5em; font-weight:650; }
+    .spotify-session-enabled-label { display:flex; gap:9px; align-items:center; min-height:44px; font-size:13px; }
+    .spotify-session-enabled-label input { width:20px; height:20px; accent-color:#1ed760; }
+    .spotify-search-panel { border-top:1px solid #35634f; margin-top:22px; padding-top:18px; }
+    .spotify-search-heading { display:flex; justify-content:space-between; align-items:end; gap:12px; }
+    .spotify-search-heading h3 { font-size:16px; margin:0; }
+    .spotify-search-heading .spotify-search-profile { margin:0; }
+    .spotify-embed-wrap summary { padding:14px; cursor:pointer; min-height:44px; box-sizing:border-box; font-size:13px; }
+    @media (max-width:620px) { .spotify-session { padding:16px; } .spotify-live { grid-template-columns:64px minmax(0,1fr); gap:12px; } .spotify-live-art { width:64px; height:64px; } .spotify-live-title { font-size:18px; } .spotify-search-heading { display:block; } .spotify-search-heading .spotify-search-profile { margin-top:12px; max-width:none; } }
     .spotify-session-heading { display:flex; align-items:center; gap:9px; font-weight:700; }
     .spotify-session-heading input { width:20px; height:20px; accent-color:#1ed760; }
     .spotify-session-target { display:grid; gap:5px; margin-top:12px; font-size:12px; color:var(--muted); }
@@ -185,25 +210,28 @@
 
     <section class="card spotify-card" aria-label="Spotify">
       <div class="section-title"><div class="spotify-brand"><span class="spotify-logo">●</span><h2>Spotify</h2></div><span class="meta">Zentrale Steuerung · Räume zeigen nur den Status</span></div>
-      <label class="spotify-search-profile" for="spotifyProfile">Titel auswählen für<select id="spotifyProfile" disabled><option value="">Profile werden geprüft …</option></select></label>
-      <div class="spotify-search"><input id="spotifyQuery" type="search" placeholder="Titel, Interpret, Album oder Playlist suchen …" aria-label="Spotify-Suche"><button id="spotifySearch" type="button">Suchen</button></div>
       <div class="spotify-sessions" aria-label="Unabhängige Spotify-Profile">
         <div class="spotify-session" data-spotify-slot="1">
-          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled><span class="spotify-session-profile-label">Profil wird geprüft …</span> · mit starten</label>
-          <div class="spotify-session-track">Noch kein Titel ausgewählt.</div>
-          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für das erste Profil" disabled><option value="">Ziele werden geprüft …</option></select></label>
+          <div class="spotify-session-heading"><span class="spotify-session-profile-label">Profil wird geprüft …</span></div>
+          <div class="spotify-live"><div class="spotify-live-art" aria-hidden="true">♫</div><div><div class="spotify-live-title">Noch keine Wiedergabe</div><div class="spotify-live-artist"></div><div class="spotify-live-room">Aktives Gerät wird geprüft …</div></div></div>
+          <div class="spotify-transport" aria-label="Aktuelle Wiedergabe steuern"><button class="spotify-previous" disabled type="button">⏮ Zurück</button><button class="spotify-toggle" disabled type="button">Wiedergabe</button><button class="spotify-next" disabled type="button">Weiter ⏭</button></div>
+          <div class="spotify-seek"><input class="spotify-seek-input" type="range" min="0" max="1" value="0" disabled aria-label="Position im aktuellen Spotify-Titel"><div class="spotify-seek-times"><span class="spotify-progress">–:–</span><span class="spotify-duration">–:–</span></div></div>
           <div class="spotify-session-status meta" aria-live="polite">Wiedergabestatus wird geprüft …</div>
+          <div class="spotify-selection"><div class="spotify-selection-label">Für den nächsten Start</div><div class="spotify-session-track">Noch kein Titel ausgewählt.</div><label class="spotify-session-target">Ziel für den nächsten Start<select class="spotify-session-target-select" aria-label="Spotify-Ziel für das erste Profil" disabled><option value="">Ziele werden geprüft …</option></select></label><label class="spotify-session-enabled-label"><input class="spotify-session-enabled" type="checkbox" disabled>Dieses Profil mit starten</label></div>
         </div>
         <div class="spotify-session" data-spotify-slot="2">
-          <label class="spotify-session-heading"><input class="spotify-session-enabled" type="checkbox" disabled><span class="spotify-session-profile-label">Profil wird geprüft …</span> · mit starten</label>
-          <div class="spotify-session-track">Noch kein Titel ausgewählt.</div>
-          <label class="spotify-session-target">Abspielen auf<select class="spotify-session-target-select" aria-label="Spotify-Ziel für das zweite Profil" disabled><option value="">Ziele werden geprüft …</option></select></label>
+          <div class="spotify-session-heading"><span class="spotify-session-profile-label">Profil wird geprüft …</span></div>
+          <div class="spotify-live"><div class="spotify-live-art" aria-hidden="true">♫</div><div><div class="spotify-live-title">Noch keine Wiedergabe</div><div class="spotify-live-artist"></div><div class="spotify-live-room">Aktives Gerät wird geprüft …</div></div></div>
+          <div class="spotify-transport" aria-label="Aktuelle Wiedergabe steuern"><button class="spotify-previous" disabled type="button">⏮ Zurück</button><button class="spotify-toggle" disabled type="button">Wiedergabe</button><button class="spotify-next" disabled type="button">Weiter ⏭</button></div>
+          <div class="spotify-seek"><input class="spotify-seek-input" type="range" min="0" max="1" value="0" disabled aria-label="Position im aktuellen Spotify-Titel"><div class="spotify-seek-times"><span class="spotify-progress">–:–</span><span class="spotify-duration">–:–</span></div></div>
           <div class="spotify-session-status meta" aria-live="polite">Wiedergabestatus wird geprüft …</div>
+          <div class="spotify-selection"><div class="spotify-selection-label">Für den nächsten Start</div><div class="spotify-session-track">Noch kein Titel ausgewählt.</div><label class="spotify-session-target">Ziel für den nächsten Start<select class="spotify-session-target-select" aria-label="Spotify-Ziel für das zweite Profil" disabled><option value="">Ziele werden geprüft …</option></select></label><label class="spotify-session-enabled-label"><input class="spotify-session-enabled" type="checkbox" disabled>Dieses Profil mit starten</label></div>
         </div>
       </div>
       <div class="actions"><button id="spotifyPlay" class="primary" type="button" disabled>Ausgewählte Profile starten</button></div>
-      <div id="spotifyMessage" class="meta spotify-message" role="status" aria-live="polite">Pro Profil einen Titel und ein Ziel wählen. Ein Profil spielt auf genau einem Echo; zwei Profile können unterschiedliche Titel abspielen.</div>
-      <div class="spotify-embed-wrap" id="spotifyEmbedWrap" hidden><span class="spotify-embed-note">Spotify-Vorschau im Browser. Die Wiedergabe hier steuert keine Alexa.</span><iframe id="spotifyEmbed" class="spotify-embed" title="Spotify-Vorschau im Browser, kein Alexa-Player" allow="clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></div>
+      <div id="spotifyMessage" class="meta spotify-message" role="status" aria-live="polite">Titel und Ziel wählen, dann die gewünschten Profile gemeinsam starten.</div>
+      <div class="spotify-search-panel"><div class="spotify-search-heading"><h3>Musik auswählen</h3><label class="spotify-search-profile" for="spotifyProfile">Suchtreffer übernehmen für<select id="spotifyProfile" disabled><option value="">Profile werden geprüft …</option></select></label></div><div class="spotify-search"><input id="spotifyQuery" type="search" placeholder="Titel, Interpret, Album oder Playlist …" aria-label="Spotify-Suche"><button id="spotifySearch" type="button">Suchen</button></div></div>
+      <details class="spotify-embed-wrap" id="spotifyEmbedWrap" hidden><summary>Spotify-Vorschau · im Browser, keine Alexa-Steuerung</summary><span class="spotify-embed-note">Spotify-Vorschau im Browser. Die Wiedergabe hier steuert keine Alexa.</span><iframe id="spotifyEmbed" class="spotify-embed" title="Spotify-Vorschau im Browser, kein Alexa-Player" allow="clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></details>
       <input id="track" class="spotify-track-hidden" type="text" value="" aria-label="Ausgewählter Titel"><div id="nowPlaying" class="meta">Noch kein Titel für die Vorschau ausgewählt.</div>
       <div id="spotifyResults" class="spotify-results"><div class="meta">Suche nach einem Titel, um Treffer und Coverbilder anzuzeigen.</div></div>
     </section>
@@ -519,6 +547,11 @@
         card, enabled:card.querySelector('.spotify-session-enabled'), target:card.querySelector('.spotify-session-target-select'),
         trackNode:card.querySelector('.spotify-session-track'), statusNode:card.querySelector('.spotify-session-status'),
         profileLabel:card.querySelector('.spotify-session-profile-label'),
+        liveTitle:card.querySelector('.spotify-live-title'), liveArtist:card.querySelector('.spotify-live-artist'),
+        liveRoom:card.querySelector('.spotify-live-room'), liveArt:card.querySelector('.spotify-live-art'),
+        previous:card.querySelector('.spotify-previous'), toggle:card.querySelector('.spotify-toggle'), next:card.querySelector('.spotify-next'),
+        seek:card.querySelector('.spotify-seek-input'), progress:card.querySelector('.spotify-progress'), duration:card.querySelector('.spotify-duration'),
+        observed:null, busy:false, controlMessage:'', pendingCommand:null, feedbackObservations:0, seeking:false, seekingTrackUri:null,
         selected:null, ready:false, searchReady:false, profileId:null, profileName:null, availableTargets:new Set(), requiresTargetSelection:false,
       }));
       let pending = false;
@@ -535,17 +568,86 @@
         const assignments = selectedAssignments();
         const chosenTargets = assignments.map(item => item.target).filter(Boolean);
         const duplicateTarget = new Set(chosenTargets).size !== chosenTargets.length;
-        playButton.disabled = pending || !assignments.length || duplicateTarget || assignments.some(item => !item.slot.ready || !item.slot.availableTargets.has(item.target) || !item.target || !item.track);
+        playButton.disabled = pending || !assignments.length || duplicateTarget || assignments.some(item => item.slot.busy || !item.slot.ready || !item.slot.availableTargets.has(item.target) || !item.target || !item.track);
         profileSelect.disabled = pending || !slots.some(slot => slot.searchReady);
         document.getElementById('spotifySearch').disabled = pending || !profileSlot(profileSelect.value)?.searchReady;
         document.getElementById('spotifyQuery').disabled = pending || !profileSlot(profileSelect.value)?.searchReady;
         for (const slot of slots) {
-          slot.enabled.disabled = pending || !slot.ready || !slot.selected;
-          slot.target.disabled = pending || !slot.ready || !slot.availableTargets.size;
+          slot.enabled.disabled = pending || slot.busy || !slot.ready || !slot.selected;
+          slot.target.disabled = pending || slot.busy || !slot.ready || !slot.availableTargets.size;
+          const controllable = canControl(slot);
+          for (const [button, action] of [[slot.previous,'previous'],[slot.toggle,slot.observed?.status === 'paused' ? 'resume' : 'pause'],[slot.next,'next']]) if (button) button.disabled = !controllable || slot.observed?.disallowed_actions?.includes(action);
+          if (slot.seek) slot.seek.disabled = !controllable || slot.observed?.seek_available !== true
+            || !Number.isInteger(slot.observed?.track?.duration_ms) || slot.observed.track.duration_ms <= 0 || !validTrackUri(slot.observed?.track?.uri)
+            || !Number.isInteger(slot.observed?.progress_ms);
         }
         document.querySelectorAll('.spotify-result').forEach(button => { button.disabled = pending; });
         if (!pending && duplicateTarget) setMessage('Für zwei Profile bitte zwei unterschiedliche Echo-Ziele wählen.', true);
         else if (!pending && message.textContent === 'Für zwei Profile bitte zwei unterschiedliche Echo-Ziele wählen.') setMessage('Zielauswahl korrigiert. Noch kein Befehl gesendet.');
+      }
+      function canControl(slot) {
+        const state = slot.observed;
+        return !pending && !slot.busy && slot.ready && state?.controls_available === true
+          && slot.availableTargets.has(state.active_target_id)
+          && ((state.status === 'playing' && state.is_playing === true) || (state.status === 'paused' && state.is_playing === false));
+      }
+      const timeLabel = ms => Number.isInteger(ms) && ms >= 0 ? Math.floor(ms / 60000) + ':' + String(Math.floor(ms / 1000) % 60).padStart(2,'0') : '–:–';
+      const validTrackUri = uri => typeof uri === 'string' && /^spotify:track:[A-Za-z0-9]+$/.test(uri);
+      const trackIdentity = track => track?.uri || (track?.title ? JSON.stringify([track.title,track.artists || []]) : null);
+      function reconcileCommand(slot, profile) {
+        const healthy = profile && (profile.status === 'idle' || (profile.status === 'playing' && profile.is_playing === true) || (profile.status === 'paused' && profile.is_playing === false));
+        if (slot.busy || !healthy) return;
+        const command = slot.pendingCommand;
+        if (!command) {
+          if (slot.feedbackObservations > 0) slot.feedbackObservations -= 1;
+          else slot.controlMessage = '';
+          return;
+        }
+        command.observations += 1;
+        const elapsed = Math.max(0,Date.now() - command.acceptedAt);
+        const sameTarget = profile.active_target_id === command.target;
+        const matches = sameTarget && (command.action === 'pause' ? profile.status === 'paused' && profile.is_playing === false
+          : command.action === 'resume' ? profile.status === 'playing' && profile.is_playing === true
+          : command.action === 'seek' ? profile.track?.uri === command.track_uri && Number.isInteger(profile.progress_ms)
+            && profile.progress_ms >= command.position_ms - 5000 && profile.progress_ms <= command.position_ms + elapsed + 5000
+          : Boolean(trackIdentity(profile.track)) && (trackIdentity(profile.track) !== command.previousTrack
+            || (Number.isInteger(command.previousProgress) && Number.isInteger(profile.progress_ms) && command.previousProgress - profile.progress_ms >= 5000)));
+        if (matches) { slot.pendingCommand = null; slot.controlMessage = ''; }
+        else if (elapsed >= 60000 || command.observations >= 3 || profile.status === 'idle') {
+          slot.pendingCommand = null; slot.controlMessage = '';
+          slot.neutralNote = 'Änderung nicht bestätigt · aktueller Status wird angezeigt.';
+          slot.neutralNoteUntil = Date.now() + 30000;
+        }
+        else slot.controlMessage = 'Befehl angenommen · Änderung noch nicht bestätigt. Angezeigt wird der beobachtete Status.';
+      }
+      function renderPlayer(slot, profile, targets, available) {
+        if (slot.busy) return; // Retain last observed track, slider and progress while awaiting a command.
+        const known = available && profile && ((profile.status === 'playing' && profile.is_playing === true) || (profile.status === 'paused' && profile.is_playing === false));
+        if (slot.liveTitle) slot.liveTitle.textContent = known && profile.track?.title ? profile.track.title : 'Keine bestätigte Wiedergabe';
+        if (slot.liveArtist) slot.liveArtist.textContent = known ? (Array.isArray(profile.track?.artists) ? profile.track.artists.filter(name => typeof name === 'string').join(', ') : typeof profile.track?.artist === 'string' ? profile.track.artist : '') : '';
+        if (slot.liveRoom) slot.liveRoom.textContent = known ? (profile.status === 'playing' ? 'Spielt' : 'Pausiert') + ' · ' + (targets.find(target => target.target_id === profile.active_target_id)?.display_name || profile.active_device_name || 'Gerät unbekannt') : 'Aktives Gerät nicht bestätigt';
+        if (slot.toggle) {
+          slot.toggle.textContent = !known ? 'Wiedergabe' : profile?.status === 'paused' && profile.is_playing === false ? '▶ Fortsetzen' : '⏸ Stoppen';
+          slot.toggle.setAttribute('title', !known ? 'Wiedergabestatus nicht bestätigt.' : profile?.status === 'paused' && profile.is_playing === false ? 'Fortsetzen läuft an derselben Stelle weiter.' : 'Stoppen pausiert den Titel und behält die Position.');
+          slot.toggle.setAttribute('aria-label', (!known ? 'Wiedergabestatus nicht bestätigt' : profile?.status === 'paused' ? 'Fortsetzen' : 'Stoppen und Position behalten') + ' · ' + (slot.profileName || 'unbekanntes Profil'));
+        }
+        for (const [button, label] of [[slot.previous,'Vorheriger Titel'],[slot.next,'Nächster Titel']]) if (button) button.setAttribute('aria-label', label + ' · ' + (slot.profileName || 'unbekanntes Profil'));
+        if (slot.liveArt) {
+          slot.liveArt.replaceChildren(); slot.liveArt.textContent = '♫';
+          try {
+            const url = new URL(known ? profile.track?.image_url : '');
+            if (url.protocol === 'https:' && !url.username && !url.password) {
+              const image = document.createElement('img'); image.src = url.href; image.alt = ''; image.loading = 'lazy';
+              image.referrerPolicy = 'no-referrer'; image.decoding = 'async';
+              slot.liveArt.textContent = ''; slot.liveArt.append(image);
+            }
+          } catch { /* Keep placeholder for absent or invalid artwork. */ }
+        }
+        const duration = known ? profile.track?.duration_ms : null;
+        const progress = known ? profile.progress_ms : null;
+        if (slot.seek && !slot.seeking) { slot.seek.max = Number.isInteger(duration) && duration > 0 ? String(duration) : '1'; slot.seek.value = String(Number.isInteger(progress) && Number.isInteger(duration) ? Math.max(0,Math.min(progress,duration)) : 0); }
+        if (slot.progress && !slot.seeking) slot.progress.textContent = timeLabel(progress);
+        if (slot.duration) slot.duration.textContent = timeLabel(duration);
       }
       async function request(path, options = {}) {
         const controller = new AbortController();
@@ -553,7 +655,7 @@
         try {
           const response = await fetch(path, {...options, cache:'no-store', signal:controller.signal});
           const payload = await response.json();
-          if (!response.ok) { const error = new Error(payload.error || 'Spotify-Anfrage abgelehnt.'); error.httpStatus = response.status; throw error; }
+          if (!response.ok) { const error = new Error(payload.error || 'Spotify-Anfrage abgelehnt.'); error.httpStatus = response.status; error.outcome = payload.outcome; throw error; }
           return payload;
         } finally { clearTimeout(timer); }
       }
@@ -572,7 +674,7 @@
           if (available && matches.length > 1) { node.textContent = 'Spotify-Ziel dieses Raums ist nicht eindeutig zugeordnet.'; continue; }
           const target = matches[0];
           if (!available || !target) { node.textContent = 'Wiedergabestatus nicht verfügbar.'; continue; }
-          const active = profiles.filter(profile => profile.active_target_id === target.target_id && profile.track
+          const active = profiles.filter(profile => !profileSlot(profile.profile_id)?.busy && profile.active_target_id === target.target_id && profile.track
             && typeof profile.track.title === 'string' && profile.track.title.trim()
             && ((profile.status === 'playing' && profile.is_playing === true) || profile.status === 'paused'));
           node.textContent = active.length ? active.map(profile => {
@@ -597,6 +699,9 @@
             if (initial) { slot.profileId = initial.profile_id; boundIds.add(initial.profile_id); }
           }
           const profile = profiles.find(item => item.profile_id === slot.profileId);
+          // A response obtained while this profile's command is in flight cannot confirm its outcome.
+          if (!slot.busy) slot.observed = available ? profile || null : null;
+          if (available) reconcileCommand(slot, profile);
           if (profile) slot.profileName = profile.display_name;
           slot.profileLabel.textContent = slot.profileName || 'Kein Profil verfügbar';
           slot.target.setAttribute('aria-label', 'Spotify-Ziel für ' + (slot.profileName || 'unbekanntes Profil'));
@@ -636,12 +741,19 @@
           else slot.statusNode.textContent = 'Keine bestätigte Wiedergabe.';
           if (!deviceAvailabilityKnown) slot.statusNode.textContent += ' Zielverfügbarkeit nicht bestätigt.';
           else if (!visible.length) slot.statusNode.textContent += ' Kein Echo-Ziel ist derzeit in Spotify sichtbar.';
+          renderPlayer(slot, slot.observed, targets, available);
+          if (slot.controlMessage) slot.statusNode.textContent = slot.controlMessage;
+          else if (canControl(slot)) slot.statusNode.textContent = profile.status === 'paused' ? 'Fortsetzen läuft an derselben Stelle weiter.' : 'Stoppen behält die Position im Titel.';
+          else if (slot.liveTitle && available && profile && ['playing','paused'].includes(profile.status) && deviceAvailabilityKnown && visible.length) slot.statusNode.textContent = 'Steuerung derzeit nicht bestätigt.';
+          if (!slot.controlMessage && slot.neutralNote && Date.now() < slot.neutralNoteUntil) slot.statusNode.textContent += ' ' + slot.neutralNote;
+          if (!slot.controlMessage && typeof slot.observed?.degradation_note === 'string' && slot.observed.degradation_note.trim())
+            slot.statusNode.textContent += ' ' + slot.observed.degradation_note.trim();
         }
         const previousProfile = profileSelect.value;
         profileSelect.replaceChildren();
         for (const slot of slots.filter(slot => slot.profileId)) {
           const option = document.createElement('option'); option.value = slot.profileId; option.disabled = !slot.searchReady;
-          option.textContent = slot.profileName + (slot.searchReady ? '' : ' · nicht verfügbar'); profileSelect.append(option);
+          option.textContent = (slot.profileName || 'unbekanntes Profil') + (slot.searchReady ? '' : ' · nicht verfügbar'); profileSelect.append(option);
         }
         if (!profileSelect.children.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Kein Profil verfügbar'; option.disabled = true; profileSelect.append(option); }
         profileSelect.value = slots.some(slot => slot.profileId === previousProfile) ? previousProfile
@@ -656,7 +768,7 @@
         refreshPromise = (async () => {
           try { applyStatus(await request('/api/spotify/status')); }
           catch (error) {
-            for (const slot of slots) { slot.ready = false; slot.searchReady = false; slot.statusNode.textContent = 'Wiedergabestatus nicht verfügbar.'; }
+            for (const slot of slots) { slot.ready = false; slot.searchReady = false; slot.observed = null; if (!slot.busy) slot.feedbackObservations = 0; slot.statusNode.textContent = slot.controlMessage || 'Wiedergabestatus nicht verfügbar.'; renderPlayer(slot,null,[],false); }
             renderRoomStatus([], [], false);
             updateControls();
             if (!pending) setMessage('Spotify-Status nicht verwendbar: ' + error.message + ' Es wird keine Wiedergabe behauptet.', true);
@@ -668,6 +780,42 @@
         // A GET begun before POST is not the required post-command observation.
         if (refreshPromise) await refreshPromise;
         await refresh();
+      }
+      async function control(forProfile, action, positionMs, expectedTrackUri) {
+        const slot = profileSlot(forProfile);
+        if (!slot || !canControl(slot) || !['pause','resume','next','previous','seek'].includes(action) || slot.observed?.disallowed_actions?.includes(action)) return;
+        const track = slot.observed?.track;
+        if (action === 'seek' && (!slot.seek || slot.seek.disabled || !Number.isInteger(track?.duration_ms) || track.duration_ms <= 0 || !validTrackUri(track?.uri)
+          || (expectedTrackUri !== undefined && expectedTrackUri !== track.uri) || !Number.isInteger(positionMs) || positionMs < 0 || positionMs >= track.duration_ms)) return;
+        const command = {profile:slot.profileId, target:slot.observed.active_target_id, action};
+        if (action === 'seek') { command.position_ms = positionMs; command.track_uri = track.uri; }
+        const previousTrack = trackIdentity(track);
+        const previousProgress = slot.observed.progress_ms;
+        slot.pendingCommand = null;
+        slot.neutralNote = ''; slot.feedbackObservations = 0;
+        slot.busy = true;
+        slot.controlMessage = 'Befehl wird gesendet …'; slot.statusNode.textContent = slot.controlMessage;
+        updateControls();
+        try {
+          const payload = await request('/api/spotify/control', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command)});
+          if (payload.status !== 'accepted') { const error = new Error(payload.error || 'Befehl nicht bestätigt.'); error.outcome = payload.outcome; throw error; }
+          slot.pendingCommand = {...command,previousTrack,previousProgress,acceptedAt:Date.now(),observations:0}; slot.controlMessage = 'Befehl angenommen · Status wird geprüft …';
+        } catch (error) {
+          if (error.outcome === 'not_sent') {
+            slot.controlMessage = ''; slot.neutralNote = 'Befehl abgelehnt: ' + error.message; slot.neutralNoteUntil = Date.now() + 10000;
+          } else { slot.controlMessage = 'Ergebnis unklar · Status wird geprüft. ' + error.message; slot.feedbackObservations = 1; }
+        }
+        slot.statusNode.textContent = slot.controlMessage || slot.neutralNote || 'Status wird geprüft …';
+        // Drain any older GET while busy, then permit only the following GET to populate observed state.
+        if (refreshPromise) await refreshPromise;
+        slot.busy = false;
+        slot.ready = false; updateControls();
+        await refresh();
+        if (!slot.observed && slot.pendingCommand) {
+          slot.controlMessage = 'Ergebnis unklar · aktuellen Status prüfen, bevor Du erneut steuerst.';
+          slot.statusNode.textContent = slot.controlMessage;
+        }
+        updateControls();
       }
       function selectTrack(item, forProfile = profileSelect.value) {
         const slot = profileSlot(forProfile);
@@ -715,6 +863,18 @@
         finally { await refreshAfterCommand(); pending = false; updateControls(); }
       }
       for (const slot of slots) {
+        if (slot.previous) slot.previous.addEventListener('click', () => control(slot.profileId,'previous'));
+        if (slot.next) slot.next.addEventListener('click', () => control(slot.profileId,'next'));
+        if (slot.toggle) slot.toggle.addEventListener('click', () => control(slot.profileId,slot.observed?.status === 'paused' ? 'resume' : 'pause'));
+        if (slot.seek) {
+          slot.seek.addEventListener('input', () => { if (!slot.seeking) slot.seekingTrackUri = slot.observed?.track?.uri; slot.seeking = true; if (slot.progress) slot.progress.textContent = timeLabel(Number(slot.seek.value)); });
+          slot.seek.addEventListener('change', () => {
+            const uri = slot.seeking ? slot.seekingTrackUri : slot.observed?.track?.uri;
+            slot.seeking = false;
+            if (uri !== slot.observed?.track?.uri) { slot.statusNode.textContent = 'Titel hat gewechselt · Position bitte erneut wählen.'; refresh(); return; }
+            control(slot.profileId,'seek',Math.min(Number(slot.seek.value),slot.observed?.track?.duration_ms - 1),uri);
+          });
+        }
         slot.enabled.addEventListener('change', updateControls);
         slot.target.addEventListener('change', () => { if (slot.availableTargets.has(slot.target.value)) slot.requiresTargetSelection = false; setMessage('Zielauswahl geändert. Noch kein Befehl gesendet.'); updateControls(); });
       }
@@ -724,7 +884,7 @@
         if (!document.hidden) { renderRoomStatus([], [], false); for (const slot of slots) { slot.ready = false; slot.searchReady = false; slot.statusNode.textContent = 'Wiedergabestatus wird neu geprüft …'; } updateControls(); refresh(); }
       });
       poll();
-      return {selectTrack, refresh, applyStatus, play, profileName, searchAllowed:id => !pending && profileSlot(id)?.searchReady === true, updateControls};
+      return {selectTrack, refresh, applyStatus, play, control, profileName, searchAllowed:id => !pending && profileSlot(id)?.searchReady === true, updateControls};
     })();
     function selectSpotifyTrack(item, profile) { spotifyController.selectTrack(item, profile); }
 

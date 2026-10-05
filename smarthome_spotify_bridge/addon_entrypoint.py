@@ -70,6 +70,9 @@ def main() -> None:
         def play_assignments(self, assignments, *, now):
             return cockpit.play(assignments, now=now)
 
+        def control(self, payload, *, now):
+            return cockpit.control(payload, now=now)
+
     # Bind inside the isolated add-on network so Cloudflared can proxy the
     # authenticated endpoint. The bridge is not exposed directly to the LAN.
     server = make_server(
