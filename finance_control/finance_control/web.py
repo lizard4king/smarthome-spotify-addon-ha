@@ -25,6 +25,9 @@ from .person_attribution import person_label
 from .planning import decimal_text, export_projection, month_end, parse_plan, projection
 from .access_identity import IdentityError, configured_identity
 from .administration import Administration, AdministrationError
+from .server_banking import ServerBanking
+from .server_balance_gateway import ServerBalanceGateway
+from .server_balance_jobs import ServerBalanceJobs
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -531,8 +534,16 @@ def _normalized_origin(value):
     return f'{parsed.scheme}://{origin_host}'
 
 
+def _server_administration(database):
+    """Wire vault cleanup before exposing any administration HTTP handler."""
+    administration = Administration(database)
+    server_banking = ServerBanking(administration)
+    administration.before_bank_revoke = server_banking.cleanup_connections
+    return administration, server_banking
+
+
 def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_origins=None,
-                access_token=None, identity_verifier=None, bootstrap_emails=()):
+                access_token=None, identity_verifier=None, bootstrap_emails=(), bank_product_id=None):
     """Create the cockpit server.
 
     ``access_token=None`` keeps the historic behaviour (Host/Origin/CSRF checks only),
@@ -543,7 +554,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
     if access_token is not None and len(access_token) < MIN_ACCESS_TOKEN:
         raise ValueError('Zugriffstoken zu kurz.')
     session_value = _session_value(access_token) if access_token is not None else None
-    administration = Administration(app.database) if identity_verifier is not None else None
+    if identity_verifier is not None:
+        administration, server_banking = _server_administration(app.database)
+    else:
+        administration = server_banking = None
+    bank_jobs = (ServerBalanceJobs(ServerBalanceGateway(administration, bank_product_id))
+                 if administration is not None else None)
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -625,6 +641,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 'unknown_user': 'Dieses Benutzerkonto ist nicht mehr aktiv.',
                 'unknown_connection': 'Dieser Bankzugang ist nicht mehr eingetragen.',
                 'administration_disabled': 'Für die Verwaltung muss die persönliche Cloudflare-Anmeldung eingerichtet sein.',
+                'server_banking_unsupported': 'Serverzugänge werden nur auf der Linux-Serverinstallation unterstützt.',
+                'server_banking_unavailable': 'Der sichere Serverzugang ist derzeit nicht verfügbar. Bitte den gespeicherten Stand prüfen.',
+                'invalid_bank_credentials': 'Bankkennung oder Passwort ist leer oder zu lang. Bitte lokal in dieser Maske neu eingeben.',
+                'bank_read_busy': 'Ein Bankabruf läuft bereits. Bitte dessen Ergebnis abwarten.',
+                'bank_product_unavailable': 'Die FinTS-Produktkennung fehlt in der Servereinrichtung.',
+                'unknown_bank_job': 'Dieser Bankabruf ist nicht mehr verfügbar.',
             }
             return self.reply(error.status, {'error': messages.get(error.code, 'Eingaben prüfen und erneut bestätigen.'),
                                               'code': error.code})
@@ -736,6 +758,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
                       '/administration.js': ('administration.js', 'text/javascript; charset=utf-8'),
                       '/administration.css': ('administration.css', 'text/css; charset=utf-8'),
+                      '/server-banking.js': ('server-banking.js', 'text/javascript; charset=utf-8'),
+                      '/server-banking.css': ('server-banking.css', 'text/css; charset=utf-8'),
                       '/bank-postbank.svg': ('bank-postbank.svg', 'image/svg+xml'),
                       '/bank-sparkasse.png': ('bank-sparkasse.png', 'image/png'),
                       '/bank-ing.svg': ('bank-ing.svg', 'image/svg+xml'),
@@ -754,6 +778,49 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/brand-mediamarkt.png': ('brand-mediamarkt.png', 'image/png'),
                       '/brand-obi.png': ('brand-obi.png', 'image/png'),
                       '/brand-rewe.ico': ('brand-rewe.ico', 'image/x-icon'),
+                      '/simple-icons-LICENSE.txt': ('simple-icons-LICENSE.txt', 'text/plain; charset=utf-8'),
+                      '/brand-edeka.svg': ('brand-edeka.svg', 'image/svg+xml'),
+                      '/brand-penny.svg': ('brand-penny.svg', 'image/svg+xml'),
+                      '/brand-rossmann.svg': ('brand-rossmann.svg', 'image/svg+xml'),
+                      '/brand-muller.svg': ('brand-muller.svg', 'image/svg+xml'),
+                      '/brand-ikea.svg': ('brand-ikea.svg', 'image/svg+xml'),
+                      '/brand-otto.svg': ('brand-otto.svg', 'image/svg+xml'),
+                      '/brand-zalando.svg': ('brand-zalando.svg', 'image/svg+xml'),
+                      '/brand-ebay.svg': ('brand-ebay.svg', 'image/svg+xml'),
+                      '/brand-saturn.svg': ('brand-saturn.svg', 'image/svg+xml'),
+                      '/brand-dhl.svg': ('brand-dhl.svg', 'image/svg+xml'),
+                      '/brand-hermes.svg': ('brand-hermes.svg', 'image/svg+xml'),
+                      '/brand-fedex.svg': ('brand-fedex.svg', 'image/svg+xml'),
+                      '/brand-ups.svg': ('brand-ups.svg', 'image/svg+xml'),
+                      '/brand-deutschebahn.svg': ('brand-deutschebahn.svg', 'image/svg+xml'),
+                      '/brand-lufthansa.svg': ('brand-lufthansa.svg', 'image/svg+xml'),
+                      '/brand-ryanair.svg': ('brand-ryanair.svg', 'image/svg+xml'),
+                      '/brand-easyjet.svg': ('brand-easyjet.svg', 'image/svg+xml'),
+                      '/brand-bookingdotcom.svg': ('brand-bookingdotcom.svg', 'image/svg+xml'),
+                      '/brand-airbnb.svg': ('brand-airbnb.svg', 'image/svg+xml'),
+                      '/brand-uber.svg': ('brand-uber.svg', 'image/svg+xml'),
+                      '/brand-ubereats.svg': ('brand-ubereats.svg', 'image/svg+xml'),
+                      '/brand-vodafone.svg': ('brand-vodafone.svg', 'image/svg+xml'),
+                      '/brand-o2.svg': ('brand-o2.svg', 'image/svg+xml'),
+                      '/brand-netflix.svg': ('brand-netflix.svg', 'image/svg+xml'),
+                      '/brand-spotify.svg': ('brand-spotify.svg', 'image/svg+xml'),
+                      '/brand-youtube.svg': ('brand-youtube.svg', 'image/svg+xml'),
+                      '/brand-playstation.svg': ('brand-playstation.svg', 'image/svg+xml'),
+                      '/brand-steam.svg': ('brand-steam.svg', 'image/svg+xml'),
+                      '/brand-apple.svg': ('brand-apple.svg', 'image/svg+xml'),
+                      '/brand-dropbox.svg': ('brand-dropbox.svg', 'image/svg+xml'),
+                      '/brand-github.svg': ('brand-github.svg', 'image/svg+xml'),
+                      '/brand-mcdonalds.svg': ('brand-mcdonalds.svg', 'image/svg+xml'),
+                      '/brand-burgerking.svg': ('brand-burgerking.svg', 'image/svg+xml'),
+                      '/brand-kfc.svg': ('brand-kfc.svg', 'image/svg+xml'),
+                      '/brand-starbucks.svg': ('brand-starbucks.svg', 'image/svg+xml'),
+                      '/brand-aral.svg': ('brand-aral.svg', 'image/svg+xml'),
+                      '/brand-shell.svg': ('brand-shell.svg', 'image/svg+xml'),
+                      '/brand-bmw.svg': ('brand-bmw.svg', 'image/svg+xml'),
+                      '/brand-volkswagen.svg': ('brand-volkswagen.svg', 'image/svg+xml'),
+                      '/brand-tesla.svg': ('brand-tesla.svg', 'image/svg+xml'),
+                      '/brand-n26.svg': ('brand-n26.svg', 'image/svg+xml'),
+                      '/brand-commerzbank.svg': ('brand-commerzbank.svg', 'image/svg+xml'),
                       '/tabs.js': ('tabs.js', 'text/javascript; charset=utf-8'),
                       '/finanzguru.js': ('finanzguru.js', 'text/javascript; charset=utf-8'),
                       '/monthly.js': ('monthly.js', 'text/javascript; charset=utf-8'),
@@ -835,6 +902,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     if administration is None:
                         return self.management_error(AdministrationError('administration_disabled', 403))
                     action = urlsplit(self.path).path.removeprefix('/api/administration/')
+                    if action in {'bank-credentials-state', 'bank-credentials-save', 'bank-credentials-delete'}:
+                        return self.reply(200, server_banking.dispatch(self.management_user, action, data))
+                    if action == 'bank-balances-read':
+                        return self.reply(200, bank_jobs.start(self.management_user, data))
+                    if action == 'bank-balances-state':
+                        return self.reply(200, bank_jobs.state(self.management_user, data))
                     result = administration.change(self.management_user, action, data)
                     return self.reply(200, result if result.get('removed') else {'enabled': True, **result})
                 return self.reply(200, app.action(urlsplit(self.path).path, data))
@@ -1004,7 +1077,7 @@ def main():
         parser.exit(2, f'{error}\n')
     server = make_server(app, args.port, args.allowed_hosts, args.host, args.allowed_origins,
                          access_token=access_token, identity_verifier=identity_verifier,
-                         bootstrap_emails=bootstrap_emails)
+                         bootstrap_emails=bootstrap_emails, bank_product_id=options.get('fints_product_id'))
     if token_source in ('generated', 'stored'):
         print(f'Finance-Control-Zugriffstoken ({token_source}; Option access_token hat Vorrang): '
               f'{access_token}', flush=True)

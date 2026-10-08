@@ -9,6 +9,7 @@
 .fd-kicker{font-size:11px;font-weight:750;letter-spacing:.12em;color:var(--fd-accent);text-transform:uppercase}
 .fd-hero h1{margin:4px 0 5px;font-size:clamp(28px,3vw,38px);line-height:1.1;letter-spacing:-.035em;color:var(--fd-ink)}
 .fd-hero-sub,.fd-subtle,.fd-disclosure,.fd-result-count,.fd-footer{font-size:13px;color:var(--fd-muted)}
+.fd-data-basis{margin-top:3px!important;font-size:11px;color:var(--fd-muted)}
 .fd-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
 .fd-cutoff-form{display:flex;align-items:flex-end;gap:6px}.fd-cutoff-form label{display:grid;gap:4px;font-size:12px;font-weight:650;color:var(--fd-muted)}
 .fd-cutoff-form input{min-height:37px;max-width:160px;padding:6px 9px;border:1px solid #bdcfc9;border-radius:8px;background:white;color:var(--fd-ink)}
@@ -72,8 +73,10 @@
 :is(#dashboard,#category-outflows) .fd-account{display:block;min-width:0;padding:0;overflow:hidden}
 :is(#dashboard,#category-outflows) .fd-account-summary{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:2px 8px;padding:10px 11px;cursor:pointer;list-style:none}
 :is(#dashboard,#category-outflows) .fd-account-summary::-webkit-details-marker{display:none}
-:is(#dashboard,#category-outflows) .fd-account-summary-savings .fd-account-amount{grid-column:1/3;grid-row:3;text-align:left;white-space:normal;overflow-wrap:anywhere}
-:is(#dashboard,#category-outflows) .fd-account-summary::after{content:'▾';grid-column:3;grid-row:1/3;color:var(--fd-muted);font-size:12px}
+:is(#dashboard,#category-outflows) .fd-account-summary-savings .fd-account-amount{grid-column:1/3;grid-row:4;text-align:left;white-space:normal;overflow-wrap:anywhere}
+:is(#dashboard,#category-outflows) .fd-account-summary .fd-account-last-booking{grid-column:1;grid-row:3;font-size:10px;line-height:1.25;color:var(--fd-muted);font-weight:400}
+:is(#dashboard,#category-outflows) .fd-account-summary .fd-account-amount{grid-row:1/5}
+:is(#dashboard,#category-outflows) .fd-account-summary::after{content:'▾';grid-column:3;grid-row:1/5;color:var(--fd-muted);font-size:12px}
 :is(#dashboard,#category-outflows) .fd-account:not([open]) .fd-account-summary::after{content:'▸'}
 :is(#dashboard,#category-outflows) .fd-account-summary:focus-visible,:is(#dashboard,#category-outflows) .fd-booking-group-title:focus-visible,:is(#dashboard,#category-outflows) .fd-booking-summary:focus-visible{outline:2px solid var(--fd-accent);outline-offset:-2px}
 :is(#dashboard,#category-outflows) .fd-account-body{padding:0 11px 11px;overflow-wrap:anywhere}
@@ -144,13 +147,14 @@
 :is(#dashboard,#category-outflows) .fd-guru .fd-account-summary{position:relative;grid-template-columns:minmax(0,1fr) 12px;padding:10px 9px;gap:2px 7px}
 :is(#dashboard,#category-outflows) .fd-account-summary .fd-account-name{grid-column:1/3;grid-row:1;padding-right:18px}
 :is(#dashboard,#category-outflows) .fd-account-summary .fd-account-kind{grid-column:1/3;grid-row:2}
-:is(#dashboard,#category-outflows) .fd-account-summary .fd-account-amount{grid-column:1/3;grid-row:3;text-align:right}
+:is(#dashboard,#category-outflows) .fd-account-summary .fd-account-last-booking{grid-column:1/3;grid-row:3;font-size:10px;line-height:1.25;color:var(--fd-muted);font-weight:400}
+:is(#dashboard,#category-outflows) .fd-account-summary .fd-account-amount{grid-column:1/3;grid-row:4;text-align:right}
 :is(#dashboard,#category-outflows) .fd-account-summary::after{position:absolute;right:9px;top:10px}
 :is(#dashboard,#category-outflows) .fd-account-name{font-size:13px;line-height:1.25}
 :is(#dashboard,#category-outflows) .fd-account-name .fd-icon{width:30px;height:30px;padding:5px;border-radius:8px;background:var(--fd-soft)}
 :is(#dashboard,#category-outflows) .fd-account-kind{font-size:11px;line-height:1.3}
 :is(#dashboard,#category-outflows) .fd-account-amount{font-size:12px}
-:is(#dashboard,#category-outflows) .fd-account-summary-savings .fd-account-amount{grid-column:1/3;grid-row:3;text-align:right;font-size:11px;white-space:normal}
+:is(#dashboard,#category-outflows) .fd-account-summary-savings .fd-account-amount{grid-column:1/3;grid-row:4;text-align:right;font-size:11px;white-space:normal}
 :is(#dashboard,#category-outflows) .fd-account-freshness{font-size:11px;color:var(--fd-muted);line-height:1.4}
 :is(#dashboard,#category-outflows) .fd-blick .fd-account:hover,
 :is(#dashboard,#category-outflows) .fd-blick .fd-account.is-selected{background:#fff0df}
