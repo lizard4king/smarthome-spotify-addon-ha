@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import secrets
 import sqlite3
@@ -19,7 +20,8 @@ from .connectors.fints_readonly import Balance
 from .connectors.ing_period_snapshot import PeriodSnapshot, archive_period
 from .core import Store
 from .ing_period_import import PeriodImportError, import_period_archive, preview_period_import
-from .monthly_archive import archive_monthly_snapshot
+from .monthly_archive import _encode as encode_monthly_snapshot
+from .monthly_archive import archive_monthly_snapshot, monthly_source_account_key
 from .statement_model import MonthlySnapshot, StatementError
 
 
@@ -33,7 +35,7 @@ _MASK = re.compile(r'••••(?:[A-Za-z0-9]{4})?\Z')
 _SAFE_ERRORS = frozenset({
     'bank_read_unavailable', 'bank_read_timeout', 'server_banking_unsupported',
     'bank_product_unavailable', 'invalid_bank_auth_selection', 'bank_read_busy',
-    'invalid_request', 'vault_unavailable', 'authorization_required',
+    'invalid_request', 'vault_unavailable', 'authorization_required', 'auth_rejected',
     'bank_failure', 'invalid_bank_result', 'unknown_account',
     'unsupported_platform', 'unknown_connection', 'forbidden',
     'stale_revision', 'unauthorized', 'invalid_bank',
@@ -45,7 +47,7 @@ _SAFE_ERRORS = frozenset({
     'PREFIX_CHANGED', 'SAME_DAY_CHANGED', 'PERIOD_CONFLICT',
     'INITIAL_ARCHIVE_MISMATCH', 'LEGACY_PREFIX_MISMATCH',
     'LEGACY_PREFIX_ALREADY_BOUND', 'CHECKPOINT_INVALID',
-    'invalid_target', 'invalid_period', 'stale_preview',
+    'invalid_target', 'invalid_period', 'stale_preview', 'PREVIOUS_MONTH_CHANGED',
 })
 
 
@@ -194,6 +196,51 @@ def _legacy_prefix(database, account_id, period):
         store.close()
 
 
+def _previous_month_control(database, account_id, monthly):
+    """Reject a changed closed month before archiving or issuing a preview token.
+
+    MonthlySnapshot has only ordered booking date, amount and currency; the
+    original PeriodRow text remains in its archive/checkpoint for later reads.
+    """
+    source_key = monthly_source_account_key(monthly)
+    start, end = monthly.period_start.isoformat(), monthly.period_end.isoformat()
+    store = Store(database, readonly=True)
+    try:
+        checkpoint = store.db.execute(
+            'SELECT as_of,opening_balance,closing_balance,row_payload_json '
+            'FROM ing_period_imports WHERE source_key=? AND account_id=? AND month_start=?',
+            (source_key, account_id, start)).fetchone()
+        adoption = store.db.execute(
+            'SELECT archive_sha256 FROM bank_monthly_adoptions '
+            'WHERE source_key=? AND account_id=? AND period_start=? AND period_end=?',
+            (source_key, account_id, start, end)).fetchone()
+        if checkpoint is not None and checkpoint['as_of'] == end:
+            try:
+                previous = json.loads(checkpoint['row_payload_json'])
+                if type(previous) is not list or any(
+                        type(row) is not dict or set(row) != {
+                            'booked_on', 'value_on', 'amount', 'currency',
+                            'counterparty', 'description', 'booking_text'}
+                        for row in previous):
+                    raise ValueError('checkpoint rows')
+                expected = [(row['booked_on'], row['amount'], row['currency'])
+                            for row in previous]
+                actual = [(row.booked_on.isoformat(), _cash(row.amount), row.currency)
+                          for row in monthly.rows]
+                if (expected != actual
+                        or checkpoint['opening_balance'] != _cash(monthly.opening_balance)
+                        or checkpoint['closing_balance'] != _cash(monthly.closing_balance)):
+                    _fail('PREVIOUS_MONTH_CHANGED', 409)
+            except (ValueError, TypeError, KeyError):
+                _fail('PREVIOUS_MONTH_CHANGED', 409)
+        if adoption is not None:
+            digest = hashlib.sha256(encode_monthly_snapshot(monthly)).hexdigest()
+            if adoption['archive_sha256'] != digest:
+                _fail('PREVIOUS_MONTH_CHANGED', 409)
+    finally:
+        store.close()
+
+
 class ServerPostbankJobs:
     """The gateway owns bank access; only sanitized DTOs leave this service."""
 
@@ -248,6 +295,7 @@ class ServerPostbankJobs:
             raise AdministrationError('invalid_action')
         connection_id, revision = _id(data['id']), _revision(data['revision'])
         owner_id = self._check(actor, connection_id, revision)
+        profile = self.gateway.profile(actor, connection_id, revision)
         if data['action'] == 'accounts':
             if any(data[key] is not None for key in
                    ('account_fingerprint', 'account_id', 'month_start', 'as_of')):
@@ -277,7 +325,12 @@ class ServerPostbankJobs:
                                   'connection_id': connection_id, 'revision': revision,
                                   'status': 'running', 'finished_at': None,
                                   'account_id': data['account_id'], 'committing': False,
-                                  'committed': False}
+                                  'committed': False, 'bank_id': profile,
+                                  'binding': {'connection_id': connection_id, 'revision': revision,
+                                              'account_id': data['account_id'],
+                                              'account_fingerprint': data['account_fingerprint'],
+                                              'tan_method': data['tan_method'],
+                                              'tan_medium': data['tan_medium'], 'bank_id': profile}}
             self._active = job_id
             request = {key: value for key, value in data.items() if key != 'account_id'}
             try:
@@ -299,6 +352,7 @@ class ServerPostbankJobs:
                 connection_id = job['connection_id'] if job else None
                 revision = job['revision'] if job else None
                 owner_id = job['owner_id'] if job else None
+                profile = job['bank_id'] if job else None
             if job is None or self._check(actor, connection_id, revision) != owner_id:
                 _fail('stale_revision', 409)
             if type(raw) is not dict:
@@ -311,7 +365,7 @@ class ServerPostbankJobs:
             elif raw.get('status') == 'ok' and request['action'] == 'accounts':
                 status, value = 'complete', {'result': _safe_accounts(raw)}
             elif raw.get('status') == 'ok' and request['action'] == 'period':
-                status, value = 'complete', self._preview(raw, account_id)
+                status, value = 'complete', self._preview(raw, account_id, profile)
             else:
                 _fail()
         except AdministrationError as error:
@@ -330,14 +384,15 @@ class ServerPostbankJobs:
                 self._active = None
             self._prune()
 
-    def _preview(self, raw, account_id):
+    def _preview(self, raw, account_id, profile):
         if (set(raw) != {'status', 'monthly', 'period', 'balance'}
                 or type(raw['monthly']) is not MonthlySnapshot
                 or type(raw['period']) is not PeriodSnapshot
                 or type(raw['balance']) is not Balance):
             _fail()
         monthly, period, balance = raw['monthly'], raw['period'], raw['balance']
-        if (monthly.source_profile != 'POSTBANK' or period.source_profile != 'POSTBANK'
+        if (profile not in ('POSTBANK', 'ING')
+                or monthly.source_profile != profile or period.source_profile != profile
                 or monthly.source_account != period.source_account
                 or monthly.currency != period.currency
                 or monthly.closing_balance != period.opening_balance
@@ -346,7 +401,8 @@ class ServerPostbankJobs:
         target = _target(self.database, account_id)
         if target['currency'] != period.currency:
             _fail('invalid_target', 409)
-        archives = self.database.parent / 'bank-archives' / 'POSTBANK'
+        _previous_month_control(self.database, account_id, monthly)
+        archives = self.database.parent / 'bank-archives' / profile
         # Monthly and period archives have different schemas and must not scan
         # each other's JSON files while checking their immutable history.
         month_path = archive_monthly_snapshot(monthly, archives / 'monthly').path
@@ -430,7 +486,7 @@ class ServerPostbankJobs:
                 raise AdministrationError('stale_preview', 409)
             backup_dir = self.database.parent / 'bank-backups'
             backup_dir.mkdir(parents=True, exist_ok=True)
-            backup_path = backup_dir / ('postbank-before-import-' + uuid4().hex + '.sqlite')
+            backup_path = backup_dir / (job['bank_id'].lower() + '-before-import-' + uuid4().hex + '.sqlite')
             store = Store(self.database, readonly=True)
             try:
                 store.backup(backup_path)
@@ -463,3 +519,16 @@ class ServerPostbankJobs:
         finally:
             with self._lock:
                 job['committing'] = False
+
+    def binding(self, actor, job_id):
+        """Internal only: reuse an owner's explicitly selected, imported account.
+
+        Never expose this mapping through a web response. Failed or merely
+        previewed jobs do not authorize subsequent unattended imports.
+        """
+        job = self._job(actor, job_id)
+        with self._lock:
+            if (job['committing'] or not job['committed']
+                    or job.get('result', {}).get('status') != 'imported'):
+                raise AdministrationError('invalid_action', 409)
+            return dict(job['binding'])

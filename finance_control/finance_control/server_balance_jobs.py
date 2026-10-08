@@ -17,7 +17,7 @@ _FINISHED_TTL = 15 * 60
 _ERROR_CODES = frozenset({
     'bank_read_unavailable', 'bank_read_timeout', 'server_banking_unsupported',
     'bank_product_unavailable', 'invalid_bank_auth_selection', 'bank_read_busy',
-    'invalid_request', 'vault_unavailable', 'authorization_required',
+    'invalid_request', 'vault_unavailable', 'authorization_required', 'auth_rejected',
     'bank_failure', 'invalid_bank_result', 'too_many_accounts',
     'duplicate_account', 'unsupported_platform', 'unknown_connection',
     'forbidden', 'stale_revision', 'unauthorized', 'invalid_bank',

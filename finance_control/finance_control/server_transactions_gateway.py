@@ -1,4 +1,4 @@
-"""Owner-bound bridge for bounded Postbank account and period reads."""
+"""Owner-bound bridge for bounded ING/Postbank account and period reads."""
 
 from __future__ import annotations
 
@@ -28,8 +28,10 @@ _MAX_ROWS = 10_000
 _MAX_TEXT = 8192
 _TIMEOUT = 300
 _ERROR_CODES = frozenset({'invalid_request', 'vault_unavailable', 'authorization_required',
+                          'auth_rejected',
                           'bank_failure', 'invalid_bank_result', 'unknown_account',
                           'unsupported_platform'})
+_BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517'}
 
 
 def _fail(code='bank_read_unavailable', status=503):
@@ -83,11 +85,11 @@ def _currency(value):
     return value
 
 
-def _monthly(value, start):
+def _monthly(value, start, bank_id):
     if type(value) is not dict or set(value) != {
             'source_profile', 'source_account', 'period_start', 'period_end',
             'opening_date', 'closing_date', 'opening_balance', 'closing_balance',
-            'currency', 'rows'} or value['source_profile'] != 'POSTBANK':
+            'currency', 'rows'} or value['source_profile'] != bank_id:
         raise ValueError('monthly')
     end = start.replace(day=28) + timedelta(days=4)
     end = end.replace(day=1) - timedelta(days=1)
@@ -102,7 +104,7 @@ def _monthly(value, start):
         if not start <= booked <= end or item['currency'] != currency:
             raise ValueError('row')
         rows.append(StatementRow(booked, _money(item['amount']), currency))
-    snapshot = MonthlySnapshot('POSTBANK', _source(value['source_account']),
+    snapshot = MonthlySnapshot(bank_id, _source(value['source_account']),
                                _date(value['period_start']), _date(value['period_end']),
                                _date(value['opening_date']), _date(value['closing_date']),
                                _money(value['opening_balance']), _money(value['closing_balance']),
@@ -115,11 +117,11 @@ def _monthly(value, start):
     return snapshot
 
 
-def _period(value, start, end):
+def _period(value, start, end, bank_id):
     if type(value) is not dict or set(value) != {
             'source_profile', 'source_account', 'month_start', 'as_of',
             'opening_date', 'closing_date', 'opening_balance', 'closing_balance',
-            'currency', 'rows'} or value['source_profile'] != 'POSTBANK':
+            'currency', 'rows'} or value['source_profile'] != bank_id:
         raise ValueError('period')
     if type(value['rows']) is not list or len(value['rows']) > _MAX_ROWS:
         raise ValueError('rows')
@@ -133,7 +135,7 @@ def _period(value, start, end):
                               _money(item['amount']), _currency(item['currency']),
                               _text(item['counterparty']), _text(item['description']),
                               _text(item['booking_text'])))
-    snapshot = PeriodSnapshot('POSTBANK', _source(value['source_account']),
+    snapshot = PeriodSnapshot(bank_id, _source(value['source_account']),
                               _date(value['month_start']), _date(value['as_of']),
                               _date(value['opening_date']), _date(value['closing_date']),
                               _money(value['opening_balance']), _money(value['closing_balance']),
@@ -196,7 +198,9 @@ def _validated_output(payload, request):
         start, end = _date(request['month_start']), _date(request['as_of'])
         previous_end = start - timedelta(days=1)
         previous = date(previous_end.year, previous_end.month, 1)
-        monthly, period = _monthly(result['monthly'], previous), _period(result['period'], start, end)
+        bank_id = request['bank_id']
+        monthly = _monthly(result['monthly'], previous, bank_id)
+        period = _period(result['period'], start, end, bank_id)
         if (monthly.source_account != period.source_account
                 or monthly.currency != period.currency
                 or monthly.closing_balance != period.opening_balance):
@@ -261,11 +265,20 @@ class ServerTransactionsGateway:
         self.runner = runner or _run_subprocess
         self._balance = ServerBalanceGateway(administration, product_id)
 
-    def check(self, actor, connection_id, revision):
-        owner_id, bank_id, _ = self._balance._connection(actor, _id(connection_id), _revision(revision))
-        if bank_id != 'POSTBANK':
+    def _connection(self, actor, connection_id, revision):
+        owner_id, bank_id, bank_code = self._balance._connection(
+            actor, _id(connection_id), _revision(revision))
+        if _BANK_CODES.get(bank_id) != bank_code:
             raise AdministrationError('invalid_bank')
+        return owner_id, bank_id, bank_code
+
+    def check(self, actor, connection_id, revision):
+        owner_id, _, _ = self._connection(actor, connection_id, revision)
         return owner_id
+
+    def profile(self, actor, connection_id, revision):
+        _, bank_id, _ = self._connection(actor, connection_id, revision)
+        return bank_id
 
     def read(self, actor, data):
         if sys.platform != 'linux':
@@ -277,13 +290,13 @@ class ServerTransactionsGateway:
         if data['confirmed'] is not True:
             raise AdministrationError('confirmation_required')
         connection_id, revision = _id(data['id']), _revision(data['revision'])
-        owner_id = self.check(actor, connection_id, revision)
+        owner_id, bank_id, bank_code = self._connection(actor, connection_id, revision)
         if not valid_product_id(self.product_id):
             _fail('bank_product_unavailable')
-        if not valid_auth_selection('POSTBANK', data['tan_method'], data['tan_medium']):
+        if not valid_auth_selection(bank_id, data['tan_method'], data['tan_medium']):
             raise AdministrationError('invalid_bank_auth_selection')
         request = {'connection_id': connection_id, 'owner_user_id': owner_id,
-                   'bank_id': 'POSTBANK', 'bank_code': '50010060', 'product_id': self.product_id,
+                   'bank_id': bank_id, 'bank_code': bank_code, 'product_id': self.product_id,
                    'tan_method': data['tan_method'], 'tan_medium': data['tan_medium'],
                    'action': data['action'], 'account_fingerprint': data['account_fingerprint'],
                    'month_start': data['month_start'], 'as_of': data['as_of']}
@@ -300,7 +313,7 @@ class ServerTransactionsGateway:
                 raise
             except Exception:
                 _fail()
-            if self.check(actor, connection_id, revision) != owner_id:
+            if self._connection(actor, connection_id, revision) != (owner_id, bank_id, bank_code):
                 raise AdministrationError('stale_revision', 409)
             return _validated_output(response, request)
         finally:

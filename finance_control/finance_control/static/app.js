@@ -16,7 +16,10 @@ async function cockpitLoadArea(id, {force = false} = {}) {
   if (cockpitAreaLoading.has(key)) return cockpitAreaLoading.get(key);
   if (!force && cockpitAreaLoaded.get(key) === cockpitDataGeneration) return true;
   const loaders = {
-    dashboard: async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard); },
+    dashboard: async () => {
+      if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard);
+      if (typeof window.financeBankRefresh?.activate === 'function') void window.financeBankRefresh.activate();
+    },
     'category-outflows': async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard, 'category-outflows'); },
     purchases: async () => { if (typeof window.financePurchasesLoad === 'function') await window.financePurchasesLoad(); },
     administration: async () => { if (typeof window.administrationLoad === 'function') await window.administrationLoad(); },
@@ -73,6 +76,8 @@ async function cockpitLoadArea(id, {force = false} = {}) {
 }
 
 document.addEventListener('cockpit-area-changed', event => {
+  if (event.detail.id !== 'dashboard' && typeof window.financeBankRefresh?.deactivate === 'function')
+    window.financeBankRefresh.deactivate();
   // Both views share selection state and must repaint when becoming visible.
   const sharedAccountView = ['dashboard', 'category-outflows'].includes(event.detail.id);
   void cockpitLoadArea(event.detail.id, {force: sharedAccountView});
@@ -270,6 +275,10 @@ document.addEventListener('finance-dashboard-cutoff', event => {
   const value = event.detail?.as_of;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return;
   $('cutoff').value = value;
+  void run(refresh);
+});
+
+document.addEventListener('finance-bank-refreshed', () => {
   void run(refresh);
 });
 

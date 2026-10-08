@@ -126,7 +126,7 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
             raise PeriodImportError('ACCOUNT_CURRENCY_MISMATCH')
         # Check inside the write transaction as well as the web preview: a
         # changed target must never turn a checking-account import into savings.
-        if snapshot.source_profile == 'POSTBANK' and account['kind'] != 'CHECKING':
+        if snapshot.source_profile in ('POSTBANK', 'ING') and account['kind'] != 'CHECKING':
             raise PeriodImportError('invalid_target')
         if initial_month_archive is not None:
             already_bound = db.execute('SELECT 1 FROM bank_source_accounts WHERE source_key=?',

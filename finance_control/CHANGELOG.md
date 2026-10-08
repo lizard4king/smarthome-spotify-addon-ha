@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.21
+
+- Neue Umsätze auf der Buchungsseite aktualisieren; die Verwaltung zeigt nur Bankzugänge und Benutzer.
+- Bestätigte Girokontenzuordnungen für serverseitige Aktualisierung beim Öffnen oder Neuladen wiederverwenden, mit Abrufstatus und 60 Sekunden Sperrfrist.
+- ING-Serverabruf mit vorhandenen Zugangsdaten; ein ausschließlich per QR eingerichteter Zugang bleibt separat offen.
+- Fehlende Monatsenden vor dem laufenden Monat nachholen und geänderte Kontrollmonate sperren.
+- Serverkalender für deutsche Bankkonten auf Europe/Berlin festlegen.
+
 ## 0.2.20
 
 - Separates explicitly stated supermarket cash payouts from the purchase for category reports and virtual cash, retaining the original bank debit and identity. Unclear amounts stay visible for review.

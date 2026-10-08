@@ -126,6 +126,8 @@ def run_request(request, vault_factory, reader_factory):
                            **balance})
         return {'status': 'ok', 'accounts': result}
     except BankReadError as error:
+        if error.code is BankErrorCode.AUTH_REJECTED:
+            return _error('auth_rejected')
         if error.code in {BankErrorCode.SCA_REQUIRED, BankErrorCode.LOCAL_AUTH_ABORT,
                           BankErrorCode.GRAPHICAL_TAN, BankErrorCode.AUTH_SETUP_REQUIRED,
                           BankErrorCode.AUTH_SELECTION_INVALID, BankErrorCode.TAN_LIMIT}:
