@@ -1,4 +1,4 @@
-"""Transactional ING month-prefix import with local ordinal identities."""
+"""Transactional ING/Postbank month-prefix import with local ordinal identities."""
 
 import csv
 from dataclasses import dataclass
@@ -52,8 +52,8 @@ def _source_guard(db, snapshot, account_id, source_key):
                            (source_key,)).fetchone()
     statement_reverse = db.execute('SELECT source_key FROM bank_statement_account_bindings WHERE account_id=?',
                                    (account_id,)).fetchone()
-    if (direct is None or tuple(direct) != ('ING', account_id) or reverse is None
-            or tuple(reverse) != ('ING', source_key)
+    if (direct is None or tuple(direct) != (snapshot.source_profile, account_id) or reverse is None
+            or tuple(reverse) != (snapshot.source_profile, source_key)
             or statement is not None and statement[0] != account_id
             or statement_reverse is not None and statement_reverse[0] != source_key):
         raise PeriodImportError('SOURCE_BINDING_REQUIRED')
@@ -92,7 +92,7 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
     """Append only a verified suffix; preserve earlier classifications and context."""
     snapshot = read_period_archive(archive)
     validate_period(snapshot)
-    if (snapshot.source_profile != 'ING' or type(confirmed_source_account) is not str
+    if (snapshot.source_profile not in ('ING', 'POSTBANK') or type(confirmed_source_account) is not str
             or confirmed_source_account != snapshot.source_account):
         raise PeriodImportError('SOURCE_CONFIRMATION_REQUIRED')
     if not valid_identifier(account_id):
@@ -111,6 +111,7 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
         raise PeriodImportError('INITIAL_ARCHIVE_INVALID')
     key = period_key(snapshot)
     source_key = period_source_key(snapshot)
+    namespace = f'{snapshot.source_profile.lower()}-period'
     start = snapshot.month_start.isoformat()
     next_start = (snapshot.month_start.replace(day=28) + timedelta(days=4)).replace(day=1).isoformat()
     end = snapshot.as_of.isoformat()
@@ -123,6 +124,10 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
         account = db.execute('SELECT * FROM accounts WHERE id=?', (account_id,)).fetchone()
         if account is None or account['currency'] != snapshot.currency:
             raise PeriodImportError('ACCOUNT_CURRENCY_MISMATCH')
+        # Check inside the write transaction as well as the web preview: a
+        # changed target must never turn a checking-account import into savings.
+        if snapshot.source_profile == 'POSTBANK' and account['kind'] != 'CHECKING':
+            raise PeriodImportError('invalid_target')
         if initial_month_archive is not None:
             already_bound = db.execute('SELECT 1 FROM bank_source_accounts WHERE source_key=?',
                                        (source_key,)).fetchone()
@@ -130,7 +135,8 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
                 from .bank_source_policy import adopt_monthly_archive
                 from .monthly_archive import read_monthly_archive
                 initial = read_monthly_archive(initial_month_archive)
-                if (initial.source_profile != 'ING' or initial.source_account != snapshot.source_account
+                if (initial.source_profile != snapshot.source_profile
+                        or initial.source_account != snapshot.source_account
                         or initial.period_end != snapshot.month_start - timedelta(days=1)):
                     raise PeriodImportError('INITIAL_ARCHIVE_MISMATCH')
                 adopt_monthly_archive(store, initial_month_archive, account_id,
@@ -178,6 +184,8 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
                 # sole ID contract was this deterministic local ordinal. Recover
                 # only those exact IDs; the complete financial/prefix checks
                 # below still have to succeed before persisting the mapping.
+                if snapshot.source_profile != 'ING':
+                    raise PeriodImportError('CHECKPOINT_INVALID')
                 ledger_ids = [f'ing-period:{key}:{ordinal}'
                               for ordinal in range(1, previous_count + 1)]
             if (type(ledger_ids) is not list or len(ledger_ids) != previous_count
@@ -215,7 +223,7 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
             writer = csv.DictWriter(stream, fieldnames=columns, lineterminator='\n')
             writer.writeheader()
             for ordinal, row in enumerate(suffix, previous_count + 1):
-                writer.writerow({'external_id': f'ing-period:{key}:{ordinal}', 'account_id': account_id,
+                writer.writerow({'external_id': f'{namespace}:{key}:{ordinal}', 'account_id': account_id,
                                  'date': row.booked_on.isoformat(), 'amount': _cash(row.amount),
                                  'currency': row.currency, 'category': source_category, 'transfer_id': ''})
             if store.import_csv(stream.getvalue(), manage_transaction=False) != len(suffix):
@@ -228,8 +236,8 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
                 if row.booking_text and row.booking_text != row.description:
                     description = ' | '.join(part for part in (description, row.booking_text) if part)
                 db.execute('INSERT INTO transaction_context(account_id,external_id,counterparty,description) VALUES (?,?,?,?)',
-                           (account_id, f'ing-period:{key}:{ordinal}', row.counterparty, description))
-                ledger_ids.append(f'ing-period:{key}:{ordinal}')
+                           (account_id, f'{namespace}:{key}:{ordinal}', row.counterparty, description))
+                ledger_ids.append(f'{namespace}:{key}:{ordinal}')
         ledger_ids_json = json.dumps(ledger_ids, ensure_ascii=False, separators=(',', ':'))
         if existing is None:
             db.execute('INSERT INTO ing_period_imports '

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.20
+
+- Separates explicitly stated supermarket cash payouts from the purchase for category reports and virtual cash, retaining the original bank debit and identity. Unclear amounts stay visible for review.
+- Hides stored-credential replacement fields behind an explicit change button and preserves separate balance reads for other Postbank accounts.
+- Adds explicit Postbank account, authentication-method and device selection for read-only server transaction requests.
+- Shows the booked current-month transactions with merchant, purpose and original booking text before import.
+- Verifies the previous closed month, current-month opening/closing controls and the existing ledger before switching to the direct source.
+- Preserves existing categories, receipts and transfers; ambiguous legacy matches block the import. Repeated unchanged requests add no duplicate transactions.
+- Uses encrypted server credentials and owner/revision-bound, expiring previews. No payments, scheduled fetch or Mastercard source switch is included.
+
 ## 0.2.19
 
 - Extends booking logos to 55 locally served bank and merchant identities and adds pet, bus and rail category pictograms.

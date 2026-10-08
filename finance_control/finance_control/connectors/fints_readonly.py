@@ -535,6 +535,8 @@ class ReadOnlyFinTS:
             if (start.day != 1 or (start.year, start.month) != (end.year, end.month)
                     or end > date.today()):
                 raise BankReadError(code=BankErrorCode.STATEMENT_INCOMPLETE)
+            if getattr(self._client, '_finance_source_profile', None) not in ('ING', 'POSTBANK'):
+                raise BankReadError(code=BankErrorCode.UNSUPPORTED)
         from fints.models import SEPAAccount
         native = None if account is None else SEPAAccount(
             account.iban, account.bic, account.accountnumber, account.subaccount, account.blz)
@@ -565,10 +567,10 @@ class ReadOnlyFinTS:
                                 raise BankReadError(code=BankErrorCode.NO_RESPONSE)
                             try:
                                 if operation is ReadOperation.PERIOD_SNAPSHOT:
-                                    from .ing_period_snapshot import parse_ing_period
-                                    if self._client._finance_source_profile != 'ING':
-                                        raise BankReadError(code=BankErrorCode.UNSUPPORTED)
-                                    statements = (parse_ing_period(raw, start=start, end=end),)
+                                    from .ing_period_snapshot import parse_bank_period
+                                    statements = (parse_bank_period(
+                                        raw, source_profile=self._client._finance_source_profile,
+                                        start=start, end=end),)
                                 elif operation is ReadOperation.MONTHLY_SNAPSHOT:
                                     statements = (parse_monthly_snapshot(raw, source_profile=self._client._finance_source_profile, start=start, end=end),)
                                 else:

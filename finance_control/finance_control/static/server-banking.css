@@ -50,6 +50,10 @@
   min-width: 0;
 }
 
+.fsb-form[hidden] {
+  display: none;
+}
+
 .fsb-form > label:not(.fsb-check),
 .fsb-remove-form > label:not(.fsb-check) {
   display: grid;
@@ -101,6 +105,18 @@
   border-radius: 7px;
   background: #17617b;
   color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.fsb-secondary {
+  min-height: 40px;
+  padding: 9px 13px;
+  border: 1px solid #91a9b5;
+  border-radius: 7px;
+  background: #fff;
+  color: #173143;
   font: inherit;
   font-weight: 650;
   cursor: pointer;

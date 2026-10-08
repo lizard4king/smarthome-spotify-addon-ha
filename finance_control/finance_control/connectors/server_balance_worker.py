@@ -128,7 +128,7 @@ def run_request(request, vault_factory, reader_factory):
     except BankReadError as error:
         if error.code in {BankErrorCode.SCA_REQUIRED, BankErrorCode.LOCAL_AUTH_ABORT,
                           BankErrorCode.GRAPHICAL_TAN, BankErrorCode.AUTH_SETUP_REQUIRED,
-                          BankErrorCode.AUTH_SELECTION_INVALID}:
+                          BankErrorCode.AUTH_SELECTION_INVALID, BankErrorCode.TAN_LIMIT}:
             return _error('authorization_required')
         return _error('bank_failure')
     except (ValueError, TypeError, UnicodeError, OverflowError):
