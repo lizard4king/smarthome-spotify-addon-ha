@@ -34,12 +34,30 @@ LOCAL_BIND_HOSTS = {'127.0.0.1', '::1', 'localhost'}
 LOGIN_PAGE = (
     '<!doctype html><html lang="de"><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    '<title>Finance Control</title></head><body>'
-    '<h1>Finance Control</h1><p>Zugriffstoken eingeben (Add-on-Option <code>access_token</code> '
-    'oder Add-on-Log).</p>@@ERROR@@'
+    '<title>Anmeldung · Finance Control</title>'
+    '<link rel="stylesheet" href="/login.css"></head><body>'
+    '<main class="login-shell">'
+    '<section class="login-intro" aria-labelledby="login-title">'
+    '<span class="login-kicker">FINANCE CONTROL</span>'
+    '<h1 id="login-title">Dein Finanz-Cockpit.</h1>'
+    '<p>Ein geschützter Ort für Deinen Überblick, Deine Planung und Deine Buchungen.</p>'
+    '<div class="login-assurance">'
+    '<span class="login-assurance-mark" aria-hidden="true">✓</span>'
+    '<span>Diese zusätzliche Anmeldung schützt Deine Finanzdaten.</span>'
+    '</div></section>'
+    '<section class="login-card" aria-labelledby="login-heading">'
+    '<span class="login-card-kicker">COCKPIT-ANMELDUNG</span>'
+    '<h2 id="login-heading">Willkommen zurück</h2>'
+    '<p class="login-lead">Gib Deinen Cockpit-Schlüssel ein, um Finance Control zu öffnen.</p>'
+    '@@ERROR@@'
     '<form method="post" action="/login">'
-    '<input type="password" name="token" autocomplete="current-password" autofocus required> '
-    '<button type="submit">Anmelden</button></form></body></html>'
+    '<label for="cockpit-key">Cockpit-Schlüssel</label>'
+    '<input id="cockpit-key" type="password" name="token" autocomplete="current-password" '
+    'aria-describedby="key-help@@ERROR_REF@@" @@INVALID@@autofocus required>'
+    '<p id="key-help" class="field-help">Du findest ihn im Finance-Control-App-Protokoll '
+    'in Home Assistant. Er ist kein Bankpasswort.</p>'
+    '<button type="submit">Cockpit öffnen <span aria-hidden="true">→</span></button>'
+    '</form></section></main></body></html>'
 )
 
 
@@ -563,7 +581,11 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             return False
 
         def login_page(self, status, error=False):
-            page = LOGIN_PAGE.replace('@@ERROR@@', '<p>Token ungültig.</p>' if error else '')
+            page = (LOGIN_PAGE.replace('@@ERROR@@',
+                    '<p id="login-error" class="login-error" role="alert">'
+                    'Cockpit-Schlüssel ungültig. Bitte prüfe Deine Eingabe.</p>' if error else '')
+                    .replace('@@ERROR_REF@@', ' login-error' if error else '')
+                    .replace('@@INVALID@@', 'aria-invalid="true" ' if error else ''))
             return self.reply(status, page.encode(), 'text/html; charset=utf-8')
 
         def login_required(self):
@@ -651,6 +673,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 return self.reply(200, {'status': 'ok'})
             if not self.trusted_host():
                 return self.reply(403, {'error': 'Lokaler Zugriff erforderlich.'})
+            if urlsplit(self.path).path == '/login.css':
+                return self.reply(200, files('finance_control').joinpath('static', 'login.css').read_bytes(),
+                                  'text/css; charset=utf-8')
             if not self.authorized():
                 return self.login_required()
             url = urlsplit(self.path)

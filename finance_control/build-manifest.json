@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "4b18509c90622e94f6ba7ce16e3ab7260407bfca158acd237a8f76ba393a5252",
-  "addon_version": "0.2.15",
+  "addon_tree_sha256": "5e16e18ec59272a441afb04c72267971adf5731e3222164d03e25d9921c92ad5",
+  "addon_version": "0.2.16",
   "deployment_files": {
-    "Dockerfile": "5e07b1f068dc7fc3c4142bb38b5999496482f9fb6de13cdb1093f6175101c714",
-    "README.md": "0cb3bc95e15d118a625a5011f7eb8593fff0e29bdb6fcff9b30e1a744239fbf4",
+    "Dockerfile": "2bab4d22b2444a2d3aeb73b8ff6a35b9e63319e447d965afc998d89d0829b41c",
+    "README.md": "bf5c6ac5bf61d36d638428b3f7784ba830cdc5f1857d55f1857120f98356a1b4",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "0b2d8e83af5c6c75add9892e7e763f7abc3385cdc4c4351c62d0e8ef46bdd112",
+    "config.yaml": "0182622639c982c3894c63822228b5b872ed9764f9748fe19dbe80542e68ba55",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d"
   },
   "files": {
@@ -150,6 +150,7 @@
     "static/finanzguru.js": "5cb922f5f70e31e44e02cae18b5c55a989a0a5da1604cb9b3615062cfca111f0",
     "static/index.html": "a92014470888ee2a3eb9080bc43fa3c5fbab6859b898eb32ac4dd907a166546c",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
+    "static/login.css": "e663c739cd6a54eab95e8e74336538ba65fd31fa3e6b432874f403ced09cfbd9",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
     "static/plan_actual.js": "629f18ad77ee3128d4d932bdf7114ec929231e9ac06ec44f19deb5904980b825",
     "static/style.css": "c885e64d55b328758d08a91ea49387371833707a930c819d4d7907610b874c7f",
@@ -158,9 +159,9 @@
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "1eb55db0d79e7cdbf2d069a204cdd784c097cec7e4c1f76b072ded7b32dc51c9",
     "wealth.py": "3c420811efd92f40a97de2a0f1f570f5fe358c17c245c9f65b197871d7cf7179",
-    "web.py": "9942310abe9a0a5878a9c2a4d9fc9d48845f263bc83526d9216de3dd89a2c764"
+    "web.py": "ede41ff01fe059a323081c848a8e02e99978b4627c3b8372dc68271f50b158df"
   },
   "schema_version": 1,
-  "source_commit": "bd54b800e2c5110cfc2b94862e0e813ce86dacd0",
-  "source_tree_sha256": "a0b3c1df31fa11ff39e9ef3e21ac54b6bd5e1b6624b0445295b9866712ce8fa6"
+  "source_commit": "50fb803bfc8f9226e55b5af66d6eb16e73fc8112",
+  "source_tree_sha256": "949849df864035e222acdb87922e35ff00325dd7d19796326a0cb946e2a67924"
 }

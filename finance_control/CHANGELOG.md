@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.16
+
+- Understandable, responsive cockpit sign-in with a labelled cockpit key and accessible error state.
+- Authentication, session cookies and the protection of financial data remain unchanged.
+
 ## 0.2.15
 
 - Adds the new app views and exposes `last_booking_date`.
