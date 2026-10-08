@@ -330,7 +330,8 @@
     const row = add(parent, 'tr', 'fd-booking');
     add(row, 'td', 'fd-booking-date', date(item.date));
     const counterparty = add(row, 'td', 'fd-booking-counterparty');
-    if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), item);
+    if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), item,
+      {fallbackIcon: () => icon(categoryIcon(item.category))});
     else counterparty.textContent = item.counterparty || item.description || 'Ohne Gegenpartei';
     const description = add(row, 'td', 'fd-booking-description');
     add(description, 'span', '', item.description || '—');

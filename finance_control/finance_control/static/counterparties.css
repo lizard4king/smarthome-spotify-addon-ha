@@ -8,6 +8,7 @@
 }
 
 .fc-counterparty-logo,
+.fc-counterparty-pictogram,
 .fc-counterparty-initials {
   box-sizing: border-box;
   display: inline-flex;
@@ -26,12 +27,24 @@
   padding: 2px;
 }
 
+.fc-counterparty-logo--dark {
+  background: #18323c;
+  border-color: #18323c;
+}
+
+.fc-counterparty-pictogram,
 .fc-counterparty-initials {
   color: #47615a;
   background: #edf2f0;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: .02em;
+}
+
+.fc-counterparty-pictogram svg {
+  width: 22px;
+  height: 22px;
+  flex: none;
 }
 
 .fc-counterparty-text {

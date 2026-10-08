@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.22
+
+- Expands locally served bank and merchant marks from 55 to 238, with documented official sources, preserved raster bytes and LF-normalized SVGs.
+- Matches verified leading IBANs, explicit merchant aliases and payment intermediaries without changing original booking text. Ambiguous or unknown merchants use the category pictogram.
+- Includes the complete logo library in authenticated static routes and deterministic add-on packages; the browser makes no external logo requests.
+- Distinguishes safe bank failure codes and uses bank-neutral error messages for Postbank and ING.
+
 ## 0.2.21
 
 - Neue Umsätze auf der Buchungsseite aktualisieren; die Verwaltung zeigt nur Bankzugänge und Benutzer.

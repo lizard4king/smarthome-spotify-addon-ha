@@ -1,5 +1,8 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.22` bundles 238 local bank and merchant marks, documented sources,
+conservative counterparty recognition and category pictograms for unknown merchants.
+
 Version `0.2.21` moves transaction setup and import to the bookings workspace.
 Previously confirmed Postbank and ING checking-account selections can refresh
 on opening or reloading that workspace, or with the manual refresh button.
