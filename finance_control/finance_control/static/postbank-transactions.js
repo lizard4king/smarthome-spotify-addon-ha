@@ -11,8 +11,12 @@
   const isRecord = value => value && typeof value.id === 'string' && value.id.length > 0
     && Number.isSafeInteger(value.revision) && value.revision >= 0;
   const errorText = code => ({
+    auth_rejected: 'Die Bank hat die Anmeldung abgelehnt. Prüfe den hinterlegten Zugang. (auth_rejected)',
+    bank_failure: 'Der Bankabruf ist fehlgeschlagen. Die genaue Ursache ist noch unbekannt. (bank_failure)',
+    invalid_bank_result: 'Die Bankantwort konnte nicht verarbeitet werden. (invalid_bank_result)',
+    bank_read_unavailable: 'Der Bankabruf ist auf dem Server derzeit nicht verfügbar. (bank_read_unavailable)',
+    bank_import_unavailable: 'Die Übernahme der Bankbuchungen ist derzeit nicht verfügbar. (bank_import_unavailable)',
     authorization_required: 'Die Bank verlangt eine Freigabe. Prüfe Deine Banking-App und versuche es danach erneut.',
-    auth_rejected: 'Die Bank hat die Anmeldung abgelehnt. Prüfe den gespeicherten Zugang.',
     bank_read_timeout: 'Der Bankabruf hat das Zeitlimit erreicht. Es wurde kein neuer Abruf gestartet.',
     bank_read_busy: 'Für diese Bankverbindung läuft bereits ein Abruf.',
     vault_unavailable: 'Der sichere Serverspeicher ist derzeit nicht verfügbar.',
@@ -37,7 +41,7 @@
     stale_preview: 'Der Datenbestand wurde geändert. Bitte eine neue Vorschau abrufen.',
     invalid_target: 'Bitte das zugehörige Girokonto als Ziel wählen.',
     invalid_period: 'Bitte einen Monat der letzten 90 Tage und einen Stichtag im selben Monat bis heute wählen.',
-  }[code] || 'Der Postbank-Abruf konnte nicht abgeschlossen werden. Bitte prüfe den Serverstatus.');
+  }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Bitte prüfe den Serverstatus.');
   const safeString = (value, max = 1000) => typeof value === 'string' && value.length <= max ? value : '';
   const dateValue = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '—';
   const todayISO = () => {
