@@ -1,8 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.16` adds a responsive, clearly labelled cockpit sign-in page.
+Its generic `/login.css` stylesheet is available before sign-in; it contains no financial data.
 Version `0.2.15` adds the new app views and exposes `last_booking_date`.
-Version `0.2.14` adds application-level authentication. By default every route
-except `/health` now requires a shared access token (add-on option `access_token`;
+Version `0.2.14` adds application-level authentication. By default financial data and
+application assets require a shared access token (add-on option `access_token`;
 if empty, a token is generated on first start, stored in
 `/data/FinanceControl/data/app_access_token` with mode 0600 and printed to the
 add-on log). The browser logs in once through a form and receives an `HttpOnly`,
