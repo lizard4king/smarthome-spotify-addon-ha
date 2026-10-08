@@ -1,0 +1,40 @@
+.fc-counterparty {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.fc-counterparty-logo,
+.fc-counterparty-initials {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e8e6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.fc-counterparty-logo {
+  object-fit: contain;
+  padding: 2px;
+}
+
+.fc-counterparty-initials {
+  color: #47615a;
+  background: #edf2f0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.fc-counterparty-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

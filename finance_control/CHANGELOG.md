@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.18
+
+- Adds local merchant logos to booking rows and a dedicated purchases and receipts workspace with available article details.
+- Allows explicit account selection for Finanzguru imports; skipped accounts retain their existing source and ledger state.
+- Bank access remains Windows-bound; server banking and credential migration are not enabled by this UI release.
+
 ## 0.2.17
 
 - Adds official bank marks and category icons to the add-on package.
