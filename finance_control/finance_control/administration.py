@@ -60,8 +60,9 @@ def _public(row):
 
 
 class Administration:
-    def __init__(self, database):
+    def __init__(self, database, before_bank_revoke=None):
         self.database = Path(database).expanduser().resolve()
+        self.before_bank_revoke = before_bank_revoke
         with closing(Store(self.database)):
             pass
 
@@ -192,6 +193,11 @@ class Administration:
                 if target['role'] == 'admin' and db.execute(
                         "SELECT count(*) FROM app_users WHERE role='admin' AND active=1").fetchone()[0] <= 1:
                     raise AdministrationError('last_admin', 409)
+                connections = [dict(row) for row in db.execute(
+                    "SELECT id,user_id FROM app_bank_connections "
+                    "WHERE user_id=? AND status!='REVOKED' ORDER BY rowid", (target['id'],))]
+                if self.before_bank_revoke is not None:
+                    self.before_bank_revoke(connections)
                 db.execute('UPDATE app_users SET active=0,revision=revision+1 WHERE id=?', (target['id'],))
                 db.execute("UPDATE app_bank_connections SET status='REVOKED',revision=revision+1 "
                            "WHERE user_id=? AND status!='REVOKED'", (target['id'],))
@@ -223,6 +229,8 @@ class Administration:
                     raise AdministrationError('forbidden', 403)
                 if connection['revision'] != _revision(data['revision']):
                     raise AdministrationError('stale_revision', 409)
+                if self.before_bank_revoke is not None:
+                    self.before_bank_revoke([{'id': connection['id'], 'user_id': connection['user_id']}])
                 db.execute("UPDATE app_bank_connections SET status='REVOKED',revision=revision+1 WHERE id=?",
                            (connection['id'],))
             fresh = self._actor(db, user_id)

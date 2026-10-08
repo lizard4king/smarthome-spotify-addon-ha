@@ -1,6 +1,6 @@
 FROM python:3.12-alpine3.22
 
-ARG BUILD_VERSION=0.2.18
+ARG BUILD_VERSION=0.2.19
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \
@@ -15,9 +15,11 @@ ENV PYTHONPATH=/app \
 COPY finance_control /app/finance_control
 COPY build-manifest.json /app/build-manifest.json
 COPY bootstrap.py /app/bootstrap.py
+COPY vault_selftest.py /app/vault_selftest.py
 COPY run.sh /app/run.sh
-RUN pip install --no-cache-dir openpyxl==3.1.5 defusedxml==0.7.1 'PyJWT[crypto]==2.15.1' && \
+RUN pip install --no-cache-dir openpyxl==3.1.5 defusedxml==0.7.1 'PyJWT[crypto]==2.15.1' fints==5.0.0 mt-940==5.1.1 tzdata==2026.5 && \
   chmod 0755 /app/run.sh && \
+  python /app/vault_selftest.py && \
   python -c "import json; assert json.load(open('/app/build-manifest.json', encoding='utf-8'))['addon_version'] == '${BUILD_VERSION}'"
 
 EXPOSE 8785

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.19
+
+- Extends booking logos to 55 locally served bank and merchant identities and adds pet, bus and rail category pictograms.
+- Shows the latest recorded booking on collapsed account cards and identifies imported bookings as the calculation basis.
+
+- Adds encrypted, owner-scoped Linux server credentials with explicit save and removal confirmation.
+- Adds a single, read-only balance request in the cockpit; pending requests do not block other cockpit pages.
+- Excludes the credential vault and its encryption key from add-on backups and checks the vault offline during image build.
+- Preserves unchanged existing transfers to skipped accounts during selected Finanzguru reimports and explains remaining transfer conflicts by row and changed fields.
+- Requires signed Cloudflare user verification and an add-on FinTS product ID. No automatic booking import, scheduled fetch or Mastercard migration is included.
+
 ## 0.2.18
 
 - Adds local merchant logos to booking rows and a dedicated purchases and receipts workspace with available article details.

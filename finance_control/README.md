@@ -1,11 +1,15 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.19` adds owner-scoped, encrypted server credentials and an explicit,
+read-only bank balance request. It requires signed Cloudflare user verification and
+the registered FinTS product ID in the add-on options. Bank credentials are entered
+directly in the cockpit; they are not copied from Windows. The encrypted vault and its
+key are excluded from add-on backups. A Linux-only offline vault self-test runs during
+the image build. Automatic booking imports, scheduled bank fetches and Mastercard
+migration are not part of this version. See `docs/server-banking.md` in the source repo.
 Version `0.2.18` adds merchant logos, a purchases and receipts workspace, and explicit
 selection of individual Finanzguru source accounts. Version `0.2.17` introduced signed
-Cloudflare user verification and bank registration. Bank
-registration is local setup metadata only (`LOCAL_SETUP_REQUIRED`); bank credentials
-remain on the local Windows installation. No remote bank connection or live bank setup
-is implemented.
+Cloudflare user verification and bank registration.
 Version `0.2.16` adds a responsive, clearly labelled cockpit sign-in page.
 Its generic `/login.css` stylesheet is available before sign-in; it contains no financial data.
 Version `0.2.15` adds the new app views and exposes `last_booking_date`.

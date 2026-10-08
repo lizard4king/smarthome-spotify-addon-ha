@@ -307,6 +307,16 @@ def _plan(store, staged, choices, root):
     contexts = [dict(row) for row in store.db.execute(
         'SELECT * FROM transaction_context ORDER BY account_id,external_id')]
     existing = {(row['account_id'], row['external_id']): row for row in ledger}
+    transfer_members = {}
+    for peer in ledger:
+        if peer['transfer_id']:
+            transfer_members.setdefault(peer['transfer_id'], set()).add(
+                (peer['account_id'], peer['external_id']))
+    selected_prefix_targets = {
+        _source_prefix(source): target for source, target in active_mapping.items()}
+    selected_existing_keys = {
+        key for key in existing
+        if selected_prefix_targets.get(key[1].rsplit(':', 1)[0] + ':') == key[0]}
     source_context = _source_context(store, root, existing)
     accounts_by_id, ids_by_booking = {}, {}
     for old in ledger:
@@ -366,13 +376,26 @@ def _plan(store, staged, choices, root):
                         ('date', 'amount', 'currency', 'counterparty', 'description'))):
             for name in ('counterparty', 'description'):
                 values[name] = old_context.get(name, '')
+        old = existing.get(key)
+        if ('selected_sources' in choices and old is not None
+                and old['transfer_id'] and not values['transfer_id']
+                and transfer_members.get(old['transfer_id'], set()) - selected_existing_keys
+                and all(old[name] == values[name] for name in ('date', 'amount', 'currency'))
+                and all(old_context.get(name, '') == values[name]
+                        for name in ('counterparty', 'description'))):
+            from .transfer_corrections import source_declares_transfer
+            if source_declares_transfer({
+                    'category': old['category'],
+                    'description': old_context.get('description', '')}) == source_declares_transfer(values):
+                # An omitted cross-source pair is not permission to dissolve an
+                # unchanged existing transfer in a selected-source snapshot.
+                values['transfer_id'] = old['transfer_id']
         if key in desired:
             status = 'duplicate_in_file' if desired[key] == values else 'source_id_conflict'
             if status == 'source_id_conflict':
                 blockers.append(status)
         else:
             desired[key] = values
-            old = existing.get(key)
             if old is None:
                 status = 'new'
             else:
@@ -419,36 +442,41 @@ def _plan(store, staged, choices, root):
                                'description': old_context.get('description', ''),
                                'status': 'removed', 'transfer': bool(old['transfer_id'])})
     counts['removed'] = len(removed)
+    transfer_dependencies = []
     if 'selected_sources' in choices:
         from .transfer_corrections import source_declares_transfer
         selected_keys = set(desired) | set(removed)
-        transfer_members = {}
-        for peer in ledger:
-            if peer['transfer_id']:
-                transfer_members.setdefault(peer['transfer_id'], set()).add(
-                    (peer['account_id'], peer['external_id']))
-        for key in selected_keys:
+        reference_by_key = {
+            (mapping[row['source_account']], row['external_id']): row['reference']
+            for row in references.values()}
+        for key in sorted(selected_keys):
             old = existing.get(key)
             if old is None:
                 continue
             new = desired.get(key)
             context = context_by_key.get(key) or {}
-            economic = new is None or (
-                any(old[name] != new[name] for name in
-                    ('date', 'amount', 'currency', 'transfer_id'))
-                or any(context.get(name, '') != new[name] for name in
-                       ('counterparty', 'description'))
-                or source_declares_transfer({
-                    'category': old['category'], 'description': context.get('description', '')
-                }) != source_declares_transfer(new))
-            if not economic:
+            changed_fields = [] if new is None else [
+                name for name in ('date', 'amount', 'currency', 'transfer_id')
+                if old[name] != new[name]] + [
+                name for name in ('counterparty', 'description')
+                if context.get(name, '') != new[name]] + ([
+                    'transfer_declaration'] if source_declares_transfer({
+                        'category': old['category'], 'description': context.get('description', '')
+                    }) != source_declares_transfer(new) else [])
+            if new is not None and not changed_fields:
                 continue
-            if transfer_members.get(old['transfer_id'], set()) - selected_keys:
+            item = {'reference': reference_by_key.get(key, key[1]),
+                    'change_kind': 'removed' if new is None else 'updated',
+                    'changed_fields': changed_fields}
+            if old['transfer_id'] and transfer_members.get(old['transfer_id'], set()) - selected_keys:
                 blockers.append('selected_source_transfer_dependency')
+                transfer_dependencies.append(item | {'dependency_kind': 'ledger_transfer'})
             for pair in _transfer_pair_state(store, key):
                 if any((member['account_id'], member['external_id']) not in selected_keys
                        for member in pair['members']):
                     blockers.append('selected_source_transfer_dependency')
+                    transfer_dependencies.append(item | {
+                        'dependency_kind': 'confirmed_correction_pair'})
                     break
     # Each head describes one source, so changing the selection of another
     # source must not make an unchanged head appear to be a conflicting export.
@@ -524,6 +552,7 @@ def _plan(store, staged, choices, root):
     for name in ('new', 'updated', 'removed', 'already_imported'):
         counts[name] += 0
     report = {'counts': dict(counts), 'blockers': sorted(set(blockers)), 'rows': detail,
+              'transfer_dependencies': transfer_dependencies,
               'date_to': cutoff, 'new_net_amount': format(new_total, '.2f'),
               'net_change': format(net_change, '.2f'), 'ready': not blockers,
               'ledger_written': False, 'review_token': token,

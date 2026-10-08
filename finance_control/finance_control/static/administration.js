@@ -6,6 +6,7 @@
   let busy = false;
   let stale = false;
   let loadSequence = 0;
+  let credentialsRenderSequence = 0;
   const node = (tag, text, className = '') => {
     const element = document.createElement(tag);
     element.textContent = String(text ?? '');
@@ -18,6 +19,10 @@
   };
   const mutationControls = () => document.querySelectorAll('#administration .adm-mutate');
   const lockMutations = () => mutationControls().forEach(button => { button.disabled = busy || stale || button.dataset.locked === 'true'; });
+  const invalidateCredentialsUi = () => {
+    credentialsRenderSequence += 1;
+    byId('adm-server-credentials').replaceChildren();
+  };
   const roleName = role => role === 'admin' ? 'Administrator' : 'Mitglied';
   const bankName = id => administrationState?.banks?.find(bank => bank.id === id)?.name || id;
   const bankLogo = id => {
@@ -47,6 +52,9 @@
   }
   function render() {
     const data = administrationState;
+    const credentialsHost = byId('adm-server-credentials');
+    const credentialsGeneration = ++credentialsRenderSequence;
+    credentialsHost.replaceChildren();
     byId('adm-disabled').hidden = data?.enabled !== false;
     byId('adm-removed').hidden = true;
     byId('adm-content').hidden = !data?.enabled;
@@ -78,9 +86,9 @@
     }
     const connections = byId('adm-connections'); connections.replaceChildren();
     for (const connection of data.connections || []) {
-      const detail = `${bankName(connection.bank_id)} · ${connection.status === 'LOCAL_SETUP_REQUIRED' ? 'Lokal einrichten' : 'Status prüfen'}`;
+      const detail = `${bankName(connection.bank_id)} · ${connection.status === 'LOCAL_SETUP_REQUIRED' ? 'Zugang einrichten' : 'Status prüfen'}`;
       const row = addRow(connections, connection.label, detail, 'Entfernen',
-        () => confirmAction(`Bankregistrierung ${connection.label} (${bankName(connection.bank_id)}) entfernen? Bestehende lokale Bankjobs, Zugangsdaten und Buchungshistorie bleiben bestehen.`,
+        () => confirmAction(`Bankregistrierung ${connection.label} (${bankName(connection.bank_id)}) entfernen? Die deaktivierte Registrierung wird nicht mehr genutzt; die Buchungshistorie bleibt erhalten.`,
           'bank-remove', {id:connection.id, revision:connection.revision, confirmed:true}));
       const logo = bankLogo(connection.bank_id);
       if (logo) {
@@ -91,10 +99,19 @@
       }
     }
     if (!data.connections?.length) connections.append(node('p', 'Noch keine Bank registriert.', 'muted'));
+    if (window.financeServerBanking && data.connections?.length) {
+      const scopedHost = document.createElement('div');
+      credentialsHost.append(scopedHost);
+      window.financeServerBanking.render(scopedHost, data.connections, () => {
+        if (credentialsRenderSequence !== credentialsGeneration || !administrationState?.enabled || !scopedHost.isConnected) return;
+        return load();
+      });
+    }
     lockMutations();
   }
   async function load() {
     const sequence = ++loadSequence;
+    invalidateCredentialsUi();
     byId('adm-reload').disabled = true;
     status('Verwaltung wird geladen.');
     try {
@@ -125,6 +142,7 @@
       byId('adm-dialog').close();
       if (result.removed) {
         administrationState = null;
+        invalidateCredentialsUi();
         byId('adm-content').hidden = true;
         byId('adm-removed').hidden = false;
         status('Dein Zugang wurde entfernt.');
@@ -179,7 +197,7 @@
     const bankId = form.bank_id.value;
     const label = form.label.value.trim();
     if (!bankId || !label) return;
-    confirmAction(`Bank ${bankName(bankId)} als „${label}“ registrieren? Danach ist eine lokale Einrichtung erforderlich; bestehende Bankjobs bleiben unverändert.`,
+    confirmAction(`Bank ${bankName(bankId)} als „${label}“ registrieren? Zugangsdaten können danach separat auf dem Server eingerichtet und Kontostände einmalig lesend abgerufen werden.`,
       'bank-add', {bank_id:bankId, label, confirmed:true});
   });
   window.administrationLoad = load;

@@ -48,9 +48,12 @@
     if (has('bücher', 'buch', 'lese')) return 'book';
     if (has('lebensmittel', 'supermarkt', 'nahrung')) return 'shopping-basket';
     if (has('einkauf', 'shopping', 'kleidung')) return 'shopping-bag';
+    if (has('haustier', 'tierbedarf', 'tierarzt', 'hund', 'katze', 'hunde', 'katzen')) return 'paw-print';
     if (has('wohnen', 'miete', 'wohnung', 'haus')) return 'house';
     if (has('gastronomie', 'restaurant', 'essen', 'café', 'cafe')) return 'utensils';
     if (contains('energie') || has('strom', 'gas', 'heizung')) return 'energy';
+    if (has('öpnv', 'oepnv', 'öffis', 'oeffis', 'bus', 'tram')) return 'bus-front';
+    if (has('bahn', 'zug', 'eisenbahn')) return 'train-front';
     if (has('mobilität', 'mobilitaet', 'auto', 'verkehr', 'transport')) return 'car-front';
     if (has('gesundheit', 'arzt', 'apotheke')) return 'heart-pulse';
     if (has('kinder', 'kind', 'baby')) return 'baby';
@@ -90,6 +93,9 @@
     "plane": [["path",{"d":"M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"}]],
     "receipt-text": [["path",{"d":"M13 16H8"}],["path",{"d":"M14 8H8"}],["path",{"d":"M16 12H8"}],["path",{"d":"M4 3a1 1 0 0 1 1-1 1.3 1.3 0 0 1 .7.2l.933.6a1.3 1.3 0 0 0 1.4 0l.934-.6a1.3 1.3 0 0 1 1.4 0l.933.6a1.3 1.3 0 0 0 1.4 0l.933-.6a1.3 1.3 0 0 1 1.4 0l.934.6a1.3 1.3 0 0 0 1.4 0l.933-.6A1.3 1.3 0 0 1 19 2a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1 1.3 1.3 0 0 1-.7-.2l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.934.6a1.3 1.3 0 0 1-1.4 0l-.933-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-1.4 0l-.934-.6a1.3 1.3 0 0 0-1.4 0l-.933.6a1.3 1.3 0 0 1-.7.2 1 1 0 0 1-1-1z"}]],
   };
+  lucideNodes['paw-print'] = [["circle",{"cx":"11","cy":"4","r":"2"}],["circle",{"cx":"18","cy":"8","r":"2"}],["circle",{"cx":"20","cy":"16","r":"2"}],["path",{"d":"M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"}]];
+  lucideNodes['bus-front'] = [["path",{"d":"M4 6 2 7"}],["path",{"d":"M10 6h4"}],["path",{"d":"m22 7-2-1"}],["rect",{"width":"16","height":"16","x":"4","y":"3","rx":"2"}],["path",{"d":"M4 11h16"}],["path",{"d":"M8 15h.01"}],["path",{"d":"M16 15h.01"}],["path",{"d":"M6 19v2"}],["path",{"d":"M18 21v-2"}]];
+  lucideNodes['train-front'] = [["path",{"d":"M8 3.1V7a4 4 0 0 0 8 0V3.1"}],["path",{"d":"m9 15-1-1"}],["path",{"d":"m15 15 1-1"}],["path",{"d":"M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Z"}],["path",{"d":"m8 19-2 3"}],["path",{"d":"m16 19 2 3"}]];
   function icon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.classList.add('fd-icon');
@@ -206,6 +212,7 @@
     } else name.append(icon(accountIcon(account.kind)));
     name.append(document.createTextNode(accountName(account)));
     add(summary, 'small', 'fd-account-kind', `${account.owner_label || account.owner || 'Ohne Zuordnung'} · ${kindName(account.kind)} · ${count} erfasste Buchung${count === 1 ? '' : 'en'}`);
+    add(summary, 'small', 'fd-account-last-booking', `Letzte Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
     const headerAmount = isSavings ? account.change : account.end;
     add(summary, 'strong', `fd-account-amount ${tone(headerAmount)}`,
       `${isSavings ? 'Monatsbewegung · ' : ''}${money(headerAmount, account.currency, isSavings)}`);
@@ -382,6 +389,7 @@
     add(intro, 'p', 'fd-kicker', 'FINANCE CONTROL · KONTEN');
     add(intro, 'h1', '', area === 'category-outflows' ? 'Abgänge nach Kategorie' : 'Buchungen');
     add(intro, 'p', 'fd-hero-sub', `${monthLabel()} · Stichtag ${date(snapshot.as_of)}`);
+    add(intro, 'p', 'fd-data-basis', 'Berechnet aus importierten Buchungen');
     const controls = add(hero, 'div', 'fd-controls');
     const cutoffForm = add(controls, 'form', 'fd-cutoff-form');
     const cutoffLabel = add(cutoffForm, 'label'); add(cutoffLabel, 'span', '', 'Stand am');

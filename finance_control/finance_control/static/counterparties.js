@@ -15,6 +15,48 @@
     {id: 'mediamarkt', label: 'MediaMarkt', src: '/brand-mediamarkt.png', aliases: ['MediaMarkt', 'Media Markt']},
     {id: 'google', label: 'Google', src: '/brand-google.ico', aliases: ['Google Play', 'GooglePlay', 'Google']},
     {id: 'amazon', label: 'Amazon', src: '/brand-amazon.ico', aliases: ['Amazon']},
+    {id: 'edeka', label: 'EDEKA', src: '/brand-edeka.svg', aliases: ['EDEKA']},
+    {id: 'penny', label: 'PENNY', src: '/brand-penny.svg', aliases: ['PENNY Markt', 'PENNY']},
+    {id: 'rossmann', label: 'ROSSMANN', src: '/brand-rossmann.svg', aliases: ['ROSSMANN']},
+    {id: 'mueller', label: 'Müller', src: '/brand-muller.svg', aliases: ['Müller Drogerie', 'Mueller Drogerie', 'Müller Handels', 'Mueller Handels']},
+    {id: 'ikea', label: 'IKEA', src: '/brand-ikea.svg', aliases: ['IKEA']},
+    {id: 'otto', label: 'OTTO', src: '/brand-otto.svg', aliases: ['OTTO Versand', 'OTTO GmbH', 'OTTO.de']},
+    {id: 'zalando', label: 'Zalando', src: '/brand-zalando.svg', aliases: ['Zalando']},
+    {id: 'ebay', label: 'eBay', src: '/brand-ebay.svg', aliases: ['eBay']},
+    {id: 'saturn', label: 'SATURN', src: '/brand-saturn.svg', aliases: ['SATURN Elektro', 'SATURN Markt', 'SATURN.de']},
+    {id: 'dhl', label: 'DHL', src: '/brand-dhl.svg', aliases: ['DHL']},
+    {id: 'hermes', label: 'Hermes', src: '/brand-hermes.svg', aliases: ['Hermes Versand', 'Hermes Paket', 'Hermes Germany']},
+    {id: 'fedex', label: 'FedEx', src: '/brand-fedex.svg', aliases: ['FedEx']},
+    {id: 'ups', label: 'UPS', src: '/brand-ups.svg', aliases: ['UPS Paket', 'UPS Deutschland', 'United Parcel Service']},
+    {id: 'deutschebahn', label: 'Deutsche Bahn', src: '/brand-deutschebahn.svg', aliases: ['Deutsche Bahn', 'DB Vertrieb', 'DB Fernverkehr', 'DB Regio']},
+    {id: 'lufthansa', label: 'Lufthansa', src: '/brand-lufthansa.svg', aliases: ['Lufthansa']},
+    {id: 'ryanair', label: 'Ryanair', src: '/brand-ryanair.svg', aliases: ['Ryanair']},
+    {id: 'easyjet', label: 'easyJet', src: '/brand-easyjet.svg', aliases: ['easyJet']},
+    {id: 'bookingdotcom', label: 'Booking.com', src: '/brand-bookingdotcom.svg', aliases: ['Booking.com']},
+    {id: 'airbnb', label: 'Airbnb', src: '/brand-airbnb.svg', aliases: ['Airbnb']},
+    {id: 'ubereats', label: 'Uber Eats', src: '/brand-ubereats.svg', aliases: ['Uber Eats']},
+    {id: 'uber', label: 'Uber', src: '/brand-uber.svg', aliases: ['Uber']},
+    {id: 'vodafone', label: 'Vodafone', src: '/brand-vodafone.svg', aliases: ['Vodafone']},
+    {id: 'o2', label: 'O2', src: '/brand-o2.svg', aliases: ['O2 Telefónica', 'O2 Telefonica', 'O2 Germany']},
+    {id: 'netflix', label: 'Netflix', src: '/brand-netflix.svg', aliases: ['Netflix']},
+    {id: 'spotify', label: 'Spotify', src: '/brand-spotify.svg', aliases: ['Spotify']},
+    {id: 'youtube', label: 'YouTube', src: '/brand-youtube.svg', aliases: ['YouTube']},
+    {id: 'playstation', label: 'PlayStation', src: '/brand-playstation.svg', aliases: ['PlayStation']},
+    {id: 'steam', label: 'Steam', src: '/brand-steam.svg', aliases: ['Steam Games', 'Steam Powered', 'Steam Store']},
+    {id: 'apple', label: 'Apple', src: '/brand-apple.svg', aliases: ['Apple.com', 'Apple Services', 'Apple Distribution', 'Apple iTunes']},
+    {id: 'dropbox', label: 'Dropbox', src: '/brand-dropbox.svg', aliases: ['Dropbox']},
+    {id: 'github', label: 'GitHub', src: '/brand-github.svg', aliases: ['GitHub']},
+    {id: 'mcdonalds', label: "McDonald's", src: '/brand-mcdonalds.svg', aliases: ["McDonald's", 'McDonalds']},
+    {id: 'burgerking', label: 'Burger King', src: '/brand-burgerking.svg', aliases: ['Burger King']},
+    {id: 'kfc', label: 'KFC', src: '/brand-kfc.svg', aliases: ['KFC']},
+    {id: 'starbucks', label: 'Starbucks', src: '/brand-starbucks.svg', aliases: ['Starbucks']},
+    {id: 'aral', label: 'Aral', src: '/brand-aral.svg', aliases: ['Aral Tankstelle', 'Aral AG']},
+    {id: 'shell', label: 'Shell', src: '/brand-shell.svg', aliases: ['Shell Tankstelle', 'Shell Deutschland']},
+    {id: 'bmw', label: 'BMW', src: '/brand-bmw.svg', aliases: ['BMW']},
+    {id: 'volkswagen', label: 'Volkswagen', src: '/brand-volkswagen.svg', aliases: ['Volkswagen']},
+    {id: 'tesla', label: 'Tesla', src: '/brand-tesla.svg', aliases: ['Tesla']},
+    {id: 'n26', label: 'N26', src: '/brand-n26.svg', aliases: ['N26 Bank', 'N26 GmbH']},
+    {id: 'commerzbank', label: 'Commerzbank', src: '/brand-commerzbank.svg', aliases: ['Commerzbank']},
   ];
 
   // Unicode letters and numbers define merchant token boundaries; underscores and
@@ -38,7 +80,12 @@
         }
       }
     }
-    return [...matches.values()];
+    const candidates = [...matches.values()];
+    // Specific compound names take precedence over a nested generic brand.
+    return candidates.filter(candidate => !candidates.some(other =>
+      other !== candidate && other.index <= candidate.index
+      && other.index + other.length >= candidate.index + candidate.length
+      && other.length > candidate.length));
   }
 
   const genericCounterparties = new Set([
