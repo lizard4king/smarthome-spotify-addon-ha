@@ -1,0 +1,55 @@
+.pbt-host{min-width:0}
+.pbt-root{--pbt-ink:#193347;--pbt-muted:#657782;--pbt-accent:#167c72;--pbt-soft:#edf5f2;min-width:0;color:var(--pbt-ink);font:14px/1.45 Arial,sans-serif}
+.pbt-root *,.pbt-root *::before,.pbt-root *::after{box-sizing:border-box}
+.pbt-root [hidden]{display:none!important}
+.pbt-root h3,.pbt-root h4,.pbt-root p{margin:0}
+.pbt-title{font-size:17px;margin-bottom:4px!important}
+.pbt-intro,.pbt-status,.pbt-disclosure,.pbt-source-change,.pbt-limit{color:var(--pbt-muted);font-size:12px}
+.pbt-intro{margin-bottom:10px!important}
+.pbt-status{margin:8px 0!important;min-height:18px}
+.pbt-error{color:#a53a35}
+.pbt-content{display:grid;gap:12px;min-width:0}
+.pbt-primary,.pbt-secondary{min-height:40px;border:1px solid #bdd1cb;border-radius:8px;padding:8px 13px;background:white;color:var(--pbt-ink);font:inherit;font-weight:700;cursor:pointer}
+.pbt-primary{border-color:#167c72;background:#167c72;color:white}
+.pbt-primary:hover:not(:disabled){background:#11675f}
+.pbt-secondary:hover:not(:disabled){background:var(--pbt-soft)}
+.pbt-root button:disabled{opacity:.55;cursor:not-allowed}
+.pbt-account-panel,.pbt-preview{min-width:0;border:1px solid #dce7e4;border-radius:11px;padding:14px;background:#fbfdfc}
+.pbt-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px}
+.pbt-field{display:grid;gap:5px;min-width:0;color:#425b66;font-size:12px;font-weight:700}
+.pbt-field select,.pbt-field input{width:100%;min-width:0;min-height:40px;border:1px solid #c7d5d1;border-radius:7px;padding:8px 9px;background:#fff;color:var(--pbt-ink);font:inherit;font-weight:400}
+.pbt-field select:focus-visible,.pbt-field input:focus-visible,.pbt-root button:focus-visible,.pbt-row-details summary:focus-visible{outline:2px solid #167c72;outline-offset:2px}
+.pbt-disclosure{margin:0 0 10px!important;padding:9px 10px;border-left:3px solid #89b7aa;background:var(--pbt-soft)}
+.pbt-preview{display:grid;gap:13px;background:#fff}
+.pbt-preview h4{font-size:16px}
+.pbt-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pbt-summary-item{display:grid;align-content:start;gap:3px;min-width:0;padding:9px 10px;border:1px solid #e6eeeb;border-radius:8px;background:#fbfdfc}
+.pbt-summary-item span{color:var(--pbt-muted);font-size:11px}
+.pbt-summary-item strong{overflow-wrap:anywhere;font-size:13px;font-variant-numeric:tabular-nums}
+.pbt-source-change{padding:9px 10px;border-radius:7px;background:#f2f6f5}
+.pbt-row-list{display:grid;gap:8px;min-width:0}
+.pbt-row{min-width:0;border:1px solid #e2eae7;border-radius:9px;padding:11px 12px;background:#fff}
+.pbt-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
+.pbt-row-top>strong{flex:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pbt-row-main{display:grid;gap:2px;min-width:0}
+.pbt-row-main strong{overflow-wrap:anywhere}
+.pbt-row-date{color:var(--pbt-muted);font-size:11px;font-variant-numeric:tabular-nums}
+.pbt-description{margin-top:5px!important;overflow-wrap:anywhere;color:#425963}
+.pbt-row-details{margin-top:7px;border-top:1px solid #edf1f0;padding-top:7px;color:var(--pbt-muted);font-size:12px}
+.pbt-row-details summary{cursor:pointer;font-weight:700;color:#3c5e65}
+.pbt-row-details p{margin-top:7px!important}
+.pbt-row-details pre{max-width:100%;margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#40545b;font:12px/1.45 Arial,sans-serif}
+.pbt-limit{padding:4px 1px}
+.pbt-auth-panel{display:grid;gap:8px;border:1px solid #dce7e4;border-radius:9px;padding:12px;background:#fbfdfc}
+.pbt-auth-note{color:var(--pbt-muted);font-size:11px}
+.pbt-imported{border-left:3px solid #167c72;padding:10px 12px;background:var(--pbt-soft)}
+.pbt-imported p{margin-top:4px!important;color:var(--pbt-muted);font-size:12px}
+@media(max-width:640px){
+  .pbt-fields{grid-template-columns:1fr;gap:9px}
+  .pbt-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .pbt-account-panel,.pbt-preview{padding:11px}
+  .pbt-row{padding:10px}
+  .pbt-row-top{gap:8px}
+  .pbt-row-top>strong{font-size:12px}
+}
+@media(max-width:360px){.pbt-summary{grid-template-columns:1fr}}

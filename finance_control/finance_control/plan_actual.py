@@ -15,7 +15,7 @@ from .budget import (
 )
 from .budget import _shift_month as _budget_shift_month
 from .account_overview import build_account_overview
-from .cash_components import cash_principal as _cash_principal
+from .cash_components import cash_principal as _cash_principal, explicit_cash_component
 from .cash_components import cash_receipt_key
 from .classification import exact_rule_match, normalize_counterparty
 from .core import money
@@ -302,10 +302,16 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
                 or (row["transfer_id"] and row["transfer_id"] in depot_transfer_ids)):
             depot_movement_count += 1
             continue
-        cash_withdrawal = _confirmed_cash_withdrawal(store, item)
+        confirmed_cash = _confirmed_cash_withdrawal(store, item)
+        explicit_status, explicit_principal = explicit_cash_component(item)
+        explicit_purchase = (explicit_status == "explicit"
+                             and item["transaction_type"] in (None, "expense")
+                             and item["account_kind"] == "CHECKING"
+                             and not confirmed_cash and not transfer)
+        cash_withdrawal = confirmed_cash or (not transfer and explicit_purchase)
         if cash_withdrawal:
             cash_withdrawal_count += 1
-            principal = _cash_principal(item)
+            principal = _cash_principal(item) if confirmed_cash else explicit_principal
             gross = -money(item["amount"])
             noncash = gross - principal
             if cash_withdrawals is not None:
@@ -317,12 +323,13 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
             if noncash == 0:
                 continue
             item["amount"] = _format(-noncash)
-            item["category_id"] = None
-            item["category_label"] = "Gebühren / Kaufanteil einer Bargeldabhebung"
-            purchase_category = _cash_purchase_category(store, item, noncash)
-            if purchase_category is not None:
-                item["category_id"] = purchase_category["id"]
-                item["category_label"] = purchase_category["label"]
+            if confirmed_cash:
+                item["category_id"] = None
+                item["category_label"] = "Gebühren / Kaufanteil einer Bargeldabhebung"
+                purchase_category = _cash_purchase_category(store, item, noncash)
+                if purchase_category is not None:
+                    item["category_id"] = purchase_category["id"]
+                    item["category_label"] = purchase_category["label"]
             item["transaction_type"] = "expense"
             # The residual is an ordinary expense, not a transfer or cash receipt.
             transfer = None
@@ -382,11 +389,14 @@ def _include_open_historical_rows(ledger_rows):
 
 def _cash_receipt_rows(store, month, item_id):
     """Return confirmed Bonsy cash allocations, capped against duplicate payment links."""
+    transfer_predicate = sql_transfer_predicate(alias="t", context_alias="c")
     rows = store.db.execute(
         "SELECT ca.entry_id,ca.account_id,ca.external_id,ca.allocated_amount,"
         "r.document_id,r.occurred_at,r.vendor,r.total,r.currency AS receipt_currency,"
         "t.amount,t.category,c.counterparty,c.description,"
         "t.currency AS transaction_currency,o.category_id,o.confirmed,"
+        "cat.transaction_type,"
+        f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer,"
         "a.kind AS account_kind,a.owner AS account_owner "
         "FROM bonsy_cash_allocations ca "
         "JOIN bonsy_receipts r USING(entry_id) "
@@ -395,6 +405,7 @@ def _cash_receipt_rows(store, month, item_id):
         "JOIN accounts a ON a.id=ca.account_id "
         "LEFT JOIN transaction_context c USING(account_id,external_id) "
         "LEFT JOIN classification_overrides o USING(account_id,external_id) "
+        "LEFT JOIN category_catalog cat ON cat.id=o.category_id "
         "WHERE substr(r.occurred_at,1,7)<=? AND d.status='confirmed' "
         "ORDER BY r.occurred_at,ca.entry_id,ca.account_id,ca.external_id",
         (month,),
@@ -405,9 +416,15 @@ def _cash_receipt_rows(store, month, item_id):
     withdrawal_amounts = {}
     for row in rows:
         if (row["receipt_currency"] != "EUR" or row["transaction_currency"] != "EUR"
-                or row["confirmed"] != 1
-                or canonical_category_id(store, row["category_id"]) != "AUSGABEN_BARGELD"
                 or money(row["amount"]) >= 0):
+            continue
+        confirmed_cash = (row["confirmed"] == 1 and canonical_category_id(
+            store, row["category_id"]) == "AUSGABEN_BARGELD")
+        explicit_status, explicit_principal = explicit_cash_component(row)
+        if not confirmed_cash and not (not row["is_transfer"]
+                                       and row["account_kind"] == "CHECKING"
+                                       and row["transaction_type"] in (None, "expense")
+                                       and explicit_status == "explicit"):
             continue
         receipt_key = row["entry_id"]
         if receipt_key not in remaining_by_receipt:
@@ -419,7 +436,8 @@ def _cash_receipt_rows(store, month, item_id):
                 money(row["total"]) - direct_paid, Decimal("0.00"))
         withdrawal_key = (row["account_id"], row["external_id"])
         if withdrawal_key not in withdrawal_amounts:
-            withdrawal_amounts[withdrawal_key] = _cash_principal(row)
+            withdrawal_amounts[withdrawal_key] = (_cash_principal(row) if confirmed_cash
+                                                   else explicit_principal)
         withdrawal_remaining = max(
             withdrawal_amounts[withdrawal_key]
             - allocated_by_withdrawal.get(withdrawal_key, Decimal("0.00")),
@@ -1606,13 +1624,15 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
     if include_details:
         transfer_predicate = sql_transfer_predicate(alias="t", context_alias="c")
         transaction_sql = (
-            f"SELECT t.account_id,t.external_id,t.date,t.amount,t.category,"
+            f"SELECT t.account_id,t.external_id,t.date,t.amount,t.currency,t.category,"
             f"t.transfer_id,c.counterparty,c.description AS context_description,"
-            f"o.category_id,o.confirmed,"
+            f"o.category_id,o.confirmed,cat.transaction_type,a.kind AS account_kind,"
             f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
             f"FROM transactions t "
+            f"JOIN accounts a ON a.id=t.account_id "
             f"LEFT JOIN transaction_context c USING(account_id,external_id) "
             f"LEFT JOIN classification_overrides o USING(account_id,external_id) "
+            f"LEFT JOIN category_catalog cat ON cat.id=o.category_id "
             f"WHERE t.date BETWEEN ? AND ? AND t.account_id IN ({placeholders}) "
             f"ORDER BY t.date,t.account_id")
     else:
@@ -1640,8 +1660,15 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
             item["description"] = row["context_description"] or ""
             item["counterparty"] = row["counterparty"] or ""
             row_movement = {field: Decimal("0.00") for field in movement_fields}
-            if _confirmed_cash_withdrawal(store, item):
-                principal = min(_cash_principal(item), -delta)
+            confirmed_cash = _confirmed_cash_withdrawal(store, item)
+            explicit_status, explicit_principal = explicit_cash_component(item)
+            explicit_purchase = (explicit_status == "explicit"
+                                 and row["transaction_type"] in (None, "expense")
+                                 and row["account_kind"] == "CHECKING" and not confirmed_cash)
+            if row["currency"] == "EUR" and (confirmed_cash or (not row["is_transfer"]
+                                                               and explicit_purchase)):
+                principal = min(_cash_principal(item) if confirmed_cash else explicit_principal,
+                                -delta)
                 row_movement["cash_withdrawals"] = principal
                 row_movement["other_outflow"] = -delta - principal
             elif row["is_transfer"]:

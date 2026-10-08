@@ -1,4 +1,4 @@
-"""Bounded parser and immutable archive for ING current-period MT940 snapshots."""
+"""Bounded parser and immutable archive for ING/Postbank MT940 periods."""
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -26,6 +26,7 @@ MAX_ROWS = 100_000
 MAX_TEXT = 8192
 _CURRENCY = re.compile(r'[A-Z]{3}', re.ASCII)
 _SOURCE_ACCOUNT = re.compile(r'[^\x00-\x20\x7f]{1,120}\Z')
+_KINDS = {'ING': 'ing-period', 'POSTBANK': 'postbank-period'}
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,7 @@ class PeriodSnapshot:
 
 
 def _fail():
-    raise StatementError('ING-Periodenabruf ist ungültig oder unvollständig.')
+    raise StatementError('Bank-Periodenabruf ist ungültig oder unvollständig.')
 
 
 def _cash(value):
@@ -95,7 +96,7 @@ def _optional_text(data, key):
 def validate_period(snapshot):
     if type(snapshot) is not PeriodSnapshot:
         _fail()
-    if snapshot.source_profile != 'ING' or type(snapshot.source_profile) is not str:
+    if type(snapshot.source_profile) is not str or snapshot.source_profile not in _KINDS:
         _fail()
     if (type(snapshot.source_account) is not str
             or _SOURCE_ACCOUNT.fullmatch(snapshot.source_account) is None):
@@ -135,14 +136,14 @@ def validate_period(snapshot):
 
 def period_source_key(snapshot):
     validate_period(snapshot)
-    raw = json.dumps(['ING', snapshot.source_account], separators=(',', ':'),
+    raw = json.dumps([snapshot.source_profile, snapshot.source_account], separators=(',', ':'),
                      ensure_ascii=False).encode('utf-8')
     return hashlib.sha256(raw).hexdigest()
 
 
 def period_key(snapshot):
     validate_period(snapshot)
-    raw = json.dumps(['ING', snapshot.source_account, snapshot.month_start.isoformat()],
+    raw = json.dumps([snapshot.source_profile, snapshot.source_account, snapshot.month_start.isoformat()],
                      separators=(',', ':'), ensure_ascii=False).encode('utf-8')
     return hashlib.sha256(raw).hexdigest()
 
@@ -167,7 +168,7 @@ def _payload(snapshot):
     validate_period(snapshot)
     return {
         'schema': 1,
-        'kind': 'ing-period',
+        'kind': _KINDS[snapshot.source_profile],
         'source_profile': snapshot.source_profile,
         'source_account': snapshot.source_account,
         'month_start': snapshot.month_start.isoformat(),
@@ -186,8 +187,10 @@ def _encode(snapshot):
                        separators=(',', ':'), allow_nan=False) + '\n').encode('utf-8')
 
 
-def parse_ing_period(raw: bytes, *, start: date, end: date) -> PeriodSnapshot:
-    """Parse one complete ING account group for a month through an as-of date."""
+def parse_bank_period(raw: bytes, *, source_profile: str, start: date, end: date) -> PeriodSnapshot:
+    """Parse one complete supported bank account group through an as-of date."""
+    if type(source_profile) is not str or source_profile not in _KINDS:
+        _fail()
     if type(raw) is not bytes or not raw or len(raw) > MAX_BYTES:
         _fail()
     if not _exact_date(start) or not _exact_date(end):
@@ -248,9 +251,14 @@ def parse_ing_period(raw: bytes, *, start: date, end: date) -> PeriodSnapshot:
         rows.append(PeriodRow(booked_on, value_on, amount, row_currency,
                               applicant or recipient, description, booking_text))
 
-    snapshot = PeriodSnapshot('ING', source_account, start, end, first[3], last[4],
+    snapshot = PeriodSnapshot(source_profile, source_account, start, end, first[3], last[4],
                               first[5], last[6], first[7], tuple(rows))
     return validate_period(snapshot)
+
+
+def parse_ing_period(raw: bytes, *, start: date, end: date) -> PeriodSnapshot:
+    """Preserve the original ING parser API and archive identity."""
+    return parse_bank_period(raw, source_profile='ING', start=start, end=end)
 
 
 def read_period_archive(path):
@@ -265,7 +273,8 @@ def read_period_archive(path):
             _fail()
         payload = json.loads(raw)
         if (type(payload) is not dict or type(payload.get('schema')) is not int
-                or payload.get('schema') != 1 or payload.get('kind') != 'ing-period'
+                or payload.get('schema') != 1
+                or payload.get('kind') != _KINDS.get(payload.get('source_profile'))
                 or type(payload.get('rows')) is not list or len(payload['rows']) > MAX_ROWS):
             _fail()
         rows = tuple(PeriodRow(

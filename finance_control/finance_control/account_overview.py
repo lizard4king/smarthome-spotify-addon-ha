@@ -5,7 +5,10 @@ from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 
+from .cash_components import explicit_cash_component
+from .classification import canonical_category_id
 from .core import money
+from .transfer_corrections import sql_transfer_predicate
 
 
 _ZERO = Decimal("0.00")
@@ -80,6 +83,7 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
             previous = money(account["opening"])
 
         inflow = outflow = _ZERO
+        cash_review_count = 0
         by_position = {}
 
         def position(key, label):
@@ -97,10 +101,14 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
 
         by_day = defaultdict(lambda: _ZERO)
         if not future:
+            transfer_predicate = sql_transfer_predicate(alias="t", context_alias="c")
             rows = store.db.execute(
-                "SELECT t.external_id,t.date,t.amount,t.category,"
-                "o.category_id,cat.label AS category_label "
+                "SELECT t.external_id,t.date,t.amount,t.currency,t.category,"
+                "c.counterparty,c.description,o.category_id,o.confirmed,"
+                "cat.label AS category_label,cat.transaction_type,"
+                f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
                 "FROM transactions t "
+                "LEFT JOIN transaction_context c USING(account_id,external_id) "
                 "LEFT JOIN classification_overrides o USING(account_id,external_id) "
                 "LEFT JOIN category_catalog cat ON cat.id=o.category_id "
                 "WHERE t.account_id=? AND t.date BETWEEN ? AND ? "
@@ -109,6 +117,17 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
             for row in rows:
                 value = money(row["amount"])
                 label = row["category_label"] or row["category"] or "Ohne Kategorie"
+                cash_principal = _ZERO
+                if (account["kind"] == "CHECKING" and row["currency"] == "EUR"
+                        and value < 0 and not row["is_transfer"]
+                        and row["transaction_type"] in (None, "expense")
+                        and not (row["confirmed"] == 1 and canonical_category_id(
+                            store, row["category_id"]) == "AUSGABEN_BARGELD")):
+                    status, amount = explicit_cash_component(row)
+                    if status == "explicit":
+                        cash_principal = amount
+                    elif status == "review_required":
+                        cash_review_count += 1
                 assigned_parts = item_allocations.get((account_id, row["external_id"]), ())
                 valid_parts = []
                 for item_id, part in assigned_parts:
@@ -120,13 +139,17 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
                             and ((amount > 0) == (value > 0))):
                         valid_parts.append((item_id, amount))
                 allocated = sum((part for _, part in valid_parts), _ZERO)
-                if abs(allocated) > abs(value):
-                    raise ValueError("Account item allocation exceeds raw posting")
+                purchase_amount = value + cash_principal
+                if abs(allocated) > abs(purchase_amount):
+                    raise ValueError("Account item allocation exceeds purchase component")
                 for item_id, part in valid_parts:
                     add_actual(("item", item_id), items_by_id[item_id]["label"], part)
-                remainder = value - allocated
+                remainder = purchase_amount - allocated
                 if remainder:
                     add_actual(("category", label), label, remainder)
+                if cash_principal:
+                    add_actual(("cash_component", "AUSGABEN_BARGELD"),
+                               "Bargeldauszahlung", -cash_principal)
                 if value >= 0:
                     inflow += value
                 else:
@@ -175,6 +198,7 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
             "start": _fmt(previous) if start_known else None,
             "end": points[-1]["balance"] if end_known and points else None,
             "inflow": _fmt(inflow), "outflow": _fmt(outflow),
+            "cash_review_count": cash_review_count,
             "change": _fmt(inflow - outflow), "plan": account_plan,
             "plan_partial": account_plan is not None,
             "positions": positions, "points": points,

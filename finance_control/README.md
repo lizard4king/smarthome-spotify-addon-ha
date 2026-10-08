@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.20` adds a direct read-only Postbank checking-account import with
+explicit bank/ledger-account selection, authentication-method/device choices,
+full booking texts, a bounded preview and verified monthly control balances.
+Existing categories and receipts are preserved. Ambiguous existing-row matches
+block source adoption. No payments, scheduled fetches or Mastercard source change.
+
 Version `0.2.19` adds owner-scoped, encrypted server credentials and an explicit,
 read-only bank balance request. It requires signed Cloudflare user verification and
 the registered FinTS product ID in the add-on options. Bank credentials are entered

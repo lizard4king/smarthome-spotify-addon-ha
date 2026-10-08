@@ -97,7 +97,12 @@ async function api(route, data, retryAfterTokenRefresh=true) {
     state={...state,...fresh};
     return api(route,data,false);
   }
-  if (!response.ok) throw new Error(result.error || 'Anfrage fehlgeschlagen.'); return result;
+  if (!response.ok) {
+    const error = new Error(result.error || 'Anfrage fehlgeschlagen.');
+    if (typeof result.code === 'string') error.code = result.code;
+    throw error;
+  }
+  return result;
 }
 function cell(row, text, numeric=false) { const td=document.createElement('td'); td.textContent=text; if(numeric) td.className='numeric'; row.append(td); return td; }
 function accountDisplay(account) { return account.display_name ? `${account.id} · ${account.display_name}` : account.id; }

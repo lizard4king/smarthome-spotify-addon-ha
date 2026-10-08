@@ -1542,6 +1542,12 @@ function planActualRenderAccountOverview(result) {
         account.available === false ? 'Kontostand nicht verfügbar.' : null,
         account.note || null].filter(Boolean).join(' · ');
       if (dates.textContent) card.append(dates);
+      if (Number.isInteger(account.cash_review_count) && account.cash_review_count > 0) {
+        const cashReview = document.createElement('p'); cashReview.className = 'muted';
+        const bookingLabel = account.cash_review_count === 1 ? 'Buchung' : 'Buchungen';
+        cashReview.textContent = `Bargeldanteil bei ${account.cash_review_count} ${bookingLabel} prüfen. Bis dahin wird der volle Abgang ausgewiesen.`;
+        card.append(cashReview);
+      }
       const positions = Array.isArray(account.positions) ? account.positions : [];
       if (positions.length) {
         for (const [assigned, labelText] of [[true, 'Plan zugeordnete Positionen'], [false, 'Weitere Ist-Positionen']]) {

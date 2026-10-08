@@ -28,6 +28,8 @@ from .administration import Administration, AdministrationError
 from .server_banking import ServerBanking
 from .server_balance_gateway import ServerBalanceGateway
 from .server_balance_jobs import ServerBalanceJobs
+from .server_transactions_gateway import ServerTransactionsGateway
+from .server_postbank_jobs import ServerPostbankJobs
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -560,6 +562,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
         administration = server_banking = None
     bank_jobs = (ServerBalanceJobs(ServerBalanceGateway(administration, bank_product_id))
                  if administration is not None else None)
+    postbank_jobs = (ServerPostbankJobs(
+        ServerTransactionsGateway(administration, bank_product_id), app.database)
+                    if administration is not None else None)
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -760,6 +765,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/administration.css': ('administration.css', 'text/css; charset=utf-8'),
                       '/server-banking.js': ('server-banking.js', 'text/javascript; charset=utf-8'),
                       '/server-banking.css': ('server-banking.css', 'text/css; charset=utf-8'),
+                      '/postbank-transactions.js': ('postbank-transactions.js', 'text/javascript; charset=utf-8'),
+                      '/postbank-transactions.css': ('postbank-transactions.css', 'text/css; charset=utf-8'),
                       '/bank-postbank.svg': ('bank-postbank.svg', 'image/svg+xml'),
                       '/bank-sparkasse.png': ('bank-sparkasse.png', 'image/png'),
                       '/bank-ing.svg': ('bank-ing.svg', 'image/svg+xml'),
@@ -908,6 +915,14 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                         return self.reply(200, bank_jobs.start(self.management_user, data))
                     if action == 'bank-balances-state':
                         return self.reply(200, bank_jobs.state(self.management_user, data))
+                    if action == 'postbank-targets':
+                        return self.reply(200, postbank_jobs.targets(self.management_user, data))
+                    if action == 'postbank-read':
+                        return self.reply(200, postbank_jobs.start(self.management_user, data))
+                    if action == 'postbank-state':
+                        return self.reply(200, postbank_jobs.state(self.management_user, data))
+                    if action == 'postbank-commit':
+                        return self.reply(200, postbank_jobs.commit(self.management_user, data))
                     result = administration.change(self.management_user, action, data)
                     return self.reply(200, result if result.get('removed') else {'enabled': True, **result})
                 return self.reply(200, app.action(urlsplit(self.path).path, data))

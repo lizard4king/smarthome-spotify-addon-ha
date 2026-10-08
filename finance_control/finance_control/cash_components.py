@@ -14,12 +14,74 @@ _CASH_FEE = re.compile(
     r"\b(?:Fremdentgelt|Geb(?:ü|ue)hr(?:en)?|Fees?)" + _EUR_AMOUNT,
     re.IGNORECASE,
 )
+_FEE_LABEL = re.compile(r"\b(?:Fremdentgelt|Geb(?:ü|ue)hr(?:en)?|Fees?)\b", re.IGNORECASE)
 _VALID_AMOUNT = re.compile(r"(?:\d{1,3}(?:\.\d{3})*,\d{2}|\d+\.\d{2}|\d+)")
+_EXPLICIT_CASH_LABEL = re.compile(
+    r"\b(?:Bargeldausz(?:ahlung)?\.(?=\d)|"
+    r"(?:Bargeldausz(?:ahlung)?\.?|Barauszahlung|cash\s+withdrawal)(?=\W|$))",
+    re.IGNORECASE,
+)
+# The leading-EUR form needs its own right boundary: without it, regex matching
+# accepts ``EUR 20,00abc`` as the valid prefix ``EUR 20,00``.
+_EXPLICIT_AMOUNT = re.compile(
+    r"\s*[:=]?\s*(?:EUR\s+([+-]?\d[\d.,]*)(?![\w.,])|([+-]?\d[\d.,]*)\s+EUR\b)",
+    re.IGNORECASE,
+)
 
 
 def cash_receipt_key(entry_id, account_id):
     """Build a cash receipt key; callers compare it whole rather than split it."""
     return f"bonsy-cash:{entry_id}:{account_id}"
+
+
+def explicit_cash_component(row, *, allow_fee=False):
+    """Return (status, principal) only for one explicit, cent-exact EUR label.
+
+    The caller must separately establish a non-transfer expense. A neutral
+    ``Auszahlung`` and a confirmed cash category alone do not qualify here.
+    """
+    columns = row.keys()
+    if ("currency" in columns and row["currency"] != "EUR"):
+        return "none", Decimal("0.00")
+    text = " ".join(str(row[key] or "") for key in
+                    ("category", "source_category", "counterparty", "description")
+                    if key in columns)
+    markers = list(_EXPLICIT_CASH_LABEL.finditer(text))
+    if not markers:
+        return "none", Decimal("0.00")
+    if len(markers) != 1:
+        return "review_required", Decimal("0.00")
+    amount_match = _EXPLICIT_AMOUNT.match(text, markers[0].end())
+    if amount_match is None:
+        return "review_required", Decimal("0.00")
+    token = amount_match.group(1) or amount_match.group(2)
+    if _VALID_AMOUNT.fullmatch(token) is None:
+        return "review_required", Decimal("0.00")
+    try:
+        principal = (money(token.replace(".", "").replace(",", "."))
+                     if "," in token else money(token))
+        debit = -money(row["amount"])
+    except (KeyError, ValueError):
+        return "review_required", Decimal("0.00")
+    if principal <= 0 or debit <= 0 or principal > debit:
+        return "review_required", Decimal("0.00")
+    fees = _CASH_FEE.findall(text)
+    if len(list(_FEE_LABEL.finditer(text))) != len(fees):
+        return "review_required", Decimal("0.00")
+    if fees:
+        if not allow_fee or len(fees) != 1:
+            return "review_required", Decimal("0.00")
+        fee_token = fees[0][0] or fees[0][1]
+        if _VALID_AMOUNT.fullmatch(fee_token) is None:
+            return "review_required", Decimal("0.00")
+        try:
+            fee = (money(fee_token.replace(".", "").replace(",", "."))
+                   if "," in fee_token else money(fee_token))
+        except ValueError:
+            return "review_required", Decimal("0.00")
+        if fee < 0 or principal + fee > debit:
+            return "review_required", Decimal("0.00")
+    return "explicit", principal
 
 
 def cash_principal(row):

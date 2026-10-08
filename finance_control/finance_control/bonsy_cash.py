@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
 
 from .bonsy_vouchers import voucher_total
-from .cash_components import cash_principal
+from .cash_components import cash_principal, explicit_cash_component
 from .classification import (
     _audit,
     _cash_withdrawal_evidence,
@@ -31,23 +31,37 @@ def _source_excluded(warnings):
 
 def _withdrawals(store):
     rows = store.db.execute(
-        f"""SELECT t.account_id,t.external_id,t.date,t.amount,a.owner,
-                  t.category AS source_category,o.category_id AS category,
+        f"""SELECT t.account_id,t.external_id,t.date,t.amount,t.currency,a.owner,
+                  a.kind AS account_kind,cat.transaction_type,
+                  t.category AS source_category,o.category_id AS category,o.confirmed,
                   c.counterparty,c.description,
                   COALESCE(NULLIF(a.display_name,''),a.id) AS account_label
            FROM transactions t
            JOIN accounts a ON a.id=t.account_id
-           JOIN classification_overrides o
+           LEFT JOIN classification_overrides o
              ON o.account_id=t.account_id AND o.external_id=t.external_id
-            AND o.confirmed=1 AND o.category_id='AUSGABEN_BARGELD'
+           LEFT JOIN category_catalog cat ON cat.id=o.category_id
            LEFT JOIN transaction_context c
              ON c.account_id=t.account_id AND c.external_id=t.external_id
            WHERE CAST(t.amount AS REAL)<0 AND t.currency='EUR'
+             AND ((o.confirmed=1 AND o.category_id='AUSGABEN_BARGELD')
+                  OR (a.kind='CHECKING' AND
+                      (o.category_id IS NULL OR cat.transaction_type='expense')))
              AND NOT COALESCE({sql_transfer_predicate(context_alias='c')},0)
            ORDER BY t.date,t.account_id,t.external_id""").fetchall()
     result = []
     for row in rows:
-        amount = cash_principal(row)
+        confirmed_cash = row['category'] == 'AUSGABEN_BARGELD' and row['confirmed'] == 1
+        if confirmed_cash:
+            amount = cash_principal(row)
+        elif row['account_kind'] == 'CHECKING':
+            status, amount = explicit_cash_component(row)
+            if status != 'explicit':
+                continue
+        else:
+            continue
+        if amount <= 0:
+            continue
         allocated = sum((money(link[0]) for link in store.db.execute(
             'SELECT allocated_amount FROM bonsy_cash_allocations '
             'WHERE account_id=? AND external_id=?',

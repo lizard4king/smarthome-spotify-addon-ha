@@ -242,10 +242,30 @@
       consentLabel.append(consent, node('span', 'Ich bestätige, dass dieser Zugang auf dem Server gespeichert werden soll.'));
       const save = node('button', 'Zugang auf Server speichern', 'fsb-primary');
       save.type = 'submit';
+      const editCredentials = node('button', 'Zugangsdaten ändern', 'fsb-secondary fsb-edit-credentials');
+      editCredentials.type = 'button';
+      editCredentials.hidden = !credentialPresent;
       const formMessage = node('p', '', 'fsb-form-message');
       formMessage.setAttribute('role', 'status');
       form.append(usernameLabel, pinLabel, consentLabel, save, formMessage);
+      form.hidden = credentialPresent;
       card.append(form);
+      card.append(editCredentials);
+      editCredentials.addEventListener('click', () => {
+        if (busy || !credentialPresent) return;
+        if (form.hidden) {
+          form.hidden = false;
+          editCredentials.textContent = 'Änderung abbrechen';
+          username.focus();
+          return;
+        }
+        username.value = '';
+        pin.value = '';
+        consent.checked = false;
+        form.hidden = true;
+        editCredentials.textContent = 'Zugangsdaten ändern';
+        setStatus(formMessage, '');
+      });
 
       const readPanel = node('div', '', 'fsb-balance-panel');
       const readButton = node('button', 'Kontostände abrufen', 'fsb-read-button');
@@ -303,6 +323,16 @@
       }
       readPanel.append(readButton, readStatus, results);
       card.append(readPanel);
+      if (source.bankId === 'POSTBANK' && window.postbankTransactions) {
+        const transactionsPanel = node('div', '', 'fsb-transactions-panel');
+        card.append(transactionsPanel);
+        if (credentialPresent) {
+          window.postbankTransactions.bind(transactionsPanel,
+            {id: connection.id, revision: connection.revision, bankId: source.bankId}, refresh);
+        } else {
+          transactionsPanel.append(node('p', 'Hinterlege den Zugang auf dem Server, um Postbank-Buchungen direkt abzurufen.', 'fsb-notice'));
+        }
+      }
 
       let removing = false;
       let removalForm = null;
@@ -359,6 +389,11 @@
         readButton.disabled = true;
         readButton.dataset.credentialsPresent = 'false';
         setStatus(indicator, 'Keine Zugangsdaten auf dem Server hinterlegt.');
+        form.hidden = false;
+        editCredentials.hidden = true;
+        username.value = '';
+        pin.value = '';
+        consent.checked = false;
         removeButton.hidden = true;
         removeForm.hidden = true;
         removing = false;
@@ -414,11 +449,14 @@
         readButton.disabled = false;
         readButton.dataset.credentialsPresent = 'true';
         consent.checked = false;
+        form.hidden = true;
+        editCredentials.hidden = false;
+        editCredentials.textContent = 'Zugangsdaten ändern';
         setStatus(indicator, 'Zugangsdaten sind auf dem Server hinterlegt.');
         if (removalForm) {
           removalForm.hidden = true;
           removalForm.querySelector('input[type="checkbox"]').checked = false;
-          card.querySelector('button.fsb-secondary').hidden = false;
+          removeButton.hidden = false;
         }
         setStatus(status, 'Zugang auf Server gespeichert. Kontostände können per Klick einmalig gelesen werden.');
         refresh();

@@ -141,6 +141,27 @@
   };
   // Used only for non-negative category outflow totals.
   const moneyFromCents = (value, currency) => money(`${value / 100n}.${String(value % 100n).padStart(2, '0')}`, currency);
+  const componentRows = (item, fallbackCurrency) => {
+    if (item?.cash_split?.status !== 'explicit' || !Array.isArray(item.components) || item.components.length < 1) return [];
+    if (item.components.length === 1 && item.components[0]?.component_type !== 'cash_transfer') return [];
+    const original = cents(item.amount);
+    const currency = item.currency || fallbackCurrency || 'EUR';
+    if (original === null || original >= 0n) return [];
+    const entries = item.components.map(component => ({
+      component,
+      value: cents(component?.amount),
+      currency: component?.currency || currency,
+    }));
+    if (entries.some(entry => entry.value === null || entry.value >= 0n || entry.currency !== currency)) return [];
+    if (entries.reduce((sum, entry) => sum + entry.value, 0n) !== original) return [];
+    return entries;
+  };
+  const componentName = component => ({purchase:'Einkauf',cash_transfer:'Bargeldauszahlung'}[component?.component_type]
+    || component?.category || 'Teilbetrag');
+  const componentSummaryAmount = (value, currency) => {
+    const formatted = moneyFromCents(value < 0n ? -value : value, currency || 'EUR');
+    return currency === 'EUR' || !currency ? formatted.replace(/ EUR$/, ' €') : formatted;
+  };
   const tone = value => value === null || value === undefined || value === '' ? 'unknown'
     : String(value).trim().startsWith('-') ? 'negative' : 'positive';
   const date = value => {
@@ -265,13 +286,16 @@
     add(section, 'p', 'fd-category-account', `${account.owner_label || account.owner || 'Konto'} · ${accountName(account)}`);
     const groups = new Map();
     for (const item of bookings().filter(entry => String(entry.account_id) === selected)) {
-      const value = cents(item.amount);
-      if (value === null || value >= 0n) continue;
-      const currency = item.currency || account.currency || 'EUR';
-      const category = item.category || 'Ohne Kategorie';
-      const key = `${currency}\u0000${category}`;
-      const prior = groups.get(key) || {category,currency,value:0n};
-      prior.value += -value; groups.set(key,prior);
+      const components = componentRows(item,account.currency);
+      const amounts = components.length
+        ? components.map(({component,value}) => ({category:component.category || 'Ohne Kategorie',currency:component.currency || item.currency || account.currency || 'EUR',value}))
+        : [{category:item.category || 'Ohne Kategorie',currency:item.currency || account.currency || 'EUR',value:cents(item.amount)}];
+      for (const entry of amounts) {
+        if (entry.value === null || entry.value >= 0n) continue;
+        const key = `${entry.currency}\u0000${entry.category}`;
+        const prior = groups.get(key) || {category:entry.category,currency:entry.currency,value:0n};
+        prior.value += -entry.value; groups.set(key,prior);
+      }
     }
     if (!groups.size) { add(section, 'p', 'fd-empty', 'Keine Abgänge im Monat.'); return section; }
     const ordered = [...groups.values()].sort((a,b) => a.currency.localeCompare(b.currency) || (a.value > b.value ? -1 : a.value < b.value ? 1 : a.category.localeCompare(b.category)));
@@ -308,7 +332,16 @@
     const counterparty = add(row, 'td', 'fd-booking-counterparty');
     if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), item);
     else counterparty.textContent = item.counterparty || item.description || 'Ohne Gegenpartei';
-    add(row, 'td', 'fd-booking-description', item.description || '—');
+    const description = add(row, 'td', 'fd-booking-description');
+    add(description, 'span', '', item.description || '—');
+    const components = componentRows(item,account.currency);
+    if (components.length) {
+      add(description, 'span', 'fd-booking-cash-split', `Davon ${components.map(({component,value}) =>
+        `${componentName(component)} ${componentSummaryAmount(value,component.currency || item.currency || account.currency || 'EUR')}`
+      ).join(' · ')}`);
+    } else if (item.cash_split?.status === 'review_required') {
+      add(description, 'span', 'fd-booking-cash-review', 'Bargeldanteil prüfen');
+    }
     const category = add(row, 'td', 'fd-booking-category');
     iconLabel(category, 'fd-category-name', categoryIcon(item.category), item.category || 'Ohne Kategorie');
     add(row, 'td', `fd-booking-amount ${tone(item.amount)}`, money(item.amount, item.currency || account.currency, true));
@@ -329,6 +362,22 @@
     });
     for (const [label, value] of [['Gegenpartei', item.counterparty], ['Verwendungszweck', item.description], ['Kategorie', item.category], ['Datum', date(item.date)]]) {
       const row = add(body, 'div'); add(row, 'span', '', label); add(row, 'p', '', value || '—');
+    }
+    const originalAmount = add(body, 'div', 'fd-booking-original-amount');
+    add(originalAmount, 'span', '', 'Originalbetrag');
+    add(originalAmount, 'p', '', money(item.amount,item.currency || account.currency,true));
+    if (components.length) {
+      const breakdown = add(body, 'div', 'fd-booking-component-breakdown');
+      add(breakdown, 'span', '', 'Aufteilung des Buchungsbetrags');
+      const list = add(breakdown, 'div', 'fd-booking-components');
+      for (const {component,value} of components) {
+        const line = add(list, 'p', 'fd-booking-component');
+        add(line, 'span', '', `${componentName(component)} · ${component.category || 'Ohne Kategorie'}`);
+        add(line, 'strong', '', money(component.amount,component.currency || item.currency || account.currency,true));
+      }
+      add(breakdown, 'p', 'fd-booking-cash-note', 'Die Bargeldauszahlung verschiebt Vermögen vom Girokonto in das Barvermögen; sie ist keine zusätzliche Ausgabe.');
+    } else if (item.cash_split?.status === 'review_required') {
+      add(body, 'p', 'fd-booking-cash-review-detail', 'Bargeldanteil prüfen. Die vorhandene Buchung bleibt unverändert, bis eine Aufteilung vorliegt.');
     }
     if (item.external_id != null) {
       const edit = add(body, 'button', 'fd-booking-edit', 'Kategorie und Belege bearbeiten');
