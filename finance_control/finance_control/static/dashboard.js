@@ -298,7 +298,9 @@
   function bookingRow(parent, item, account, index) {
     const row = add(parent, 'tr', 'fd-booking');
     add(row, 'td', 'fd-booking-date', date(item.date));
-    add(row, 'td', 'fd-booking-counterparty', item.counterparty || item.description || 'Ohne Gegenpartei');
+    const counterparty = add(row, 'td', 'fd-booking-counterparty');
+    if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), item);
+    else counterparty.textContent = item.counterparty || item.description || 'Ohne Gegenpartei';
     add(row, 'td', 'fd-booking-description', item.description || '—');
     const category = add(row, 'td', 'fd-booking-category');
     iconLabel(category, 'fd-category-name', categoryIcon(item.category), item.category || 'Ohne Kategorie');

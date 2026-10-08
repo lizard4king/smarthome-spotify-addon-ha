@@ -27,7 +27,7 @@ main>nav[aria-label="Bereiche"] a{min-width:0}
 #administration #adm-dialog p{overflow-wrap:anywhere}
 #administration .adm-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
 @media(max-width:760px){
-  main>nav[aria-label="Bereiche"]{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  main>nav[aria-label="Bereiche"]{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
   main>nav[aria-label="Bereiche"] a[role="tab"]{padding:7px 3px;font-size:11px;line-height:1.15;text-align:center;white-space:normal;overflow-wrap:anywhere}
   #administration .adm-heading{display:block}
   #administration .adm-heading button{margin-top:8px}

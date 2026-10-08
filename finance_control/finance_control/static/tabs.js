@@ -3,7 +3,7 @@
 const cockpitNav = document.querySelector('nav[aria-label="Bereiche"]');
 const cockpitAnnouncement = document.getElementById('active-area-announcement');
 const cockpitAreas = {
-  dashboard: 'Buchungen', 'category-outflows': 'Abgänge nach Kategorie', administration: 'Verwaltung', 'plan-actual': 'Plan & Ist', classification: 'Buchungen bearbeiten', planning: 'Planung',
+  dashboard: 'Buchungen', 'category-outflows': 'Abgänge nach Kategorie', purchases: 'Einkäufe & Belege', administration: 'Verwaltung', 'plan-actual': 'Plan & Ist', classification: 'Buchungen bearbeiten', planning: 'Planung',
   scenarios: 'Planvarianten', accounts: 'Konten', finanzguru: 'Finanzguru-Import',
   intake: 'Vorbereiteter Import', documents: 'Belege', overview: 'Überblick',
   wealth: 'Vermögen', monthly: 'Monatsauswertung', approvals: 'Freigaben', analytics: 'Auswertung',

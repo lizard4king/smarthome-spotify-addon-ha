@@ -18,6 +18,7 @@ async function cockpitLoadArea(id, {force = false} = {}) {
   const loaders = {
     dashboard: async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard); },
     'category-outflows': async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard, 'category-outflows'); },
+    purchases: async () => { if (typeof window.financePurchasesLoad === 'function') await window.financePurchasesLoad(); },
     administration: async () => { if (typeof window.administrationLoad === 'function') await window.administrationLoad(); },
     'plan-actual': async reload => {
       if (typeof planActualEnsureLoaded !== 'function') return;
@@ -75,6 +76,10 @@ document.addEventListener('cockpit-area-changed', event => {
   // Both views share selection state and must repaint when becoming visible.
   const sharedAccountView = ['dashboard', 'category-outflows'].includes(event.detail.id);
   void cockpitLoadArea(event.detail.id, {force: sharedAccountView});
+});
+document.addEventListener('finance-purchase-edit', event => {
+  if (Number.isInteger(event.detail?.id) && typeof classificationOpenComparison === 'function')
+    void run(() => classificationOpenComparison(event.detail.id));
 });
 document.addEventListener('DOMContentLoaded', () => {
   cockpitFeaturesReady = true;

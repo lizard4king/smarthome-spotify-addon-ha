@@ -1,7 +1,8 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.17` adds official bank marks and category icons, verified Cloudflare Access
-user administration, and registration of supported banks in the application. Bank
+Version `0.2.18` adds merchant logos, a purchases and receipts workspace, and explicit
+selection of individual Finanzguru source accounts. Version `0.2.17` introduced signed
+Cloudflare user verification and bank registration. Bank
 registration is local setup metadata only (`LOCAL_SETUP_REQUIRED`); bank credentials
 remain on the local Windows installation. No remote bank connection or live bank setup
 is implemented.

@@ -203,6 +203,33 @@ def load_batch(root, batch):
     return folder, staged
 
 
+def selected_source_rows(staged, choices):
+    """Validate an explicit source subset before any ledger or transfer decision."""
+    all_rows = staged['rows']
+    available = {row['source_account'] for row in all_rows}
+    if 'selected_sources' not in choices:
+        return all_rows, set(available), []
+    selected = choices['selected_sources']
+    if (not isinstance(selected, list) or not selected
+            or any(not isinstance(source, str) or not source for source in selected)
+            or len(set(selected)) != len(selected) or not set(selected) <= available):
+        raise ValueError('invalid_selected_sources')
+    selected = set(selected)
+    return ([row for row in all_rows if row['source_account'] in selected], selected,
+            [row for row in all_rows if row['source_account'] not in selected])
+
+
+def validate_selected_transfer_pairs(all_rows, pairs, selected):
+    """Do not silently import one leg of a confirmed pair with its peer excluded."""
+    references = {row['reference']: row for row in all_rows}
+    for pair in pairs:
+        if not isinstance(pair, list) or len(pair) != 2:
+            continue  # The existing pair validator reports malformed pairs.
+        if all(isinstance(ref, str) and ref in references for ref in pair):
+            if any(references[ref]['source_account'] not in selected for ref in pair):
+                raise ValueError('transfer_pair_source_not_selected')
+
+
 def prepare(store, staged, choices):
     """Evaluate decisions against the current ledger; never guesses ownership/transfers."""
     accounts = {a['id']: a for a in store.accounts()}
@@ -212,8 +239,8 @@ def prepare(store, staged, choices):
         raise TypeError('invalid_choices')
     if choices.get('transfers_reviewed') is not True:
         raise ValueError('transfer_review_required')
-    all_rows = staged['rows']
-    source_accounts = {r['source_account'] for r in all_rows}
+    all_rows, source_accounts, unselected_rows = selected_source_rows(staged, choices)
+    validate_selected_transfer_pairs(staged['rows'], pairs, source_accounts)
     if set(mapping) != source_accounts or any(target not in accounts for target in mapping.values()):
         raise ValueError('complete_account_mapping_required')
     if len(set(mapping.values())) != len(mapping):
@@ -277,6 +304,13 @@ def prepare(store, staged, choices):
     by_date_amount = {(r[0], r[2], r[3]) for r in ledger}
     seen, detail, proposed, import_rows = {}, [], [], []
     counts = Counter({'after_date_to': len(excluded_after_date)}) if excluded_after_date else Counter()
+    if unselected_rows:
+        counts['source_not_selected'] = len(unselected_rows)
+        for row in unselected_rows:
+            detail.append({'reference': row['reference'], 'source_account': row['source_account'],
+                           'date': row['date'], 'amount': row['amount'],
+                           'category': row['category'], 'status': 'source_not_selected',
+                           'transfer': False})
     if direct_sources:
         counts['direct_bank_source'] = sum(row['source_account'] in direct_sources for row in all_rows)
         for row in all_rows:
@@ -409,11 +443,16 @@ def commit_batch(store, root, batch, choices, review_token):
     # Optional enrichment happens after the atomic ledger commit. A failure
     # must never make a successful import look safe to repeat.
     from .transfer_corrections import auto_confirm_wallet_topups
-    try:
-        transfer_review = auto_confirm_wallet_topups(store)
-    except Exception:
-        transfer_review = {'status': 'failed', 'confirmed': 0, 'pair_ids': [],
-                           'message': 'Automatische Aufladungen blieben zur Prüfung offen.'}
+    if 'selected_sources' in choices:
+        # The global matcher can pair with a previously imported, now skipped
+        # source. A selected import must leave such dependent decisions alone.
+        transfer_review = {'status': 'skipped', 'confirmed': 0, 'pair_ids': []}
+    else:
+        try:
+            transfer_review = auto_confirm_wallet_topups(store)
+        except Exception:
+            transfer_review = {'status': 'failed', 'confirmed': 0, 'pair_ids': [],
+                               'message': 'Automatische Aufladungen blieben zur Prüfung offen.'}
     from .local_model import review_transactions
     keys = [{'account_id': account_id, 'external_id': record[1]}
             for _, account_id, record in import_rows]

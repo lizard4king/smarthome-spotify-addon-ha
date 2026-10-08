@@ -159,6 +159,9 @@ class Cockpit:
         store = Store(self.database)
         initial_changes = store.db.total_changes
         try:
+            if route == '/api/purchases':
+                from .purchases import list_purchases
+                return list_purchases(store, data)
             if route.startswith('/api/transfer-correction-'):
                 from . import transfer_corrections
                 actions = {'suggestions': transfer_corrections.suggestions, 'save': transfer_corrections.save,
@@ -738,6 +741,19 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/bank-ing.svg': ('bank-ing.svg', 'image/svg+xml'),
                       '/bank-paypal.png': ('bank-paypal.png', 'image/png'),
                       '/lucide-LICENSE.txt': ('lucide-LICENSE.txt', 'text/plain; charset=utf-8'),
+                      '/counterparties.js': ('counterparties.js', 'text/javascript; charset=utf-8'),
+                      '/counterparties.css': ('counterparties.css', 'text/css; charset=utf-8'),
+                      '/purchases.js': ('purchases.js', 'text/javascript; charset=utf-8'),
+                      '/purchases.css': ('purchases.css', 'text/css; charset=utf-8'),
+                      '/brand-aldi-sued.ico': ('brand-aldi-sued.ico', 'image/x-icon'),
+                      '/brand-amazon.ico': ('brand-amazon.ico', 'image/x-icon'),
+                      '/brand-dm.png': ('brand-dm.png', 'image/png'),
+                      '/brand-google.ico': ('brand-google.ico', 'image/x-icon'),
+                      '/brand-kaufland.png': ('brand-kaufland.png', 'image/png'),
+                      '/brand-lidl.svg': ('brand-lidl.svg', 'image/svg+xml'),
+                      '/brand-mediamarkt.png': ('brand-mediamarkt.png', 'image/png'),
+                      '/brand-obi.png': ('brand-obi.png', 'image/png'),
+                      '/brand-rewe.ico': ('brand-rewe.ico', 'image/x-icon'),
                       '/tabs.js': ('tabs.js', 'text/javascript; charset=utf-8'),
                       '/finanzguru.js': ('finanzguru.js', 'text/javascript; charset=utf-8'),
                       '/monthly.js': ('monthly.js', 'text/javascript; charset=utf-8'),
