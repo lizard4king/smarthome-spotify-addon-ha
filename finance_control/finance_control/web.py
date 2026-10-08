@@ -1,4 +1,4 @@
-"""Single-user localhost cockpit, standard-library server, no external assets."""
+"""Household cockpit with optional verified Cloudflare identities and local assets."""
 import argparse
 import base64
 import hashlib
@@ -23,6 +23,8 @@ from .household import normalize_profile, template_profile
 from .import_preview import outside_repository
 from .person_attribution import person_label
 from .planning import decimal_text, export_projection, month_end, parse_plan, projection
+from .access_identity import IdentityError, configured_identity
+from .administration import Administration, AdministrationError
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -527,7 +529,7 @@ def _normalized_origin(value):
 
 
 def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_origins=None,
-                access_token=None):
+                access_token=None, identity_verifier=None, bootstrap_emails=()):
     """Create the cockpit server.
 
     ``access_token=None`` keeps the historic behaviour (Host/Origin/CSRF checks only),
@@ -538,6 +540,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
     if access_token is not None and len(access_token) < MIN_ACCESS_TOKEN:
         raise ValueError('Zugriffstoken zu kurz.')
     session_value = _session_value(access_token) if access_token is not None else None
+    administration = Administration(app.database) if identity_verifier is not None else None
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -579,6 +582,49 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                         value.encode(), session_value.encode()):
                     return True
             return False
+
+        def require_identity(self, *, discard_body=False):
+            self.management_user = None
+            if identity_verifier is None:
+                return True
+            try:
+                identity = identity_verifier.verify(self.headers.get('Cf-Access-Jwt-Assertion', ''))
+                self.management_user = administration.resolve_identity(identity, bootstrap_emails)
+                return True
+            except (IdentityError, AdministrationError) as error:
+                if discard_body:
+                    self.discard_rejected_body()
+                self.management_error(error)
+                return False
+            except sqlite3.Error:
+                # Identity checks run before route handling, including static GETs.
+                # A busy private store must fail closed with an HTTP response.
+                if discard_body:
+                    self.discard_rejected_body()
+                self.management_error(AdministrationError('identity_store_unavailable', 503))
+                return False
+
+        def management_error(self, error):
+            messages = {
+                'identity_required': 'Deine Cloudflare-Anmeldung fehlt oder ist abgelaufen. Bitte erneut anmelden.',
+                'identity_provider_unavailable': 'Cloudflare-Anmeldung kann derzeit nicht geprüft werden. Bitte später erneut versuchen.',
+                'identity_store_unavailable': 'Deine Benutzerfreigabe kann derzeit nicht geprüft werden. Bitte später erneut versuchen.',
+                'invalid_identity': 'Die angemeldete Benutzeridentität ist ungültig.',
+                'unknown_identity': 'Deine Anmeldung ist noch nicht für dieses Cockpit freigegeben.',
+                'inactive_user': 'Dieses Benutzerkonto wurde entfernt. Bitte den Administrator kontaktieren.',
+                'identity_conflict': 'Die Anmeldung stimmt nicht mit der gespeicherten Benutzerzuordnung überein.',
+                'unauthorized': 'Deine Anmeldung ist nicht mehr freigegeben. Bitte erneut anmelden.',
+                'forbidden': 'Du darfst diese Änderung nicht vornehmen.',
+                'last_admin': 'Der letzte aktive Administrator kann nicht entfernt werden.',
+                'duplicate_email': 'Diese E-Mail-Adresse ist bereits registriert.',
+                'stale_revision': 'Der Eintrag wurde inzwischen geändert. Bitte neu laden und erneut bestätigen.',
+                'confirmation_required': 'Bitte bestätige die Änderung ausdrücklich.',
+                'unknown_user': 'Dieses Benutzerkonto ist nicht mehr aktiv.',
+                'unknown_connection': 'Dieser Bankzugang ist nicht mehr eingetragen.',
+                'administration_disabled': 'Für die Verwaltung muss die persönliche Cloudflare-Anmeldung eingerichtet sein.',
+            }
+            return self.reply(error.status, {'error': messages.get(error.code, 'Eingaben prüfen und erneut bestätigen.'),
+                                              'code': error.code})
 
         def login_page(self, status, error=False):
             page = (LOGIN_PAGE.replace('@@ERROR@@',
@@ -678,11 +724,20 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                                   'text/css; charset=utf-8')
             if not self.authorized():
                 return self.login_required()
+            if not self.require_identity():
+                return
             url = urlsplit(self.path)
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
                       '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
+                      '/administration.js': ('administration.js', 'text/javascript; charset=utf-8'),
+                      '/administration.css': ('administration.css', 'text/css; charset=utf-8'),
+                      '/bank-postbank.svg': ('bank-postbank.svg', 'image/svg+xml'),
+                      '/bank-sparkasse.png': ('bank-sparkasse.png', 'image/png'),
+                      '/bank-ing.svg': ('bank-ing.svg', 'image/svg+xml'),
+                      '/bank-paypal.png': ('bank-paypal.png', 'image/png'),
+                      '/lucide-LICENSE.txt': ('lucide-LICENSE.txt', 'text/plain; charset=utf-8'),
                       '/tabs.js': ('tabs.js', 'text/javascript; charset=utf-8'),
                       '/finanzguru.js': ('finanzguru.js', 'text/javascript; charset=utf-8'),
                       '/monthly.js': ('monthly.js', 'text/javascript; charset=utf-8'),
@@ -724,6 +779,13 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     return self.reply(200, app.state(as_of))
                 except (ValueError, sqlite3.Error):
                     return self.reply(400, {'error': 'Stichtag liegt vor einem Eröffnungssaldo oder ist ungültig.'})
+            if url.path == '/api/administration':
+                if administration is None:
+                    return self.reply(200, {'enabled': False})
+                try:
+                    return self.reply(200, {'enabled': True, **administration.state(self.management_user)})
+                except AdministrationError as error:
+                    return self.management_error(error)
             if url.path == '/api/budget-actual-metadata':
                 return self.reply(200, app.action(url.path, {}))
             return self.reply(404, {'error': 'Nicht gefunden.'})
@@ -741,6 +803,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     or not secrets.compare_digest(self.headers.get('X-Finance-Token', ''), app.token)):
                 self.discard_rejected_body()
                 return self.reply(403, {'error': 'Anfrage nicht freigegeben. Seite neu laden.'})
+            if not self.require_identity(discard_body=True):
+                return
             try:
                 size = int(self.headers.get('Content-Length', '0'))
                 large_uploads = {'/api/fg-stage', '/api/bonsy-import'}
@@ -751,7 +815,15 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 data = json.loads(self.rfile.read(size))
                 if not isinstance(data, dict):
                     raise TypeError('Invalid request')
+                if urlsplit(self.path).path.startswith('/api/administration/'):
+                    if administration is None:
+                        return self.management_error(AdministrationError('administration_disabled', 403))
+                    action = urlsplit(self.path).path.removeprefix('/api/administration/')
+                    result = administration.change(self.management_user, action, data)
+                    return self.reply(200, result if result.get('removed') else {'enabled': True, **result})
                 return self.reply(200, app.action(urlsplit(self.path).path, data))
+            except AdministrationError as error:
+                return self.management_error(error)
             except sqlite3.IntegrityError:
                 return self.reply(409, {'error': 'Name oder Kennung existiert bereits. Nichts überschrieben.'})
             except DriveApiError:
@@ -910,8 +982,13 @@ def main():
     access_token, token_source = resolve_access_token(
         args.host, options, os.environ, no_app_auth=args.no_app_auth,
         token_file=root / 'app_access_token' if root.is_dir() else None)
+    try:
+        identity_verifier, bootstrap_emails = configured_identity(options)
+    except ValueError as error:
+        parser.exit(2, f'{error}\n')
     server = make_server(app, args.port, args.allowed_hosts, args.host, args.allowed_origins,
-                         access_token=access_token)
+                         access_token=access_token, identity_verifier=identity_verifier,
+                         bootstrap_emails=bootstrap_emails)
     if token_source in ('generated', 'stored'):
         print(f'Finance-Control-Zugriffstoken ({token_source}; Option access_token hat Vorrang): '
               f'{access_token}', flush=True)

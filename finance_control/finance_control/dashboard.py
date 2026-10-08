@@ -57,6 +57,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None):
     for row in account_rows:
         row["last_booking_date"] = last_booking_by_account.get(row["id"])
         supplied_account = account_by_id[row["id"]]
+        row["institution"] = supplied_account.get("institution") or ""
         row["owner_label"] = supplied_account.get("owner_label") or (
             "Gemeinsam" if row["owner"] == "JOINT" else person_label(row["owner"]))
     account_rows.sort(key=lambda row: (row["kind"] != "CHECKING",

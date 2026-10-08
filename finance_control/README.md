@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.17` adds official bank marks and category icons, verified Cloudflare Access
+user administration, and registration of supported banks in the application. Bank
+registration is local setup metadata only (`LOCAL_SETUP_REQUIRED`); bank credentials
+remain on the local Windows installation. No remote bank connection or live bank setup
+is implemented.
 Version `0.2.16` adds a responsive, clearly labelled cockpit sign-in page.
 Its generic `/login.css` stylesheet is available before sign-in; it contains no financial data.
 Version `0.2.15` adds the new app views and exposes `last_booking_date`.
@@ -12,6 +17,14 @@ add-on log). The browser logs in once through a form and receives an `HttpOnly`,
 or `Authorization: Bearer`. The existing Host, Origin and CSRF checks are unchanged.
 Deployments that are fully protected by Cloudflare Access can opt out explicitly with
 `require_app_token: false`. See `CHANGELOG.md`.
+
+Cloudflare Access user verification is optional. Configure `cloudflare_team_domain` with
+the exact Cloudflare Access team domain and `cloudflare_audience` with the exact audience
+tag of the Access application. Set `administrator_email` to the initial administrator's
+email address. Keep these deployment values out of the repository. Empty values leave
+Cloudflare identity verification disabled. The application-key protection remains
+enabled by default (`require_app_token: true`); disable it only when the complete route is
+protected by Cloudflare Access.
 
 Version `0.2.13` records explicitly confirmed Bonsy voucher payments separately
 from bank payments and cash withdrawals. Voucher redemption closes only the
@@ -65,9 +78,10 @@ For Cloudflared, route `finance.pistelok.de` to
 the installed app's internal hostname on port `8785` and set the origin request Host header to
 `finance.pistelok.de`. Keep a Cloudflare Access application and an allow policy
 in front of this hostname. Finance Control's Host, Origin, and CSRF checks are
-request protections, not user authentication; since 0.2.14 the application
-additionally requires its own access token unless `require_app_token` is set to
-`false`.
+request protections, not user authentication. Since 0.2.14 the application also
+requires its own access token unless `require_app_token` is set to `false`.
+When Cloudflare user verification is configured, pass the same team domain,
+application audience, and initial administrator email described above.
 
 The currently registered distribution repository is
 `lizard4king/smarthome-spotify-addon-ha`; its expected app hostname is

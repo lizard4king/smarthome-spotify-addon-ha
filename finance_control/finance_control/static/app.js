@@ -18,6 +18,7 @@ async function cockpitLoadArea(id, {force = false} = {}) {
   const loaders = {
     dashboard: async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard); },
     'category-outflows': async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard, 'category-outflows'); },
+    administration: async () => { if (typeof window.administrationLoad === 'function') await window.administrationLoad(); },
     'plan-actual': async reload => {
       if (typeof planActualEnsureLoaded !== 'function') return;
       await planActualEnsureLoaded(reload);

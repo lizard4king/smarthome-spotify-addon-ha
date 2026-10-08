@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.17
+
+- Adds official bank marks and category icons to the add-on package.
+- Adds optional signed Cloudflare Access user verification, initial administrator bootstrap, and app user/bank registration.
+- Bank registrations remain `LOCAL_SETUP_REQUIRED`; bank credentials stay on local Windows and no remote bank connection or live bank setup is included.
+- Adds the allowlisted PayPal and Sparkasse PNGs plus the Lucide license text to the deterministic package while preserving binary bytes.
+
 ## 0.2.16
 
 - Understandable, responsive cockpit sign-in with a labelled cockpit key and accessible error state.

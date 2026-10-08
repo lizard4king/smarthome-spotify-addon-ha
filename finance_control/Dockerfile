@@ -1,6 +1,6 @@
 FROM python:3.12-alpine3.22
 
-ARG BUILD_VERSION=0.2.16
+ARG BUILD_VERSION=0.2.17
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \
@@ -16,7 +16,7 @@ COPY finance_control /app/finance_control
 COPY build-manifest.json /app/build-manifest.json
 COPY bootstrap.py /app/bootstrap.py
 COPY run.sh /app/run.sh
-RUN pip install --no-cache-dir openpyxl==3.1.5 defusedxml==0.7.1 && \
+RUN pip install --no-cache-dir openpyxl==3.1.5 defusedxml==0.7.1 'PyJWT[crypto]==2.15.1' && \
   chmod 0755 /app/run.sh && \
   python -c "import json; assert json.load(open('/app/build-manifest.json', encoding='utf-8'))['addon_version'] == '${BUILD_VERSION}'"
 

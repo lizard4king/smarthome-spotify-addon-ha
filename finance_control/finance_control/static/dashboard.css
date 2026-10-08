@@ -220,3 +220,14 @@
   :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-expanded>td{display:block;width:100%;padding:0 12px 12px}
   :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-day th{display:block;width:100%}
 }
+
+/* Bank artwork keeps its own colors; Lucide category marks inherit the view palette. */
+:is(#dashboard,#category-outflows) .fd-account-name .fd-bank-logo{display:block;box-sizing:border-box;width:30px;height:30px;flex:none;object-fit:contain;padding:3px;border:1px solid #d9e3e3;border-radius:8px;background:#fff;color:initial}
+:is(#dashboard,#category-outflows) .fd-category-list{display:grid;gap:8px;margin-top:14px}
+:is(#dashboard,#category-outflows) .fd-category{align-items:center;min-width:0;padding:11px 13px;border:1px solid #e7dacc;border-radius:11px;background:#fffdfb;color:#26313b}
+:is(#dashboard,#category-outflows) .fd-category .fd-icon{width:34px;height:34px;padding:7px;border-radius:9px;background:#ffead5;color:#8b4f25}
+:is(#dashboard,#category-outflows) .fd-category strong{color:#26313b}
+:is(#dashboard,#category-outflows) .fd-guru .fd-category{background:#1c3a43;border-color:#385157;color:#edf8f8}
+:is(#dashboard,#category-outflows) .fd-guru .fd-category .fd-icon{background:#25515a;color:#71e2d6}
+:is(#dashboard,#category-outflows) .fd-guru .fd-category strong{color:#edf8f8}
+@media(max-width:600px){:is(#dashboard,#category-outflows) .fd-category{gap:8px;padding:9px 10px}:is(#dashboard,#category-outflows) .fd-category strong{font-size:12px}}
