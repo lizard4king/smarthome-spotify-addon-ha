@@ -1,0 +1,39 @@
+/* Administration is a primary workspace, with compact forms and readable mobile controls. */
+main>nav[aria-label="Bereiche"] a{min-width:0}
+#administration{min-width:0}
+#administration .adm-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:18px}
+#administration .adm-heading p{max-width:780px;margin:0 0 8px;color:#526b79}
+#administration .adm-heading .eyebrow{color:#17617b;font-weight:750}
+#administration .adm-heading h2{margin:0 0 8px}
+#administration .adm-heading button{flex:none}
+#administration .adm-card{min-width:0;margin:18px 0;padding:20px 22px;border:1px solid #dbe5e9;border-radius:12px;background:#f8fafb}
+#administration .adm-card h3{margin:0 0 8px}
+#administration .adm-card p{margin:0 0 16px}
+#administration #adm-remove-self{margin-top:12px}
+#administration .adm-form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(130px,.55fr) auto;gap:12px;align-items:end}
+#administration #adm-bank-form{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
+#administration .adm-form-grid label{min-width:0;margin:0}
+#administration .adm-form-grid button{white-space:normal}
+#administration .adm-row{display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:0;padding:12px 0;border-top:1px solid #dbe5e9}
+#administration .adm-row-copy{flex:1;min-width:0;overflow-wrap:anywhere}
+#administration .adm-row-copy strong,#administration .adm-row-copy small{display:block}
+#administration .adm-row-copy small{margin-top:2px;color:#526b79}
+#administration .adm-row button{flex:none}
+#administration .adm-bank-logo{display:block;flex:none;width:34px;height:34px;object-fit:contain;padding:3px;border:1px solid #dbe5e9;border-radius:8px;background:#fff}
+#administration #adm-status.error{padding:12px;border-left:4px solid #aa4836;background:#fff0ed;color:#792c21}
+#administration #adm-dialog{width:min(460px,calc(100vw - 28px));max-width:none;padding:24px;border:1px solid #b9cbd4;border-radius:12px;color:#173143;box-shadow:0 18px 50px #1731433d}
+#administration #adm-dialog::backdrop{background:#0b2538a8}
+#administration #adm-dialog h3{margin:0 0 10px}
+#administration #adm-dialog p{overflow-wrap:anywhere}
+#administration .adm-dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+@media(max-width:760px){
+  main>nav[aria-label="Bereiche"]{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+  main>nav[aria-label="Bereiche"] a[role="tab"]{padding:7px 3px;font-size:11px;line-height:1.15;text-align:center;white-space:normal;overflow-wrap:anywhere}
+  #administration .adm-heading{display:block}
+  #administration .adm-heading button{margin-top:8px}
+  #administration .adm-card{padding:15px}
+  #administration .adm-form-grid,#administration #adm-bank-form{grid-template-columns:1fr}
+  #administration .adm-row{align-items:flex-start;flex-direction:column;gap:8px}
+  #administration .adm-row button{width:100%}
+  #administration .adm-dialog-actions button{flex:1;min-width:0;padding:10px 8px}
+}

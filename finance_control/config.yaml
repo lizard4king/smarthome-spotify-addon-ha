@@ -1,7 +1,7 @@
 name: Finance Control
 slug: finance_control
 description: Privates Finance-Control-Cockpit als Home-Assistant-Add-on
-version: "0.2.16"
+version: "0.2.17"
 arch:
   - amd64
   - aarch64
@@ -12,9 +12,15 @@ watchdog: "http://[HOST]:8785/health"
 options:
   access_token: ""
   require_app_token: true
+  cloudflare_team_domain: ""
+  cloudflare_audience: ""
+  administrator_email: ""
 schema:
   access_token: password?
   require_app_token: bool
+  cloudflare_team_domain: str?
+  cloudflare_audience: str?
+  administrator_email: str?
 stdin: true
 backup: cold
 stage: experimental
