@@ -70,7 +70,7 @@ nav[role="tablist"]{scrollbar-width:thin}
   header p{font-size:13px;line-height:1.35}
   header .badge{flex:none;max-width:42%;margin:0;padding:7px 9px;font-size:12px;line-height:1.25;white-space:normal}
   main{width:100%;max-width:100%;padding:0 max(10px,env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
-  main>nav[aria-label="Bereiche"]{position:sticky;top:env(safe-area-inset-top);z-index:20;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:100%;margin:0 0 12px;padding:7px 0;overflow:visible;background:#eef3f5;box-shadow:0 5px 12px rgba(23,49,67,.14)}
+  main>nav[aria-label="Bereiche"]{position:sticky;top:env(safe-area-inset-top);z-index:20;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%;margin:0 0 12px;padding:7px 0;overflow:visible;background:#eef3f5;box-shadow:0 5px 12px rgba(23,49,67,.14)}
   main>nav[aria-label="Bereiche"] a{display:flex;align-items:center;justify-content:center;min-width:0;min-height:44px;padding:8px 12px;border:1px solid #cddce3;border-radius:8px;background:#fff;font-size:13px;line-height:1.15;overflow-wrap:anywhere}
   main>nav[aria-label="Bereiche"] a:focus-visible{outline:2px solid #17617b;outline-offset:2px}
   #active-area-announcement{position:static;width:auto;height:auto;margin:0 0 12px;padding:0;overflow:visible;clip:auto;white-space:normal}

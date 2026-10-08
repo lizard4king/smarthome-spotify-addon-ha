@@ -611,13 +611,13 @@ function planActualMonthDateTicks(days, plotWidth) {
 
 function planActualBalanceEndLabel(asOf) {
   const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(String(asOf || ''));
-  if (!match) return 'Stand zum Auswertungsschnitt';
+  if (!match) return 'Errechneter Endbestand zum Auswertungsschnitt';
   const [, year, month, day] = match.map(Number);
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   if (month < 1 || month > 12 || day < 1 || day > lastDay)
-    return 'Stand zum Auswertungsschnitt';
-  return day === lastDay ? 'Monatsende'
-    : `Stand am ${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.`;
+    return 'Errechneter Endbestand zum Auswertungsschnitt';
+  return day === lastDay ? 'Errechneter Endbestand zum Monatsende'
+    : `Errechneter Endbestand am ${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.`;
 }
 
 function planActualRenderDaily(daily, metadata = null, views = null, accountBalance = null) {
@@ -718,10 +718,10 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
   const balanceForView = accountBalance?.by_person?.[planActualDailyView];
   if (!accountBalance?.available || !balanceForView) {
     const unavailable = document.createElement('p'); unavailable.className = 'muted';
-    unavailable.textContent = 'Kontostände nicht verfügbar: Für den Monatsanfang fehlt ein belastbarer Anfangsbestand der ausgewählten Girokonten.';
+    unavailable.textContent = 'Errechnete Salden nicht verfügbar: Für den Monatsanfang fehlt ein belastbarer Anfangsbestand der ausgewählten Girokonten.';
     balanceSummary.append(unavailable);
   } else {
-    for (const [label, key] of [['Monatsanfang', 'start'],
+    for (const [label, key] of [['Errechneter Anfangsbestand', 'start'],
       [planActualBalanceEndLabel(accountBalance.as_of), 'end'],
       ['Veränderung', 'change']]) {
       const value = document.createElement('div'); value.className = 'plan-actual-daily-balance-value';
@@ -730,7 +730,7 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
       value.append(caption, amount); balanceSummary.append(value);
     }
     const basis = document.createElement('p'); basis.className = 'muted';
-    basis.textContent = `Kontostandsänderung aus Rohbuchungen der Girokonten einschließlich Umbuchungen, bis ${accountBalance.as_of}.`;
+    basis.textContent = `Errechnete Kontostandsänderung aus Eröffnungswert und erfassten Rohbuchungen der ausgewählten Girokonten, bis ${accountBalance.as_of}; kein unabhängig bestätigter Bankauszug.`;
     balanceSummary.append(basis);
   }
   const activeDaily = planActualDailyView === 'TOTAL'
@@ -792,7 +792,7 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
     {key: 'planned_cumulative_income', label: 'Plan-Einnahmen', color: '#28734b', planned: true},
   ].filter(item => !item.planned || result?.plan_available !== false);
   if (planActualTrendCumulative && accountBalance?.available && balanceForView?.points?.length) {
-    series.push({key: 'change', label: 'Kontostandsänderung Girokonto',
+    series.push({key: 'change', label: 'Errechnete Kontostandsänderung Girokonto',
       color: '#34495e', balance: true});
   }
   const valueFor = (day, item, index) => item.balance
@@ -971,7 +971,7 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
     ...(hasPlan ? [{key: 'expenses', source: 'plan', label: 'Plan-Ausgaben (Betrag)', color: '#b34435', planned: true}] : []),
     {key: 'income', source: 'actual', label: 'Ist-Einnahmen', color: '#28734b'},
     ...(hasPlan ? [{key: 'income', source: 'plan', label: 'Plan-Einnahmen', color: '#28734b', planned: true}] : []),
-    ...(hasBalance ? [{key: 'balance', source: 'balance', label: 'Kontostandsänderung (rechte Achse)', color: '#34495e'}] : []),
+    ...(hasBalance ? [{key: 'balance', source: 'balance', label: 'Errechnete Kontostandsänderung (rechte Achse)', color: '#34495e'}] : []),
   ];
   for (const item of series) {
     const entry = document.createElement('span'); entry.className = 'plan-actual-daily-legend-item';
@@ -1006,9 +1006,9 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
   const valueLabel = cumulative ? 'ab Zeitraumstart laufend kumuliert' : 'als Einzelwerte je Tag bzw. Monat';
   const endRow = months.at(-1);
   const endSummary = cumulative
-    ? ` Endwerte: Ist-Ausgaben ${eur(Math.abs(Number(endRow.actual?.[view]?.expenses || 0)))}, Ist-Einnahmen ${eur(endRow.actual?.[view]?.income || 0)}${hasBalance ? `, Kontostandsänderung ${eur(endRow.balance_change?.[view] || 0)}` : ''}.`
+    ? ` Endwerte: Ist-Ausgaben ${eur(Math.abs(Number(endRow.actual?.[view]?.expenses || 0)))}, Ist-Einnahmen ${eur(endRow.actual?.[view]?.income || 0)}${hasBalance ? `, errechnete Kontostandsänderung ${eur(endRow.balance_change?.[view] || 0)}` : ''}.`
     : '';
-  note.textContent = `${months[0].month} bis ${endRow.month}: Werte ${valueLabel}. ${granularity === 'daily' ? 'Istwerte aus Buchungstagen.' : 'Istwerte aus Buchungen.'} ${planNote} ${cumulative ? (hasBalance ? 'Kontostandsänderung aus Rohbuchungen der Girokonten einschließlich Umbuchungen.' : 'Kontostandsänderung für diesen Zeitraum nicht verfügbar.') : ''}${endSummary}`;
+  note.textContent = `${months[0].month} bis ${endRow.month}: Werte ${valueLabel}. ${granularity === 'daily' ? 'Istwerte aus Buchungstagen.' : 'Istwerte aus Buchungen.'} ${planNote} ${cumulative ? (hasBalance ? 'Errechnete Kontostandsänderung aus Rohbuchungen der Girokonten einschließlich Umbuchungen.' : 'Errechnete Kontostandsänderung für diesen Zeitraum nicht verfügbar.') : ''}${endSummary}`;
   const width = granularity === 'daily' ? Math.max(1200, months.length * 4) : 900;
   if (granularity === 'daily') svg.classList.add('is-daily-range');
   const height = 300, pad = {left: 76, right: 90, top: 24, bottom: 52};
@@ -1322,7 +1322,7 @@ function planActualRenderCockpit(result) {
   // A planned historical month shows actual cashflow in the bridge, once only.
   freeCard.hidden = historical && result.plan_available !== false;
   freeCard.querySelector('.eyebrow').textContent = actualOnly ? `IST · ${result.month}` : 'BIS ZUM NÄCHSTEN GEHALT';
-  $('plan-actual-free-title').textContent = actualOnly ? 'Ist-Cashflow (Monatsüberschuss)' : 'Kurzfristig frei ausgebbar';
+  $('plan-actual-free-title').textContent = actualOnly ? 'Einnahmen minus Ausgaben' : 'Kurzfristig frei ausgebbar';
   $('plan-actual-free-value').textContent = payday?.available
     ? planActualAvailable(payday.total_free_spendable)
     : actualOnly ? planActualSignedEur(result.totals?.actual_cashflow ?? 0) : 'Nicht verfügbar';
@@ -1424,6 +1424,183 @@ function planActualHistoricalCashflow(result) {
   };
 }
 
+function planActualRenderAccountChart(values) {
+  const svg = $('plan-actual-account-chart'); svg.replaceChildren();
+  const points = values?.points || []; svg.hidden = !points.length;
+  if (!points.length) return;
+  const ns = 'http://www.w3.org/2000/svg';
+  const width = Math.max(320, Math.min(1000, svg.parentNode?.clientWidth || 900)), height = 240;
+  const pad = {left: 100, right: 30, top: 24, bottom: 38};
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const balances = [Number(values.start), ...points.map(point => Number(point.balance))];
+  const low = Math.min(...balances), high = Math.max(...balances);
+  const margin = Math.max((high - low) * 0.12, 1), min = low - margin, max = high + margin;
+  const x = i => pad.left + i * (width - pad.left - pad.right) / points.length;
+  const y = v => pad.top + (max - v) * (height - pad.top - pad.bottom) / (max - min);
+  for (let i = 0; i < 4; i++) {
+    const value = min + i * (max - min) / 3;
+    const line = document.createElementNS(ns, 'line');
+    for (const [key, val] of Object.entries({x1: pad.left, x2: width-pad.right, y1:y(value), y2:y(value), stroke:'#dce7eb'})) line.setAttribute(key, String(val));
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', String(pad.left - 10)); label.setAttribute('y', String(y(value)+4)); label.setAttribute('text-anchor','end'); label.textContent = eur(value);
+    svg.append(line, label);
+  }
+  const path = document.createElementNS(ns, 'path'); path.setAttribute('class','chart-line');
+  path.setAttribute('d', balances.map((v,i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join(' ')); svg.append(path);
+  for (const i of [...new Set([0, Math.floor(points.length/2), points.length])]) {
+    const text = document.createElementNS(ns,'text'); text.setAttribute('x',String(x(i))); text.setAttribute('y',String(height-12)); text.setAttribute('text-anchor',i===0?'start':i===points.length?'end':'middle');
+    text.textContent = i === 0 ? 'Monatsanfang' : points[i-1].date.slice(8,10)+'.'+points[i-1].date.slice(5,7)+'.'; svg.append(text);
+  }
+}
+
+function planActualRenderAccounts(result) {
+  const select = $('plan-actual-account-view'), metrics = $('plan-actual-account-metrics');
+  const bank = result?.account_balance_change, selected = select.value;
+  const accounts = bank?.by_account || {};
+  select.replaceChildren(); metrics.replaceChildren();
+  for (const [id, label] of [['TOTAL', 'Beobachtete Girokonten gesamt'], ...Object.entries(accounts).map(([id, value]) => [id, value.display_name || id])]) {
+    const option = document.createElement('option'); option.value = id; option.textContent = label; select.append(option);
+  }
+  select.value = selected === 'TOTAL' || Object.hasOwn(accounts, selected) ? selected : 'TOTAL';
+  const values = select.value === 'TOTAL' ? bank?.totals : accounts[select.value];
+  if (!bank?.available || !values) {
+    $('plan-actual-account-note').textContent = 'Kontosicht nicht verfügbar: Kontodaten, Anfangsbestand oder Buchungsabdeckung fehlen.';
+    planActualRenderAccountChart(null); return;
+  }
+  $('plan-actual-account-note').textContent = `Stichtag ${bank.as_of} · Währung ${values.currency}. Alle gebuchten Zugänge und Abgänge zählen, einschließlich Umbuchungen und Barabhebungen. Anfangsbestand + Zugänge − Abgänge = Endbestand. Errechnet aus den erfassten Buchungen; keine aktuelle Bankabfrage.`;
+  for (const [label, value] of [['Anfangsbestand', values.start], ['Ist-Einnahmen · alle Zugänge', values.inflow], ['Ist-Ausgaben · alle Abgänge', values.outflow], ['Monatssaldo · Kontoveränderung', values.change], ['Endbestand', values.end]]) {
+    const card = document.createElement('article'), title = document.createElement('span'), amount = document.createElement('strong');
+    title.textContent = label; amount.textContent = eur(value); card.append(title, amount); metrics.append(card);
+  }
+  planActualRenderAccountChart(values);
+}
+
+function planActualAccountMoney(value, currency) {
+  if (value == null || value === '' || !Number.isFinite(Number(value))) return '—';
+  try {
+    return new Intl.NumberFormat('de-DE', {style: 'currency', currency,
+      currencyDisplay: currency === 'EUR' ? 'symbol' : 'code'}).format(Number(value));
+  } catch (_) { return '—'; }
+}
+
+function planActualAccountCell(row, value, className = '') {
+  const cell = document.createElement('td');
+  if (className) cell.className = className;
+  cell.textContent = value;
+  row.append(cell);
+  return cell;
+}
+
+function planActualRenderAccountOverview(result) {
+  const columns = $('plan-actual-account-columns'); columns.replaceChildren();
+  const overview = result?.account_overview;
+  const accounts = Array.isArray(overview?.accounts) ? overview.accounts : [];
+  $('plan-actual-account-overview-note').textContent = overview?.as_of
+    ? `Stichtag ${overview.as_of}. Kontostände sind aus erfassten Daten errechnet und keine aktuelle Bankabfrage. Plan umfasst zugeordnete Posten; Umbuchungen nur bei eigener Planung. Ist zeigt zugeordnete Buchungen; nicht zugeordnete Bewegungen stehen separat.`
+    : 'Plan umfasst zugeordnete Posten; Umbuchungen nur bei eigener Planung. Ist zeigt zugeordnete Buchungen; nicht zugeordnete Bewegungen stehen separat.';
+  const people = [['ANDREAS', 'Andreas'], ['ERLENE', 'Erlene'], ['JOINT', 'Gemeinsam']];
+  const kindOrder = {CHECKING: 0, SAVINGS: 1, CREDIT_CARD: 2, DEPOT: 3};
+  const rank = account => /geschlossen/i.test(account.display_name || '') ? 9
+    : /debitkarte/i.test(account.display_name || '') ? 8
+      : /paypal/i.test(account.display_name || '') ? 5 : (kindOrder[account.kind] ?? 4);
+  for (const [owner, title] of people) {
+    const column = document.createElement('section'); column.className = 'plan-actual-account-owner';
+    const heading = document.createElement('h4'); heading.textContent = title; column.append(heading);
+    const owned = accounts.filter(account => account.owner === owner).sort((a, b) =>
+      rank(a) - rank(b) || String(a.display_name || '').localeCompare(String(b.display_name || ''), 'de'));
+    if (!owned.length) {
+      const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'Noch nicht gespeichert.'; column.append(empty);
+    }
+    for (const account of owned) {
+      const card = document.createElement('article'); card.className = 'plan-actual-account-card';
+      const name = document.createElement('h5'); name.textContent = account.display_name || account.id;
+      const kindLabels = {CHECKING: 'Girokonto', SAVINGS: 'Sparkonto', CREDIT_CARD: 'Kreditkarte', DEPOT: 'Depot'};
+      const kind = document.createElement('p'); kind.className = 'muted'; kind.textContent = kindLabels[account.kind] || account.kind || 'Konto';
+      const planBasis = document.createElement('p'); planBasis.className = 'muted';
+      planBasis.textContent = account.plan_partial ? 'Teilplan · Abweichung = Ist − Plan.'
+        : account.plan == null ? 'Kein Kontoplan hinterlegt.' : 'Abweichung = Ist − Plan.';
+      card.append(name, kind, planBasis);
+      const table = document.createElement('table'); table.className = 'plan-actual-account-table';
+      const head = document.createElement('thead'), hr = document.createElement('tr');
+      for (const label of ['Position', 'Plan', 'Ist', 'Abweichung']) { const th = document.createElement('th'); th.textContent = label; hr.append(th); }
+      head.append(hr); table.append(head);
+      const body = document.createElement('tbody');
+      const addFlow = (label, planKey, actualKey) => {
+        const row = document.createElement('tr'), plan = account.plan?.[planKey];
+        const title = document.createElement('th'); title.scope = 'row'; title.textContent = label; row.append(title);
+        planActualAccountCell(row, plan == null ? '—' : planActualAccountMoney(plan, account.currency));
+        planActualAccountCell(row, planActualAccountMoney(account[actualKey], account.currency));
+        planActualAccountCell(row, plan == null || account[actualKey] == null ? '—'
+          : planActualAccountMoney(Number(account[actualKey]) - Number(plan), account.currency));
+        body.append(row);
+      };
+      addFlow('Einnahmen', 'inflow', 'inflow'); addFlow('Ausgaben', 'outflow', 'outflow');
+      addFlow('Einnahmen minus Ausgaben', 'change', 'change');
+      table.append(body); card.append(table);
+      const dates = document.createElement('p'); dates.className = 'muted';
+      dates.textContent = [account.end == null ? null : `Ende: ${planActualAccountMoney(account.end, account.currency)}`,
+        account.available === false ? 'Kontostand nicht verfügbar.' : null,
+        account.note || null].filter(Boolean).join(' · ');
+      if (dates.textContent) card.append(dates);
+      const positions = Array.isArray(account.positions) ? account.positions : [];
+      if (positions.length) {
+        for (const [assigned, labelText] of [[true, 'Plan zugeordnete Positionen'], [false, 'Weitere Ist-Positionen']]) {
+          const subset = positions.filter(position => (position.plan_inflow != null || position.plan_outflow != null) === assigned);
+          if (!subset.length) continue;
+          const details = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = labelText;
+          const posTable = document.createElement('table'), posHead = document.createElement('thead'), posHr = document.createElement('tr');
+          for (const label of ['Position', 'Art', 'Plan', 'Ist', 'Abweichung']) { const th = document.createElement('th'); th.textContent = label; posHr.append(th); }
+          posHead.append(posHr); posTable.append(posHead); const posBody = document.createElement('tbody');
+          for (const position of subset) {
+            for (const [flow, actualKey, planKey] of [['Einnahmen','inflow','plan_inflow'], ['Ausgaben','outflow','plan_outflow']]) {
+              const row = document.createElement('tr'), label = document.createElement('th');
+              label.scope = 'row'; label.textContent = position.label || 'Position'; row.append(label);
+              planActualAccountCell(row, flow);
+              const actual = position[actualKey], plan = position[planKey];
+              planActualAccountCell(row, plan == null ? '—' : planActualAccountMoney(plan, account.currency));
+              planActualAccountCell(row, planActualAccountMoney(actual, account.currency));
+              planActualAccountCell(row, plan == null || actual == null ? '—'
+                : planActualAccountMoney(Number(actual) - Number(plan), account.currency));
+              posBody.append(row);
+            }
+          }
+          posTable.append(posBody); details.append(summary, posTable); card.append(details);
+        }
+      }
+      column.append(card);
+    }
+    columns.append(column);
+  }
+  const cash = overview?.cash;
+  if (cash) {
+    const card = document.createElement('article'); card.className = 'plan-actual-account-card plan-actual-cash-account';
+    const name = document.createElement('h5'); name.textContent = cash.display_name || 'Gemeinsames Barvermögen';
+    const kind = document.createElement('p'); kind.className = 'muted'; kind.textContent = 'Bargeld · kein gespeicherter Kontostand'; card.append(name, kind);
+    const table = document.createElement('table'), head = document.createElement('thead'), hr = document.createElement('tr');
+    for (const label of ['Position', 'Ist']) { const th = document.createElement('th'); th.textContent = label; hr.append(th); }
+    head.append(hr); table.append(head); const body = document.createElement('tbody');
+    for (const [label, key] of [['Ist-Einnahmen','inflow'], ['Ist-Ausgaben','outflow'], ['Einnahmen minus Ausgaben','change']]) {
+      const row = document.createElement('tr'), title = document.createElement('th'); title.scope = 'row'; title.textContent = label; row.append(title);
+      planActualAccountCell(row, planActualAccountMoney(cash[key], cash.currency)); body.append(row);
+    }
+    table.append(body); card.append(table);
+    if (Array.isArray(cash.positions) && cash.positions.length) {
+      const details = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = 'Erfasste Bewegungen';
+      const movements = document.createElement('table'), movementsHead = document.createElement('thead'), movementsRow = document.createElement('tr');
+      for (const label of ['Position', 'Ist-Einnahmen', 'Ist-Ausgaben']) { const th = document.createElement('th'); th.textContent = label; movementsRow.append(th); }
+      movementsHead.append(movementsRow); movements.append(movementsHead); const movementsBody = document.createElement('tbody');
+      for (const position of cash.positions) {
+        const row = document.createElement('tr'), title = document.createElement('th'); title.scope = 'row'; title.textContent = position.label || 'Bewegung'; row.append(title);
+        for (const key of ['inflow', 'outflow']) planActualAccountCell(row, planActualAccountMoney(position[key], cash.currency));
+        movementsBody.append(row);
+      }
+      movements.append(movementsBody); details.append(summary, movements); card.append(details);
+    }
+    if (cash.note) { const note = document.createElement('p'); note.className = 'muted'; note.textContent = cash.note; card.append(note); }
+    const joint = [...columns.children].find((_, index) => people[index]?.[0] === 'JOINT'); joint?.append(card);
+  }
+}
+
 function planActualRenderSurplusBridge(bridge, historical = false, result = null) {
   const section = $('plan-actual-surplus-bridge');
   if (historical) {
@@ -1432,7 +1609,7 @@ function planActualRenderSurplusBridge(bridge, historical = false, result = null
     $('plan-actual-surplus-eyebrow').textContent = `RÜCKBLICK · ${result.month}`;
     $('plan-actual-surplus-joint-note').hidden = true;
     $('plan-actual-surplus-title').textContent = 'Ist- und Planwerte des Monats';
-    $('plan-actual-surplus-note').textContent = 'Ist-Cashflow bedeutet Monatsüberschuss aus Ist-Einnahmen minus Ist-Ausgaben; kein Kontostand. Personensummen folgen der Inhaberschaft der Buchungskonten.';
+    $('plan-actual-surplus-note').textContent = 'Einnahmen minus Ausgaben · kein Kontostand. Personensummen folgen der Inhaberschaft der Buchungskonten.';
     $('plan-actual-surplus-remaining').textContent = planActualSignedEur(summary.actualCashflow);
     const steps = $('plan-actual-surplus-steps'); steps.replaceChildren();
     const values = [
@@ -1440,7 +1617,7 @@ function planActualRenderSurplusBridge(bridge, historical = false, result = null
       ['Ist-Ausgaben gesamt', summary.actualExpenses, 'expense'],
       ['Plan-Einnahmen', summary.plannedIncome],
       ['Plan-Ausgaben', summary.plannedExpenses, 'expense'],
-      ...summary.people.map(person => [`${person.label} · Ist-Cashflow`, person.cashflow, 'signed']),
+      ...summary.people.map(person => [`${person.label} · Einnahmen minus Ausgaben`, person.cashflow, 'signed']),
     ];
     for (const [label, value, direction] of values) {
       const article = document.createElement('article');
@@ -1457,14 +1634,14 @@ function planActualRenderSurplusBridge(bridge, historical = false, result = null
   section.hidden = false;
   $('plan-actual-surplus-eyebrow').textContent = 'MONATSRAHMEN';
   $('plan-actual-surplus-joint-note').hidden = false;
-  $('plan-actual-surplus-title').textContent = 'Geplanter Monatssaldo';
+  $('plan-actual-surplus-title').textContent = 'Geplanter Haushaltsüberschuss';
   $('plan-actual-surplus-note').textContent = 'Unverplanter Rest einschließlich verfügbarer Budgets. Dieser Rahmen ist nicht vollständig sofort auf den Konten verfügbar.';
   const spendable = bridge.household_split?.spendable;
   $('plan-actual-surplus-remaining').textContent = eur(
     spendable?.confirmed?.total ?? bridge.confirmed.still_unallocated);
   const steps = $('plan-actual-surplus-steps'); steps.replaceChildren();
   const values = [
-    ['Geplanter Monatssaldo', bridge.original_planned_surplus, null],
+    ['Geplanter Haushaltsüberschuss', bridge.original_planned_surplus, null],
     ['Zusätzliche Einnahmen', bridge.confirmed.additional_income, 'income'],
     ['Ungeplante Ausgaben und feste Mehrkosten', bridge.confirmed.unplanned_expenses, 'expense'],
     ['Verfügbare Budgets · im Monatsrahmen enthalten', bridge.confirmed.budget_balance?.remaining, null],
@@ -1568,7 +1745,8 @@ function planActualSetupCockpitTabs() {
 function planActualAppendMetricGroups(container, totals, planAvailable = true) {
   const groups = document.createElement('div'); groups.className = 'plan-actual-person-metric-groups';
   const metrics = [
-    ['Einnahmen', totals.income], ['Ausgaben', totals.expenses], ['Saldo', totals.balance],
+    ['Einnahmen', totals.income], ['Ausgaben', totals.expenses],
+    ['Einnahmen minus Ausgaben', totals.balance],
   ];
   for (const [label, values] of metrics) {
     const group = document.createElement('section'); group.className = 'plan-actual-person-metric-group';
@@ -1615,7 +1793,7 @@ function planActualTotalMetrics(totals) {
 
 function planActualRenderTotalSummary(result) {
   const box = $('plan-actual-total-metrics'); box.replaceChildren();
-  $('plan-actual-total-title').textContent = 'TOTAL · Monat gesamt';
+  $('plan-actual-total-title').textContent = 'Haushalt · Einnahmen und Ausgaben';
   const scopeNote = planActualReportingHistoryNote(result);
   const automaticCount = Number(result.automatic_owner_mapping_count || 0);
   const ownerNote = automaticCount > 0
@@ -1653,6 +1831,7 @@ function planActualRenderExpenseReconciliation(result) {
 function planActualRenderCash(result) {
   const section = $('plan-actual-cash'), box = $('plan-actual-cash-content');
   box.replaceChildren();
+  if (result?.account_overview) { section.hidden = true; return; }
   const cash = result.cash_activity;
   section.hidden = !cash || (!Number(cash.withdrawals?.total) && !Number(cash.receipt_spending?.total));
   if (section.hidden) return;
@@ -1768,6 +1947,8 @@ function planActualRenderPeople(result) {
 
 function planActualRender(result) {
   $('plan-actual-result').hidden = false;
+  planActualRenderAccountOverview(result);
+  planActualRenderAccounts(result);
   const planAvailable = result.plan_available !== false;
   $('plan-actual-no-plan').hidden = planAvailable;
   const historical = planActualIsHistorical(result);
@@ -2137,6 +2318,7 @@ function planActualScheduleMonthChartResize() {
 }
 
 $('plan-actual-load').addEventListener('click', () => run(planActualCompare));
+$('plan-actual-account-view').addEventListener('change', () => planActualRenderAccounts(window.planActualLatestResult));
 planActualSetupCockpitTabs();
 $('plan-actual-revision').addEventListener('change', () => run(async () => {
   planActualInvalidateComparison();
@@ -2153,4 +2335,8 @@ $('plan-actual-mapping-save').addEventListener('click', () => run(planActualSave
 window.addEventListener('hashchange', planActualEnsureLoaded);
 window.addEventListener('load', planActualEnsureLoaded);
 window.addEventListener('resize', planActualScheduleMonthChartResize);
+window.addEventListener('resize', () => {
+  if (window.planActualLatestResult && !$('plan-actual-result').hidden)
+    planActualRenderAccounts(window.planActualLatestResult);
+});
 window.addEventListener('orientationchange', planActualScheduleMonthChartResize);

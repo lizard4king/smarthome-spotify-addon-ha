@@ -1,6 +1,8 @@
 """Single-user localhost cockpit, standard-library server, no external assets."""
 import argparse
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -14,7 +16,7 @@ from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import monthly_review, overview
+from . import monthly_review, overview, dashboard
 from .core import Plan, Store
 from .drive_api import DriveApiError
 from .household import normalize_profile, template_profile
@@ -24,6 +26,26 @@ from .planning import decimal_text, export_projection, month_end, parse_plan, pr
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
+MIN_ACCESS_TOKEN = 16
+ACCESS_COOKIE = 'fc_session'
+ACCESS_HEADER = 'X-Finance-Access'
+LOGIN_PATH = '/login'
+LOCAL_BIND_HOSTS = {'127.0.0.1', '::1', 'localhost'}
+LOGIN_PAGE = (
+    '<!doctype html><html lang="de"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    '<title>Finance Control</title></head><body>'
+    '<h1>Finance Control</h1><p>Zugriffstoken eingeben (Add-on-Option <code>access_token</code> '
+    'oder Add-on-Log).</p>@@ERROR@@'
+    '<form method="post" action="/login">'
+    '<input type="password" name="token" autocomplete="current-password" autofocus required> '
+    '<button type="submit">Anmelden</button></form></body></html>'
+)
+
+
+def _session_value(token):
+    """Cookie value derived from the access token; the token itself is never stored client-side."""
+    return hmac.new(token.encode(), b'finance-control-session-v1', hashlib.sha256).hexdigest()
 
 
 def default_cutoff():
@@ -82,11 +104,21 @@ class Cockpit:
                     'share_labels': {labels.get(owner, owner): share
                                      for owner, share in account['shares'].items()},
                 } for account in accounts]
+            try:
+                dashboard_data = dashboard.build(
+                    store, as_of, accounts, reporting_history=self.reporting_history)
+            except dashboard.DashboardConfigurationError:
+                dashboard_data = {
+                    'as_of': as_of, 'month': as_of[:7], 'accounts': [],
+                    'bookings': [], 'currencies': [],
+                    'error': 'Die Übersicht ist nicht verfügbar. Kontenzuordnung der Berichtshistorie prüfen.',
+                }
             backup_status = backup_sync_status(self.database)
             result = {'demo': self.demo, 'csrf': self.token, 'as_of': as_of,
                     'accounts': accounts, 'status': status, 'scenarios': store.scenario_records(),
                     'monthly_reviews': monthly_review.records(store),
                     'overview': overview.build(store, as_of, status),
+                    'dashboard': dashboard_data,
                     'backup_sync': backup_status,
                     'drive_backup_configured': (backup_status['configured']
                                                 and backup_status['error'] is None)}
@@ -476,7 +508,18 @@ def _normalized_origin(value):
     return f'{parsed.scheme}://{origin_host}'
 
 
-def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_origins=None):
+def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_origins=None,
+                access_token=None):
+    """Create the cockpit server.
+
+    ``access_token=None`` keeps the historic behaviour (Host/Origin/CSRF checks only),
+    suitable for loopback use or a front-end that already authenticates users.
+    A token of at least ``MIN_ACCESS_TOKEN`` characters enables application-level
+    authentication for every route except ``/health``.
+    """
+    if access_token is not None and len(access_token) < MIN_ACCESS_TOKEN:
+        raise ValueError('Zugriffstoken zu kurz.')
+    session_value = _session_value(access_token) if access_token is not None else None
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -501,6 +544,55 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
             self.end_headers()
             self.wfile.write(body)
+
+        def authorized(self):
+            if access_token is None:
+                return True
+            candidates = [self.headers.get(ACCESS_HEADER, '')]
+            authorization = self.headers.get('Authorization', '')
+            if authorization.startswith('Bearer '):
+                candidates.append(authorization[7:].strip())
+            if any(candidate and secrets.compare_digest(candidate.encode(), access_token.encode())
+                   for candidate in candidates):
+                return True
+            for part in self.headers.get('Cookie', '').split(';'):
+                name, _, value = part.strip().partition('=')
+                if name == ACCESS_COOKIE and value and secrets.compare_digest(
+                        value.encode(), session_value.encode()):
+                    return True
+            return False
+
+        def login_page(self, status, error=False):
+            page = LOGIN_PAGE.replace('@@ERROR@@', '<p>Token ungültig.</p>' if error else '')
+            return self.reply(status, page.encode(), 'text/html; charset=utf-8')
+
+        def login_required(self):
+            if urlsplit(self.path).path.startswith('/api/'):
+                return self.reply(401, {'error': 'Anmeldung erforderlich.'})
+            return self.login_page(401)
+
+        def handle_login(self):
+            try:
+                size = int(self.headers.get('Content-Length', '0'))
+            except ValueError:
+                size = -1
+            if not 0 < size <= 2048:
+                self.discard_rejected_body()
+                return self.reply(400, {'error': 'Anfrage ungültig.'})
+            form = parse_qs(self.rfile.read(size).decode('utf-8', 'replace'))
+            supplied = form.get('token', [''])[0]
+            if access_token is None or not secrets.compare_digest(supplied.encode(), access_token.encode()):
+                return self.login_page(401, error=True)
+            cookie = f'{ACCESS_COOKIE}={session_value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000'
+            if (self.headers.get('X-Forwarded-Proto', '').casefold() == 'https'
+                    or self.headers.get('Origin', '').startswith('https://')):
+                cookie += '; Secure'
+            self.send_response(303)
+            self.send_header('Location', '/')
+            self.send_header('Set-Cookie', cookie)
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
 
         def trusted_host(self):
             try:
@@ -559,9 +651,13 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 return self.reply(200, {'status': 'ok'})
             if not self.trusted_host():
                 return self.reply(403, {'error': 'Lokaler Zugriff erforderlich.'})
+            if not self.authorized():
+                return self.login_required()
             url = urlsplit(self.path)
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
                       '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+                      '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
+                      '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
                       '/tabs.js': ('tabs.js', 'text/javascript; charset=utf-8'),
                       '/finanzguru.js': ('finanzguru.js', 'text/javascript; charset=utf-8'),
                       '/monthly.js': ('monthly.js', 'text/javascript; charset=utf-8'),
@@ -608,6 +704,14 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             return self.reply(404, {'error': 'Nicht gefunden.'})
 
         def do_POST(self):
+            if urlsplit(self.path).path == LOGIN_PATH:
+                if not self.trusted_host() or not self.trusted_origin():
+                    self.discard_rejected_body()
+                    return self.reply(403, {'error': 'Anfrage nicht freigegeben. Seite neu laden.'})
+                return self.handle_login()
+            if self.trusted_host() and not self.authorized():
+                self.discard_rejected_body()
+                return self.login_required()
             if (not self.trusted_host() or not self.trusted_origin()
                     or not secrets.compare_digest(self.headers.get('X-Finance-Token', ''), app.token)):
                 self.discard_rejected_body()
@@ -629,6 +733,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 return self.reply(503, {
                     'error': 'Drive-Sicherung derzeit nicht erreichbar. Das lokale Sicherungspaket bleibt erhalten.'})
             except (ValueError, KeyError, TypeError, ArithmeticError, StopIteration) as error:
+                if (urlsplit(self.path).path == '/api/fg-commit' and
+                        isinstance(error, ValueError) and str(error) == 'review_stale_or_blocked'):
+                    return self.reply(409, {'error': 'review_stale_or_blocked'})
                 if urlsplit(self.path).path.startswith('/api/classification-'):
                     if isinstance(error, ValueError) and str(error) == 'stale_revision':
                         return self.reply(409, {
@@ -677,8 +784,55 @@ def seed_demo(app):
         store.close()
 
 
+def _load_addon_options(path):
+    """Read the Home Assistant add-on options file; ignore anything unusable."""
+    try:
+        options = json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return options if isinstance(options, dict) else {}
+
+
+def resolve_access_token(bind_host, options, environ, *, no_app_auth=False, token_file=None):
+    """Return ``(token_or_None, source)`` for the application-level login.
+
+    Secure by default: a network-facing bind needs a token. Opt-out only through
+    ``--no-app-auth`` or the add-on option ``require_app_token: false`` (for
+    deployments fully protected by Cloudflare Access). A loopback bind keeps the
+    historic token-free behaviour.
+    """
+    if no_app_auth or options.get('require_app_token') is False:
+        return None, 'disabled'
+    configured = str(options.get('access_token') or environ.get('FINANCE_ACCESS_TOKEN') or '').strip()
+    if len(configured) >= MIN_ACCESS_TOKEN:
+        return configured, 'configured'
+    if bind_host in LOCAL_BIND_HOSTS:
+        return None, 'local'
+    stored = ''
+    if token_file is not None:
+        try:
+            stored = Path(token_file).read_text(encoding='utf-8').strip()
+        except OSError:
+            stored = ''
+        if len(stored) >= MIN_ACCESS_TOKEN:
+            return stored, 'stored'
+    token = secrets.token_urlsafe(24)
+    if token_file is not None:
+        try:
+            descriptor = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+                handle.write(token)
+        except OSError:
+            pass
+    return token, 'generated'
+
+
 def main():
     parser = argparse.ArgumentParser(description='Lokales Finance-Control-Cockpit')
+    parser.add_argument('--options-file', metavar='FILE',
+                        help='Home-Assistant-Add-on-Optionen (JSON) mit access_token und require_app_token')
+    parser.add_argument('--no-app-auth', action='store_true',
+                        help='Anwendungs-Login ausdrücklich abschalten (nur hinter Cloudflare Access o. Ä.)')
     parser.add_argument('--allowed-host', action='append', default=[], dest='allowed_hosts',
                         help='Zusätzlicher Host-Header eines lokalen Reverse-Proxys; mehrfach möglich')
     parser.add_argument('--allowed-origin', action='append', default=[], dest='allowed_origins',
@@ -727,7 +881,18 @@ def main():
     app = Cockpit(database, demo=args.demo, profile=profile)
     if args.demo:
         seed_demo(app)
-    server = make_server(app, args.port, args.allowed_hosts, args.host, args.allowed_origins)
+    options = _load_addon_options(args.options_file) if args.options_file else {}
+    access_token, token_source = resolve_access_token(
+        args.host, options, os.environ, no_app_auth=args.no_app_auth,
+        token_file=root / 'app_access_token' if root.is_dir() else None)
+    server = make_server(app, args.port, args.allowed_hosts, args.host, args.allowed_origins,
+                         access_token=access_token)
+    if token_source in ('generated', 'stored'):
+        print(f'Finance-Control-Zugriffstoken ({token_source}; Option access_token hat Vorrang): '
+              f'{access_token}', flush=True)
+    elif token_source == 'disabled':
+        print('Finance Control: Anwendungs-Login deaktiviert; Zugriffsschutz muss vorgelagert sein.',
+              flush=True)
     print(f'Finance Control: http://{args.host}:{server.server_port}', flush=True)
     try:
         server.serve_forever()

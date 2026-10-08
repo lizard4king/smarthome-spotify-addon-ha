@@ -265,14 +265,28 @@ def _plan(store, staged, choices, root):
     if len(set(mapping.values())) != len(mapping):
         raise ValueError('source_accounts_must_map_to_distinct_targets')
     blockers = list(staged['blockers'])
+    from .bank_source_policy import bound_finanzguru_targets, partition_finanzguru_transfer_pairs
+    directly_bound = bound_finanzguru_targets(store, mapping.values())
+    direct_sources = {source for source, target in mapping.items() if target in directly_bound}
+    active_mapping = {source: target for source, target in mapping.items()
+                      if source not in direct_sources}
     if staged.get('split_row_count', 0) and choices.get('split_policy') != 'originals_only':
         blockers.append('split_policy_required')
-    eligible = [row for row in rows if row['date'] <= cutoff]
+    eligible = [row for row in rows if row['date'] <= cutoff
+                and row['source_account'] not in direct_sources]
     references = {row['reference']: row for row in eligible}
+    cross_source_postable_references = {
+        row['reference'] for row in eligible
+        if row['date'] > accounts[mapping[row['source_account']]]['opening_date']
+    }
+    (active_pairs, cross_source_references, skipped_direct_source_pairs,
+     skipped_out_of_scope_pairs) = partition_finanzguru_transfer_pairs(
+        rows, pairs, direct_sources, references, cross_source_postable_references)
+    if cross_source_references:
+        blockers.append('cross_source_transfer_requires_reconciliation')
     transfer_ids = {}
-    for pair in pairs:
-        if (not isinstance(pair, list) or len(pair) != 2 or pair[0] == pair[1]
-                or any(ref not in references or ref in transfer_ids for ref in pair)):
+    for pair in active_pairs:
+        if any(ref not in references or ref in transfer_ids for ref in pair):
             raise ValueError('invalid_transfer_pair')
         first, second = (references[ref] for ref in pair)
         if (mapping[first['source_account']] == mapping[second['source_account']]
@@ -300,7 +314,23 @@ def _plan(store, staged, choices, root):
             (old['account_id'], old['date'], old['amount']), []).append(old['external_id'])
     context_by_key = {(row['account_id'], row['external_id']): row for row in contexts}
     desired, detail, counts = {}, [], Counter()
+    if direct_sources:
+        counts['direct_bank_source'] = sum(row['source_account'] in direct_sources for row in rows)
+        for row in rows:
+            if row['source_account'] in direct_sources:
+                detail.append({'reference': row['reference'],
+                               'source_account': row['source_account'],
+                               'account_id': mapping[row['source_account']],
+                               'date': row['date'], 'amount': row['amount'],
+                               'category': row['category'], 'status': 'direct_bank_source',
+                               'transfer': False})
+    if skipped_direct_source_pairs:
+        counts['transfer_pairs_skipped_for_direct_source'] = skipped_direct_source_pairs
+    if skipped_out_of_scope_pairs:
+        counts['transfer_pairs_outside_date_range'] = skipped_out_of_scope_pairs
     for row in rows:
+        if row['source_account'] in direct_sources:
+            continue
         if row['date'] > cutoff:
             counts['after_date_to'] += 1
             detail.append({'reference': row['reference'], 'account_id': mapping[row['source_account']],
@@ -346,9 +376,11 @@ def _plan(store, staged, choices, root):
         counts[status] += 1
         detail.append({'reference': row['reference'], 'account_id': target,
                        'date': row['date'], 'amount': row['amount'], 'category': row['category'],
-                       'status': status, 'transfer': bool(values['transfer_id'])})
+                       'status': status, 'transfer': bool(values['transfer_id']),
+                       'blocking_reason': ('cross_source_transfer_requires_reconciliation'
+                                           if row['reference'] in cross_source_references else None)})
     # The hash namespace binds a source account independently of the old import ID.
-    for source, target in mapping.items():
+    for source, target in active_mapping.items():
         head = heads.get(source)
         if head and head['target_account'] != target:
             blockers.append('account_mapping_conflict')
@@ -365,7 +397,7 @@ def _plan(store, staged, choices, root):
                     (key[0], values['date'], values['amount']), [])):
             blockers.append('possible_other_import_overlap')
     removed = {}
-    for source, target in mapping.items():
+    for source, target in active_mapping.items():
         prefix = _source_prefix(source)
         for key, old in existing.items():
             if key[0] == target and key[1].startswith(prefix) and key not in desired:
@@ -379,12 +411,16 @@ def _plan(store, staged, choices, root):
                                'description': old_context.get('description', ''),
                                'status': 'removed', 'transfer': bool(old['transfer_id'])})
     counts['removed'] = len(removed)
-    fingerprint = digest({'source': staged['source_sha256'], 'choices': choices,
-                          'rows': staged['rows']})
-    replay = bool(mapping) and all(
+    # Bound-source rows belong to the direct bank connector and may change
+    # independently; this snapshot fingerprint covers only Finanzguru-managed
+    # sources. The review token still binds the direct-source policy itself.
+    fingerprint = digest({'rows': [row for row in rows if row['source_account'] not in direct_sources],
+                          'mapping': active_mapping, 'transfer_pairs': active_pairs,
+                          'exported_at': exported_at, 'date_to': cutoff})
+    replay = bool(active_mapping) and all(
         heads.get(source) and heads[source]['exported_at'] == exported_at
-        and heads[source]['fingerprint'] == fingerprint for source in mapping)
-    for source in mapping:
+        and heads[source]['fingerprint'] == fingerprint for source in active_mapping)
+    for source in active_mapping:
         head = heads.get(source)
         if head and exported_at < head['exported_at']:
             blockers.append('stale_export')
@@ -398,6 +434,10 @@ def _plan(store, staged, choices, root):
     if replay and any(counts[name] for name in ('new', 'updated', 'removed')):
         blockers.append('snapshot_state_diverged')
     token = digest({'fingerprint': fingerprint, 'heads': heads,
+                    'direct_bank_targets': sorted(directly_bound),
+                    'direct_bank_sources': sorted(direct_sources),
+                    'active_transfer_pairs': active_pairs,
+                    'cross_source_references': sorted(cross_source_references),
                     'accounts': list(accounts.values()), 'ledger': ledger,
                     'contexts': contexts,
                     'source_context': {key[0] + '\0' + key[1]: source_context[key]
@@ -412,10 +452,13 @@ def _plan(store, staged, choices, root):
               'date_to': cutoff, 'new_net_amount': format(new_total, '.2f'),
               'net_change': format(net_change, '.2f'), 'ready': not blockers,
               'ledger_written': False, 'review_token': token,
-              'auto_classification_count': 0}
-    return report, {'mapping': mapping, 'desired': desired, 'existing': existing,
+              'auto_classification_count': 0, 'no_op': not active_mapping}
+    return report, {'mapping': active_mapping, 'desired': desired, 'existing': existing,
                     'removed': removed, 'heads': heads, 'fingerprint': fingerprint,
-                    'exported_at': exported_at, 'replay': replay}
+                    'exported_at': exported_at, 'replay': replay,
+                    'no_op': not active_mapping,
+                    'skipped_direct_source_pairs': skipped_direct_source_pairs,
+                    'skipped_out_of_scope_pairs': skipped_out_of_scope_pairs}
 
 
 def preview_snapshot(store, root, batch, choices):
@@ -469,6 +512,13 @@ def commit_snapshot(store, root, batch, choices, review_token):
         report, plan = _plan(store, staged, choices, root)
         if not report['ready'] or report['review_token'] != review_token:
             raise ValueError('review_stale_or_blocked')
+        if plan['no_op']:
+            store.db.commit()
+            return {'inserted': 0, 'updated': 0, 'removed': 0, 'auto_classified': 0,
+                    'auto_transfers': {'status': 'skipped', 'confirmed': 0, 'pair_ids': []},
+                    'model_review': {'status': 'skipped', 'counts': {}, 'reviewed': 0},
+                    'source_sha256': staged['source_sha256'], 'ledger_written': False,
+                    'no_op': True}
         if plan['replay']:
             store.db.commit()
             return {'inserted': 0, 'updated': 0, 'removed': 0, 'auto_classified': 0,
@@ -489,7 +539,9 @@ def commit_snapshot(store, root, batch, choices, review_token):
         source_text = _json({'kind': 'finanzguru_full_snapshot',
                              'source_sha256': staged['source_sha256'],
                              'exported_at': plan['exported_at'],
-                             'choices': choices, 'rows': staged['rows']})
+                             'choices': choices,
+                             'rows': [row for row in staged['rows']
+                                      if row['source_account'] in plan['mapping']]})
         import_id = store.db.execute(
             'INSERT INTO imports(digest,imported_at,source) VALUES (?,?,?)',
             (hashlib.sha256(source_text.encode()).hexdigest(),
