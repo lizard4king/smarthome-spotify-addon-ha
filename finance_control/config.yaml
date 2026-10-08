@@ -1,7 +1,7 @@
 name: Finance Control
 slug: finance_control
 description: Privates Finance-Control-Cockpit als Home-Assistant-Add-on
-version: "0.2.13"
+version: "0.2.15"
 arch:
   - amd64
   - aarch64
@@ -9,8 +9,12 @@ startup: application
 boot: auto
 init: true
 watchdog: "http://[HOST]:8785/health"
-options: {}
-schema: {}
+options:
+  access_token: ""
+  require_app_token: true
+schema:
+  access_token: password?
+  require_app_token: bool
 stdin: true
 backup: cold
 stage: experimental

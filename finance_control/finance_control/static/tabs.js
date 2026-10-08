@@ -3,7 +3,7 @@
 const cockpitNav = document.querySelector('nav[aria-label="Bereiche"]');
 const cockpitAnnouncement = document.getElementById('active-area-announcement');
 const cockpitAreas = {
-  'plan-actual': 'Plan & Ist', classification: 'Buchungen', planning: 'Planung',
+  dashboard: 'Buchungen', 'category-outflows': 'Abgänge nach Kategorie', 'plan-actual': 'Plan & Ist', classification: 'Buchungen bearbeiten', planning: 'Planung',
   scenarios: 'Planvarianten', accounts: 'Konten', finanzguru: 'Finanzguru-Import',
   intake: 'Vorbereiteter Import', documents: 'Belege', overview: 'Überblick',
   wealth: 'Vermögen', monthly: 'Monatsauswertung', approvals: 'Freigaben', analytics: 'Auswertung',
@@ -98,5 +98,6 @@ document.addEventListener('keydown', event => {
   }
 });
 window.addEventListener('hashchange', () => cockpitShowTab(location.hash.slice(1)));
-if (!Object.hasOwn(cockpitAreas, location.hash.slice(1))) location.hash = '#plan-actual';
+if (location.hash === '#classification') history.replaceState(null, '', '#dashboard');
+else if (!Object.hasOwn(cockpitAreas, location.hash.slice(1))) location.hash = '#plan-actual';
 cockpitShowTab(location.hash.slice(1));

@@ -213,6 +213,14 @@ def prepare(store, staged, choices):
     if choices.get('transfers_reviewed') is not True:
         raise ValueError('transfer_review_required')
     all_rows = staged['rows']
+    source_accounts = {r['source_account'] for r in all_rows}
+    if set(mapping) != source_accounts or any(target not in accounts for target in mapping.values()):
+        raise ValueError('complete_account_mapping_required')
+    if len(set(mapping.values())) != len(mapping):
+        raise ValueError('source_accounts_must_map_to_distinct_targets')
+    from .bank_source_policy import bound_finanzguru_targets, partition_finanzguru_transfer_pairs
+    directly_bound = bound_finanzguru_targets(store, mapping.values())
+    direct_sources = {source for source, target in mapping.items() if target in directly_bound}
     date_to = choices.get('date_to')
     if date_to is not None:
         if not isinstance(date_to, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', date_to):
@@ -221,25 +229,32 @@ def prepare(store, staged, choices):
             date_to = date.fromisoformat(date_to).isoformat()
         except ValueError as error:
             raise ValueError('invalid_date_to') from error
-    rows = [row for row in all_rows if date_to is None or row['date'] <= date_to]
-    excluded_after_date = [row for row in all_rows if date_to is not None and row['date'] > date_to]
+    dated_rows = [row for row in all_rows if date_to is None or row['date'] <= date_to]
+    rows = [row for row in dated_rows if row['source_account'] not in direct_sources]
+    excluded_after_date = [row for row in all_rows
+                           if row['source_account'] not in direct_sources
+                           and date_to is not None and row['date'] > date_to]
     blockers = list(staged['blockers'])
     if staged.get('split_row_count', 0) and choices.get('split_policy') != 'originals_only':
         blockers.append('split_policy_required')
-    source_accounts = {r['source_account'] for r in all_rows}
     managed_sources = {row[0] for row in store.db.execute(
         'SELECT source_account FROM finanzguru_snapshot_heads')}
-    if source_accounts & managed_sources:
+    active_sources = source_accounts - direct_sources
+    if active_sources & managed_sources:
         blockers.append('snapshot_managed_source_requires_full_export')
-    if set(mapping) != source_accounts or any(target not in accounts for target in mapping.values()):
-        raise ValueError('complete_account_mapping_required')
-    if len(set(mapping.values())) != len(mapping):
-        raise ValueError('source_accounts_must_map_to_distinct_targets')
     references = {r['reference']: r for r in rows}
+    cross_source_postable_references = {
+        row['reference'] for row in rows
+        if row['date'] > accounts[mapping[row['source_account']]]['opening_date']
+    }
+    (transfer_pairs, cross_source_references, skipped_direct_source_pairs,
+     skipped_out_of_scope_pairs) = partition_finanzguru_transfer_pairs(
+        all_rows, pairs, direct_sources, references, cross_source_postable_references)
+    if cross_source_references:
+        blockers.append('cross_source_transfer_requires_reconciliation')
     transfer_ids = {}
-    for pair in pairs:
-        if (not isinstance(pair, list) or len(pair) != 2 or pair[0] == pair[1]
-                or any(ref not in references or ref in transfer_ids for ref in pair)):
+    for pair in transfer_pairs:
+        if any(ref not in references or ref in transfer_ids for ref in pair):
             raise ValueError('invalid_transfer_pair')
         a, b = (references[ref] for ref in pair)
         if (mapping[a['source_account']] == mapping[b['source_account']]
@@ -262,6 +277,19 @@ def prepare(store, staged, choices):
     by_date_amount = {(r[0], r[2], r[3]) for r in ledger}
     seen, detail, proposed, import_rows = {}, [], [], []
     counts = Counter({'after_date_to': len(excluded_after_date)}) if excluded_after_date else Counter()
+    if direct_sources:
+        counts['direct_bank_source'] = sum(row['source_account'] in direct_sources for row in all_rows)
+        for row in all_rows:
+            if row['source_account'] in direct_sources:
+                detail.append({'reference': row['reference'],
+                               'account_id': mapping[row['source_account']],
+                               'date': row['date'], 'amount': row['amount'],
+                               'category': row['category'], 'status': 'direct_bank_source',
+                               'transfer': False})
+    if skipped_direct_source_pairs:
+        counts['transfer_pairs_skipped_for_direct_source'] = skipped_direct_source_pairs
+    if skipped_out_of_scope_pairs:
+        counts['transfer_pairs_outside_date_range'] = skipped_out_of_scope_pairs
     for row in excluded_after_date:
         detail.append({'reference': row['reference'], 'account_id': mapping[row['source_account']],
                        'date': row['date'], 'amount': row['amount'], 'category': row['category'],
@@ -298,6 +326,8 @@ def prepare(store, staged, choices):
         detail.append({'reference': row['reference'], 'account_id': target, 'date': row['date'],
                        'amount': row['amount'], 'category': row['category'], 'status': status,
                        'transfer': bool(record[-1]),
+                       'blocking_reason': ('cross_source_transfer_requires_reconciliation'
+                                           if row['reference'] in cross_source_references else None),
                        'own_category': None if rule is None else rule['category'],
                        'own_category_label': None if rule is None else rule['label']})
     # Include existing pair legs as well, so the original importer revalidates the complete group.
@@ -312,9 +342,14 @@ def prepare(store, staged, choices):
                'auto_classification_count': sum(
                    row['status'] == 'new' and row['own_category'] is not None for row in detail),
                'new_net_amount': format(sum((money(r[3]) for r in proposed), money('0')), '.2f'),
-               'ready': not blockers, 'ledger_written': False}
+               'ready': not blockers, 'ledger_written': False,
+               'no_op': not active_sources}
     token = digest({'source': staged['source_sha256'], 'choices': choices,
                     'rows': rows, 'blockers': staged['blockers'],
+                    'direct_bank_targets': sorted(directly_bound),
+                    'direct_bank_sources': sorted(direct_sources),
+                    'active_transfer_pairs': transfer_pairs,
+                    'cross_source_references': sorted(cross_source_references),
                     'split_summary': staged.get('split_summary', {}),
                     'split_row_count': staged.get('split_row_count', 0),
                     'excluded_split_children': staged.get('excluded_split_children', 0),
@@ -345,6 +380,13 @@ def commit_batch(store, root, batch, choices, review_token):
         report, source, import_rows = prepare(store, staged, choices)
         if not report['ready'] or report['review_token'] != review_token:
             raise ValueError('review_stale_or_blocked')
+        if report['no_op']:
+            store.db.commit()
+            return {'inserted': 0, 'auto_classified': 0,
+                    'auto_transfers': {'status': 'skipped', 'confirmed': 0, 'pair_ids': []},
+                    'model_review': {'status': 'skipped', 'counts': {}, 'reviewed': 0},
+                    'source_sha256': staged['source_sha256'], 'ledger_written': False,
+                    'no_op': True}
         receipt = {'source_sha256': staged['source_sha256'], 'choices': choices,
                    'recorded_at': datetime.now(UTC).isoformat(),
                    'review_token': review_token, 'csv_sha256': hashlib.sha256(source.encode()).hexdigest()}

@@ -14,5 +14,6 @@ fi
 exec python -m finance_control.web \
   --host 0.0.0.0 \
   --port 8785 \
+  --options-file /data/options.json \
   --allowed-host finance.pistelok.de \
   --allowed-origin https://finance.pistelok.de

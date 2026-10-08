@@ -12,10 +12,12 @@ class BankProfile:
 PROFILES = {
     'ING': BankProfile('ING', 'https://fints.ing.de/fints/', 'https://www.ing.de/hbci',
                        'Giro, Extra-Konto und Depot dokumentiert; tatsächlicher Abruf ungeprüft.'),
-    'NASPA': BankProfile('NASPA', None, 'https://www.naspa.de/',
-                         'FinTS dokumentiert; konkreter PIN/TAN-Endpunkt noch nicht verifiziert.'),
-    'POSTBANK': BankProfile('Postbank', None, 'https://www.postbank.de/',
-                            'Kreditkartenabruf mit dieser Bibliothek und diesem Konto ungeprüft; CSV bleibt Alternative.'),
+    'NASPA': BankProfile('NASPA', 'https://banking-hs7.s-fints-pt-hs.de/fints30',
+                         'FinTS-Leitstelle: Bankenliste, erhalten 2026-10-05',
+                         'PIN/TAN-Endpunkt in registrierter Bankenliste bestätigt; tatsächlicher Abruf ungeprüft.'),
+    'POSTBANK': BankProfile('Postbank', 'https://hbci.postbank.de/banking/hbci.do',
+                            'FinTS-Leitstelle: Bankenliste, erhalten 2026-10-05',
+                            'PIN/TAN-Endpunkt bestätigt; Kreditkartenabruf mit dieser Bibliothek und diesem Konto ungeprüft; CSV bleibt Alternative.'),
 }
 
 

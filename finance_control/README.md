@@ -1,27 +1,54 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.13` runs the current `src/finance_control` package inside a Home
-Assistant add-on. Build an installable add-on context from the repository with
+Version `0.2.15` adds the new app views and exposes `last_booking_date`.
+Version `0.2.14` adds application-level authentication. By default every route
+except `/health` now requires a shared access token (add-on option `access_token`;
+if empty, a token is generated on first start, stored in
+`/data/FinanceControl/data/app_access_token` with mode 0600 and printed to the
+add-on log). The browser logs in once through a form and receives an `HttpOnly`,
+`SameSite=Lax` cookie derived from the token; scripts may send `X-Finance-Access`
+or `Authorization: Bearer`. The existing Host, Origin and CSRF checks are unchanged.
+Deployments that are fully protected by Cloudflare Access can opt out explicitly with
+`require_app_token: false`. See `CHANGELOG.md`.
+
+Version `0.2.13` records explicitly confirmed Bonsy voucher payments separately
+from bank payments and cash withdrawals. Voucher redemption closes only the
+receipt payment remainder; it does not create another bank transaction or expense.
+
+Version `0.2.12` treats confirmed Bonsy receipts below EUR 50 without an exact
+personal-account payment as cash immediately. Source duplicates and explicit
+exclusions stay in the audit trail and are hidden from active document review.
+Cashback withdrawals retain their separately documented purchase portion.
+
+Version `0.2.11` allows categories and receipts to be edited directly on
+original transactions in Plan & Ist. Version `0.2.10` shows actual monthly
+positions by account and recipient, with
+the original transactions, in the 2025 retrospective. 2026 budgets and
+calculations remain unchanged. It also restores the selected monthly budget
+reference for 2026, including September before the first calculation row in
+October. The 2025
+retrospective remains independently based on Plan=Ist. A compact Plan/Ist/
+variance summary stays visible, with an explicit label for the comparison
+basis. The earlier Android chart, as-of-date, and unavailable-payday-data fixes
+remain included.
+On mobile, all seven column sorts are available in the existing collapsed
+filter section; sorting changes display order only, not calculations or data.
+The interface has two main workspaces, Plan & Ist and bookings. Planning,
+accounts, import and receipts open through tool buttons; mobile bookings use
+compact cards. Year summaries use the current calendar year. Cash withdrawals
+are shown separately from receipt spending, and explicitly excluded Bonsy rows
+are reported instead of counted as purchases.
+It runs the current `src/finance_control` package inside a Home Assistant
+add-on. Build an installable add-on context from the repository with
 `scripts/build_homeassistant_addon.py`; the resulting `.tar.gz` is written outside
-the repository and includes a source manifest. The package keeps source provenance in `build-manifest.json`; no private data
-is included.
-
-The cockpit now has two main workspaces: Plan & Ist and bookings. Tool buttons
-open planning, accounts, import and receipts. Mobile bookings use compact cards. Their collapsed filter panel now offers sorting by all seven data columns in both directions. Historical 2025 reports also show actual merchant positions and original bookings. Their collapsed filter panel now offers sorting by all seven data columns in both directions.
-Selected 2026 monthly budgets remain independent of the 2025 retrospective.
-Cash withdrawals and receipt spending are separate; explicit Bonsy exclusions
-can be reconciled while preserving their source records and audit history.
-
-For the current Home Assistant 2026.10 store, local apps are loaded from
-`/data/apps/local`. A separate SSH add-on's `/addons` mount points at
-`/supervisor/addons/local` and is not the active store path; do not broaden SSH
-mounts to work around this. Install or update this repository through the
-Home Assistant add-on store so Supervisor uses its supported app path.
+the repository and includes a source manifest. The checked-in `code/` folder is
+an older snapshot and is not used by this build process.
 
 The add-on listens on port `8785` inside Home Assistant's add-on network. No host
-port is published. Home Assistant automatically mounts private persistent app
-data at `/data` and includes it in cold backups. Finance Control uses
-`/data/FinanceControl/data` and does not map the separate `addon_config` directory.
+port is published. Home Assistant automatically mounts the add-on's private,
+persistent data directory at `/data` and includes it in cold backups. Finance
+Control stores its active database under `/data/FinanceControl/data`. It does
+not map the separate public `addon_config` directory.
 On first start without a database, the add-on waits for one JSON line on
 Home Assistant's add-on stdin and restores a verified backup package. This
 one-time bootstrap is scoped to `/data/FinanceControl/data`; it rejects an
@@ -33,31 +60,23 @@ source data directory used one. Run exactly one Finance Control instance
 against an active data directory.
 
 For Cloudflared, route `finance.pistelok.de` to
-`http://7b071411-finance-control:8785` and set the origin request Host header to
+the installed app's internal hostname on port `8785` and set the origin request Host header to
 `finance.pistelok.de`. Keep a Cloudflare Access application and an allow policy
 in front of this hostname. Finance Control's Host, Origin, and CSRF checks are
-request protections, not user authentication.
-Home Assistant's internal DNS name here follows its installed-repository
-identifier plus add-on slug (`7b071411` + `finance_control`); use the name
-shown by Supervisor if the repository identifier changes.
+request protections, not user authentication; since 0.2.14 the application
+additionally requires its own access token unless `require_app_token` is set to
+`false`.
+
+The currently registered distribution repository is
+`lizard4king/smarthome-spotify-addon-ha`; its expected app hostname is
+`7b071411-finance-control`. Read the actual hostname from Supervisor after
+installation. On Home Assistant 2026.10, an older SSH app's `/addons` mount may
+not expose the active `/data/apps/local` store; use the registered repository
+instead of broadening SSH permissions.
 
 The manifest declares the Supervisor watchdog URL, but keep the per-add-on
 watchdog option disabled during first initialization. Enable it only after the
 database restore and a successful application start have been verified.
 
-See the [Finance Control server documentation](https://github.com/lizard4king/finance-control/blob/main/docs/homeassistant-server.md)
-for build, access, backup, and migration requirements.
-
-Version `0.2.7` distinguishes saved monthly budgets from months without a plan, improves month navigation and historical cockpit labels, and exposes audited single-leg transfer corrections through the existing API.
-
-Version 0.2.7 fits the single-month chart to Android panels and redraws it after view changes or rotation without additional data requests. Axis labels remain readable on narrow displays.
-
-Version 0.2.7 labels a partial-month bank balance by its evaluation date and distinguishes the evaluation cutoff from import completeness.
-
-Version `0.2.7` hides payday spending caps and remainder amounts when salary-cycle data is unavailable; the monthly budget remains visible separately.
-
-Original bookings in Plan & Ist now support direct category and document editing. Mobile booking cards use compact SVG pictograms and labeled actions.
-
-Small Bonsy receipts without an exact personal-account debit are immediately marked cash by the explicit user rule. Excluded receipts and reversible duplicate markers remain protected; wallet funding is excluded from document payment candidates.
-
-Version `0.2.13` records user-confirmed Bonsy voucher payments separately from bank and cash, preserves receipt gross amounts, and does not create another expense.
+See [`docs/homeassistant-server.md`](../../docs/homeassistant-server.md) for
+build, access, backup, and migration requirements.

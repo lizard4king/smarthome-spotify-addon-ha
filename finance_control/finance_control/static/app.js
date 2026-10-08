@@ -16,6 +16,8 @@ async function cockpitLoadArea(id, {force = false} = {}) {
   if (cockpitAreaLoading.has(key)) return cockpitAreaLoading.get(key);
   if (!force && cockpitAreaLoaded.get(key) === cockpitDataGeneration) return true;
   const loaders = {
+    dashboard: async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard); },
+    'category-outflows': async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard, 'category-outflows'); },
     'plan-actual': async reload => {
       if (typeof planActualEnsureLoaded !== 'function') return;
       await planActualEnsureLoaded(reload);
@@ -69,7 +71,9 @@ async function cockpitLoadArea(id, {force = false} = {}) {
 }
 
 document.addEventListener('cockpit-area-changed', event => {
-  void cockpitLoadArea(event.detail.id);
+  // Both views share selection state and must repaint when becoming visible.
+  const sharedAccountView = ['dashboard', 'category-outflows'].includes(event.detail.id);
+  void cockpitLoadArea(event.detail.id, {force: sharedAccountView});
 });
 document.addEventListener('DOMContentLoaded', () => {
   cockpitFeaturesReady = true;
@@ -250,3 +254,18 @@ $('overview-primary-action-open').addEventListener('click',event=>{if(event.curr
 $('overview-task-list').addEventListener('click',event=>{const action=event.target.closest('button[data-target]');if(action)cockpitNavigate(action.dataset.target);});
 async function backupRetry(){try{const status=await backupMaintain();setTimeout(backupRetry,status.reachable&&!status.error?60000:300000);}catch(error){setTimeout(backupRetry,300000);}}
 run(async()=>{await refresh();await backupRetry();});
+
+document.addEventListener('finance-dashboard-cutoff', event => {
+  const value = event.detail?.as_of;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return;
+  $('cutoff').value = value;
+  void run(refresh);
+});
+
+document.addEventListener('finance-dashboard-edit', event => {
+  const key = event.detail;
+  void run(async () => {
+    if (typeof bookingEditorOpen !== 'function') throw new Error('Buchungsbearbeitung ist noch nicht geladen.');
+    await bookingEditorOpen(key, {onSaved: async () => { await refresh(); }});
+  });
+});

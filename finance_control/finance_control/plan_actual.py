@@ -14,6 +14,7 @@ from .budget import (
     load,
 )
 from .budget import _shift_month as _budget_shift_month
+from .account_overview import build_account_overview
 from .cash_components import cash_principal as _cash_principal
 from .cash_components import cash_receipt_key
 from .classification import exact_rule_match, normalize_counterparty
@@ -22,7 +23,7 @@ from .historical_positions import historical_positions
 from .person_attribution import account_allocations, person_label, split_cents
 from .reporting_history import month_quality, scope_for_month
 from .reporting_history import validate as validate_reporting_history
-from .transfer_corrections import source_declares_transfer
+from .transfer_corrections import source_declares_transfer, sql_transfer_predicate
 
 _PAGE_SIZE = 25
 
@@ -212,6 +213,14 @@ def _cash_purchase_category(store, item, noncash):
     return category
 
 
+def _confirmed_cash_withdrawal(store, row):
+    return (
+        row["confirmed"] == 1
+        and canonical_category_id(store, row["category_id"]) == "AUSGABEN_BARGELD"
+        and money(row["amount"]) < 0
+    )
+
+
 def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=None,
                  *, reporting_scope=None, cash_withdrawals=None):
     rows = store.db.execute(
@@ -293,11 +302,7 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
                 or (row["transfer_id"] and row["transfer_id"] in depot_transfer_ids)):
             depot_movement_count += 1
             continue
-        cash_withdrawal = (
-            item["confirmed"] == 1
-            and canonical_category_id(store, item["category_id"]) == "AUSGABEN_BARGELD"
-            and money(item["amount"]) < 0
-        )
+        cash_withdrawal = _confirmed_cash_withdrawal(store, item)
         if cash_withdrawal:
             cash_withdrawal_count += 1
             principal = _cash_principal(item)
@@ -305,7 +310,8 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
             noncash = gross - principal
             if cash_withdrawals is not None:
                 cash_withdrawals.append({
-                    "account_id": item["account_id"], "principal": principal,
+                    "account_id": item["account_id"], "date": item["date"],
+                    "principal": principal,
                     "gross": gross, "noncash": noncash,
                 })
             if noncash == 0:
@@ -1535,7 +1541,8 @@ def _reporting_checking_account_ids(reporting_scope, liquidity_account_ids):
 
 def _monthly_account_balance_change(store, month, account_ids, account_owners,
                                     known_person_ids, person_ids, *, today=None,
-                                    opening_balances=None, reporting_scope=None):
+                                    opening_balances=None, reporting_scope=None,
+                                    include_details=True):
     """Return opening/end balances and actual daily changes for selected checking accounts."""
     unavailable = {"available": False, "as_of": None, "by_person": {}}
     if not account_ids:
@@ -1560,8 +1567,9 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
         unavailable["reason"] = "incomplete_source_coverage"
         return unavailable
     placeholders = ",".join("?" for _ in account_ids)
+    account_columns = "id,kind,currency,display_name" if include_details else "id,kind"
     accounts = list(store.db.execute(
-        f"SELECT id,kind FROM accounts WHERE id IN ({placeholders})", account_ids))
+        f"SELECT {account_columns} FROM accounts WHERE id IN ({placeholders})", account_ids))
     if len(accounts) != len(account_ids) or any(row["kind"] != "CHECKING" for row in accounts):
         unavailable["reason"] = "checking_account_unavailable"
         return unavailable
@@ -1574,6 +1582,10 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
 
     person_ids = [person for person in person_ids if person != "JOINT"] + ["JOINT"]
     actual_change = {person: Decimal("0.00") for person in person_ids}
+    movement_fields = ("other_inflow", "other_outflow", "transfer_inflow",
+                       "transfer_outflow", "cash_withdrawals")
+    movements = ({person: {field: Decimal("0.00") for field in movement_fields}
+                  for person in ["TOTAL", *person_ids]} if include_details else None)
     start_by_person = actual_change.copy()
     end_by_person = actual_change.copy()
     deltas_by_day = {}
@@ -1582,17 +1594,66 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
         for row in accounts
     }
     end_balances = dict(start_balances)
+    account_changes = ({row["id"]: Decimal("0.00") for row in accounts}
+                       if include_details else None)
+    account_inflows = ({row["id"]: Decimal("0.00") for row in accounts}
+                       if include_details else None)
+    account_outflows = ({row["id"]: Decimal("0.00") for row in accounts}
+                        if include_details else None)
+    account_deltas_by_day = {} if include_details else None
     for account_id, balance in start_balances.items():
         start_by_person[account_person[account_id]] += balance
+    if include_details:
+        transfer_predicate = sql_transfer_predicate(alias="t", context_alias="c")
+        transaction_sql = (
+            f"SELECT t.account_id,t.external_id,t.date,t.amount,t.category,"
+            f"t.transfer_id,c.counterparty,c.description AS context_description,"
+            f"o.category_id,o.confirmed,"
+            f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
+            f"FROM transactions t "
+            f"LEFT JOIN transaction_context c USING(account_id,external_id) "
+            f"LEFT JOIN classification_overrides o USING(account_id,external_id) "
+            f"WHERE t.date BETWEEN ? AND ? AND t.account_id IN ({placeholders}) "
+            f"ORDER BY t.date,t.account_id")
+    else:
+        transaction_sql = (
+            f"SELECT account_id,date,amount FROM transactions "
+            f"WHERE date BETWEEN ? AND ? AND account_id IN ({placeholders}) "
+            f"ORDER BY date,account_id")
     for row in store.db.execute(
-            f"SELECT account_id,date,amount FROM transactions WHERE date BETWEEN ? AND ? "
-            f"AND account_id IN ({placeholders}) ORDER BY date,account_id",
-            (start.isoformat(), as_of.isoformat(), *account_ids)):
+            transaction_sql, (start.isoformat(), as_of.isoformat(), *account_ids)):
         person = account_person[row["account_id"]]
         day = date.fromisoformat(row["date"])
         delta = money(row["amount"])
         actual_change[person] += delta
         end_balances[row["account_id"]] += delta
+        if include_details:
+            account_changes[row["account_id"]] += delta
+            if delta > 0:
+                account_inflows[row["account_id"]] += delta
+            elif delta < 0:
+                account_outflows[row["account_id"]] += -delta
+            account_day = account_deltas_by_day.setdefault(
+                day, {account_id: Decimal("0.00") for account_id in account_ids})
+            account_day[row["account_id"]] += delta
+            item = dict(row)
+            item["description"] = row["context_description"] or ""
+            item["counterparty"] = row["counterparty"] or ""
+            row_movement = {field: Decimal("0.00") for field in movement_fields}
+            if _confirmed_cash_withdrawal(store, item):
+                principal = min(_cash_principal(item), -delta)
+                row_movement["cash_withdrawals"] = principal
+                row_movement["other_outflow"] = -delta - principal
+            elif row["is_transfer"]:
+                field = "transfer_inflow" if delta > 0 else "transfer_outflow"
+                row_movement[field] = abs(delta)
+            elif delta > 0:
+                row_movement["other_inflow"] = delta
+            else:
+                row_movement["other_outflow"] = -delta
+            for field in movement_fields:
+                movements[person][field] += row_movement[field]
+                movements["TOTAL"][field] += row_movement[field]
         day_values = deltas_by_day.setdefault(
             day, {owner: Decimal("0.00") for owner in person_ids})
         day_values[person] += delta
@@ -1605,6 +1666,17 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
     for person in person_ids:
         values[person] = {"start": start_by_person[person], "end": end_by_person[person],
                           "change": actual_change[person]}
+    movement_summary = None
+    if include_details:
+        movement_summary = {}
+        for person, amounts in movements.items():
+            net = (amounts["other_inflow"] - amounts["other_outflow"]
+                   + amounts["transfer_inflow"] - amounts["transfer_outflow"]
+                   - amounts["cash_withdrawals"])
+            movement_summary[person] = {
+                **{field: _format(amount) for field, amount in amounts.items()},
+                "net": _format(net),
+            }
     cumulative = {person: Decimal("0.00") for person in person_ids}
     points = {person: [] for person in person_ids}
     for day_number in range(1, as_of.day + 1):
@@ -1619,7 +1691,46 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
                                 for person in person_ids), Decimal("0.00")))}
         for index, current in enumerate(points[person_ids[0]])
     ] if person_ids else []
-    return {
+    by_account = None
+    totals = None
+    if include_details:
+        by_account = {}
+        account_points = {account_id: [] for account_id in account_ids}
+        running_accounts = dict(start_balances)
+        for day_number in range(1, as_of.day + 1):
+            current = date(year, month_number, day_number)
+            for account_id in account_ids:
+                running_accounts[account_id] += account_deltas_by_day.get(
+                    current, {}).get(account_id, Decimal("0.00"))
+                account_points[account_id].append({
+                    "date": current.isoformat(), "balance": _format(running_accounts[account_id])})
+        for row in accounts:
+            account_id = row["id"]
+            by_account[account_id] = {
+                "id": account_id, "display_name": row["display_name"] or account_id,
+                "currency": row["currency"], "start": _format(start_balances[account_id]),
+                "end": _format(end_balances[account_id]),
+                "change": _format(account_changes[account_id]),
+                "inflow": _format(account_inflows[account_id]),
+                "outflow": _format(account_outflows[account_id]),
+                "points": account_points[account_id],
+            }
+        totals = {
+            key: sum((money(value[key]) for value in by_account.values()), Decimal("0.00"))
+            for key in ("start", "end", "change", "inflow", "outflow")
+        }
+        totals["id"] = "TOTAL"
+        totals["display_name"] = "Alle ausgewählten Girokonten"
+        totals["currency"] = "EUR"
+        totals["points"] = [
+            {"date": account_points[account_ids[0]][index]["date"],
+             "balance": _format(sum((Decimal(account_points[account_id][index]["balance"])
+                                     for account_id in account_ids), Decimal("0.00")))}
+            for index, _ in enumerate(account_points[account_ids[0]])
+        ] if account_ids else []
+        totals = {key: _format(value) if isinstance(value, Decimal) else value
+                  for key, value in totals.items()}
+    result = {
         "available": True, "as_of": as_of.isoformat(), "by_person": {
             person: {key: _format(value) for key, value in summary.items()}
             | {"points": points[person]}
@@ -1629,6 +1740,10 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
         "_account_end_balances": end_balances,
         "source": "Rohbuchungen der ausgewählten Girokonten einschließlich Umbuchungen",
     }
+    if include_details:
+        result.update({"by_account": by_account, "totals": totals,
+                       "movements_by_person": movement_summary})
+    return result
 
 
 def _trend_snapshot_for_month(snapshot, month, selected_month, *, force=False):
@@ -1785,7 +1900,7 @@ def _monthly_trend(store, selected_month, snapshot, account_owners,
                    else _monthly_account_balance_change(
                        store, month, month_account_ids, account_owners, known_person_ids,
                        person_ids, today=today, opening_balances=balance_carry,
-                       reporting_scope=scope))
+                       reporting_scope=scope, include_details=False))
         balance_carry = balance.get("_account_end_balances") if balance["available"] else None
         _scope_person_values(daily["points_by_person"], scope)
         _scope_person_values(balance["by_person"], scope)
@@ -2210,6 +2325,7 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
         for item in month_plan.get("items", [])
     }
     actual_counts = {item_id: 0 for item_id in actual_by_item}
+    account_item_allocations = {}
     transaction_keys_by_item = {item_id: set() for item_id in actual_by_item}
     unmapped = {"income": Decimal("0.00"), "expenses": Decimal("0.00"), "count": 0}
     unmapped_warning_counts = {}
@@ -2264,6 +2380,10 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
             continue
         automatic_owner_mapping_count += int(owner_mapped)
         for item_id, allocated_actual in item_allocations:
+            if row.get("bonsy_entry_id") is None:
+                account_item_allocations.setdefault(transaction_key, []).append(
+                    (item_id, abs(allocated_actual) if money(row["amount"]) >= 0
+                     else -abs(allocated_actual)))
             if row.get("bonsy_entry_id") is not None:
                 cash_receipt_by_item[item_id] = (
                     cash_receipt_by_item.get(item_id, Decimal("0.00")) + allocated_actual)
@@ -2458,6 +2578,8 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
             scope, scoped_snapshot["plan"].get("liquidity_accounts", [])), account_owners,
         known_person_ids, sorted(known_person_ids), reporting_scope=scope)
     _scope_person_values(selected_balance["by_person"], scope)
+    if selected_balance.get("movements_by_person") is not None:
+        _scope_person_values(selected_balance["movements_by_person"], scope)
     comparison["tree"] = _tree(
         rows, tree_unmapped, unclassified,
         retrospective_actual_plan=retrospective_actual_plan,
@@ -2472,6 +2594,18 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
         key: value for key, value in selected_balance.items()
         if not key.startswith("_")
     }
+    overview_today = datetime.now().astimezone().date()
+    overview_cutoff = overview_today.isoformat()
+    overview_cash = _cash_activity(
+        store, [entry for entry in cash_withdrawals if entry["date"] <= overview_cutoff],
+        [entry for entry in ledger_rows if entry["date"] <= overview_cutoff], {},
+        known_person_ids)
+    comparison["account_overview"] = build_account_overview(
+        store, month, scoped_snapshot, planned_by_item,
+        plan_available=comparison["plan_available"] and not retrospective_actual_plan,
+        reporting_scope=scope,
+        cash_activity=overview_cash, item_allocations=account_item_allocations,
+        today=overview_today)
     comparison["available_from_month"] = available_from_month
     comparison["data_quality"] = month_quality(
         month, scope, unclassified_count=unclassified["count"])
