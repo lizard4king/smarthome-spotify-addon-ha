@@ -1,5 +1,13 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.21` moves transaction setup and import to the bookings workspace.
+Previously confirmed Postbank and ING checking-account selections can refresh
+on opening or reloading that workspace, or with the manual refresh button.
+Owner/revision checks, monthly controls and a persistent 60-second cooldown apply.
+Missing month ends are imported individually before the current month. The server
+uses Europe/Berlin. ING uses stored FinTS credentials; QR-only setup remains a
+separate, unimplemented integration. No payments or scheduled fetches are added.
+
 Version `0.2.20` adds a direct read-only Postbank checking-account import with
 explicit bank/ledger-account selection, authentication-method/device choices,
 full booking texts, a bounded preview and verified monthly control balances.

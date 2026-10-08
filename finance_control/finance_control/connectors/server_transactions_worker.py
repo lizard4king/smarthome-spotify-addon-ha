@@ -1,4 +1,4 @@
-"""Isolated Postbank statement read; the JSON channel never carries credentials."""
+"""Isolated ING/Postbank statement read; JSON never carries credentials."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ _MAX_INPUT = 16 * 1024
 _MAX_OUTPUT = 8 * 1024 * 1024
 _MAX_ROWS = 10_000
 _MAX_TEXT = 8192
+_BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517'}
 
 
 def _error(code):
@@ -50,9 +51,10 @@ def _valid(request):
     if any(type(request[key]) is not str or _ID.fullmatch(request[key]) is None
            for key in ('connection_id', 'owner_user_id')):
         return False
-    if (request['bank_id'] != 'POSTBANK' or request['bank_code'] != '50010060'
+    bank_id = request['bank_id']
+    if (type(bank_id) is not str or _BANK_CODES.get(bank_id) != request['bank_code']
             or not valid_product_id(request['product_id'])
-            or not valid_auth_selection('POSTBANK', request['tan_method'], request['tan_medium'])):
+            or not valid_auth_selection(bank_id, request['tan_method'], request['tan_medium'])):
         return False
     if request['action'] == 'accounts':
         return all(request[key] is None for key in ('account_fingerprint', 'month_start', 'as_of'))
@@ -92,8 +94,8 @@ def _source_matches(source, account):
                 and parts[1].lstrip('0') == account.accountnumber.lstrip('0')))
 
 
-def _monthly(snapshot, account, start, end):
-    if (type(snapshot) is not MonthlySnapshot or snapshot.source_profile != 'POSTBANK'
+def _monthly(snapshot, account, start, end, bank_id):
+    if (type(snapshot) is not MonthlySnapshot or snapshot.source_profile != bank_id
             or not _source_matches(snapshot.source_account, account)
             or snapshot.period_start != start or snapshot.period_end != end
             or type(snapshot.opening_date) is not date or snapshot.opening_date > start
@@ -112,7 +114,7 @@ def _monthly(snapshot, account, start, end):
                      'currency': snapshot.currency})
     if total != snapshot.closing_balance:
         raise ValueError('monthly sum')
-    return {'source_profile': 'POSTBANK', 'source_account': snapshot.source_account,
+    return {'source_profile': bank_id, 'source_account': snapshot.source_account,
             'period_start': start.isoformat(), 'period_end': end.isoformat(),
             'opening_date': snapshot.opening_date.isoformat(),
             'closing_date': snapshot.closing_date.isoformat(),
@@ -121,13 +123,13 @@ def _monthly(snapshot, account, start, end):
             'currency': snapshot.currency, 'rows': rows}
 
 
-def _period(snapshot, account, start, end):
+def _period(snapshot, account, start, end, bank_id):
     validate_period(snapshot)
-    if (snapshot.source_profile != 'POSTBANK' or not _source_matches(snapshot.source_account, account)
+    if (snapshot.source_profile != bank_id or not _source_matches(snapshot.source_account, account)
             or snapshot.month_start != start or snapshot.as_of != end
             or len(snapshot.rows) > _MAX_ROWS):
         raise ValueError('period')
-    return {'source_profile': 'POSTBANK', 'source_account': snapshot.source_account,
+    return {'source_profile': bank_id, 'source_account': snapshot.source_account,
             'month_start': start.isoformat(), 'as_of': end.isoformat(),
             'opening_date': snapshot.opening_date.isoformat(),
             'closing_date': snapshot.closing_date.isoformat(),
@@ -162,15 +164,16 @@ def run_request(request, vault_factory, reader_factory):
         return _error('vault_unavailable')
     missing = {}
     bestsign = [False]
+    bank_id = request['bank_id']
     try:
         def challenge(value):
-            if not value.decoupled or not bestsign[0]:
+            if bank_id != 'POSTBANK' or not value.decoupled or not bestsign[0]:
                 return None
             # FinTS subsequently polls the bank through send_tan; True supplies no TAN.
             time.sleep(5)
             return True
 
-        reader = reader_factory('POSTBANK', '50010060', request['product_id'], credentials,
+        reader = reader_factory(bank_id, request['bank_code'], request['product_id'], credentials,
                                 challenge, tan_method=request['tan_method'])
 
         def method(options):
@@ -189,11 +192,12 @@ def run_request(request, vault_factory, reader_factory):
             matches = [i for i, value in enumerate(safe) if value['label'] == request['tan_medium']]
             return matches[0] if len(matches) == 1 else None
 
-        reader.configure_auth(method, medium, force_selection=True)
-        client = getattr(reader, '_client', None)
-        selected = client.get_current_tan_mechanism()
-        mechanism = client.get_tan_mechanisms().get(selected)
-        bestsign[0] = 'bestsign' in str(getattr(mechanism, 'name', '')).casefold()
+        reader.configure_auth(method, medium, force_selection=(bank_id == 'POSTBANK'))
+        if bank_id == 'POSTBANK':
+            client = getattr(reader, '_client', None)
+            selected = client.get_current_tan_mechanism()
+            mechanism = client.get_tan_mechanisms().get(selected)
+            bestsign[0] = 'bestsign' in str(getattr(mechanism, 'name', '')).casefold()
         accounts = reader.read(ReadOperation.ACCOUNTS)
         if type(accounts) not in (tuple, list) or len(accounts) > 20:
             raise ValueError('accounts')
@@ -218,8 +222,8 @@ def run_request(request, vault_factory, reader_factory):
         if (type(monthly_values) not in (tuple, list) or len(monthly_values) != 1
                 or type(period_values) not in (tuple, list) or len(period_values) != 1):
             raise ValueError('snapshot count')
-        monthly = _monthly(monthly_values[0], account, previous_start, previous_end)
-        period = _period(period_values[0], account, start, end)
+        monthly = _monthly(monthly_values[0], account, previous_start, previous_end, bank_id)
+        period = _period(period_values[0], account, start, end, bank_id)
         if (monthly['currency'] != period['currency']
                 or monthly['closing_balance'] != period['opening_balance']
                 or monthly['source_account'] != period['source_account']):
@@ -234,6 +238,8 @@ def run_request(request, vault_factory, reader_factory):
             return {'status': 'needs_method', 'options': missing['method']}
         if 'medium' in missing:
             return {'status': 'needs_medium', 'options': missing['medium']}
+        if error.code is BankErrorCode.AUTH_REJECTED:
+            return _error('auth_rejected')
         if error.code in {BankErrorCode.SCA_REQUIRED, BankErrorCode.LOCAL_AUTH_ABORT,
                           BankErrorCode.GRAPHICAL_TAN, BankErrorCode.AUTH_SETUP_REQUIRED,
                           BankErrorCode.AUTH_SELECTION_INVALID, BankErrorCode.TAN_LIMIT}:

@@ -14,6 +14,7 @@
 
   const balanceError = code => ({
     authorization_required: 'Die Freigabe für den Bankabruf fehlt.',
+    auth_rejected: 'Die ING/Bank hat die Anmeldung abgelehnt. Prüfe den gespeicherten Zugang.',
     bank_read_timeout: 'Der Bankabruf hat das Zeitlimit erreicht. Es wurde kein neuer Abruf gestartet.',
     bank_read_busy: 'Für diese Bankverbindung läuft bereits ein Abruf.',
     vault_unavailable: 'Der sichere Serverspeicher ist derzeit nicht verfügbar.',
@@ -153,8 +154,8 @@
       let job;
       try {
         job = await window.api('/api/administration/bank-balances-read', payload);
-      } catch (_) {
-        if (isCurrent()) setStatus(readStatus, 'Kontostände konnten nicht abgerufen werden. Bitte prüfe den Serverstatus.', true);
+      } catch (error) {
+        if (isCurrent()) setStatus(readStatus, balanceError(error?.code), true);
         setBusy(false);
         return;
       }
@@ -208,7 +209,7 @@
         connection.server_credentials_present === true;
       const indicator = node('p', credentialPresent
         ? 'Zugangsdaten sind auf dem Server hinterlegt.'
-        : 'Noch keine Zugangsdaten auf dem Server.', 'fsb-presence');
+        : (source.bankId === 'ING' ? 'ING-Anbindung per QR-Login ist noch nicht eingerichtet.' : 'Noch keine Zugangsdaten auf dem Server.'), 'fsb-presence');
       card.append(heading, indicator);
 
       const form = node('form', '', 'fsb-form');
@@ -248,9 +249,14 @@
       const formMessage = node('p', '', 'fsb-form-message');
       formMessage.setAttribute('role', 'status');
       form.append(usernameLabel, pinLabel, consentLabel, save, formMessage);
-      form.hidden = credentialPresent;
+      form.hidden = credentialPresent || source.bankId === 'ING';
       card.append(form);
+      if (source.bankId === 'ING') {
+        form.replaceChildren();
+        card.append(node('p', 'Für diesen Weg wird eine separate Bankanbindung benötigt.', 'fsb-notice'));
+      }
       card.append(editCredentials);
+      if (source.bankId === 'ING') editCredentials.hidden = true;
       editCredentials.addEventListener('click', () => {
         if (busy || !credentialPresent) return;
         if (form.hidden) {
@@ -323,22 +329,12 @@
       }
       readPanel.append(readButton, readStatus, results);
       card.append(readPanel);
-      if (source.bankId === 'POSTBANK' && window.postbankTransactions) {
-        const transactionsPanel = node('div', '', 'fsb-transactions-panel');
-        card.append(transactionsPanel);
-        if (credentialPresent) {
-          window.postbankTransactions.bind(transactionsPanel,
-            {id: connection.id, revision: connection.revision, bankId: source.bankId}, refresh);
-        } else {
-          transactionsPanel.append(node('p', 'Hinterlege den Zugang auf dem Server, um Postbank-Buchungen direkt abzurufen.', 'fsb-notice'));
-        }
-      }
-
       let removing = false;
       let removalForm = null;
       const removeButton = node('button', 'Zugang entfernen', 'fsb-secondary');
       removeButton.type = 'button';
       removeButton.hidden = !credentialPresent;
+      if (source.bankId === 'ING') removeButton.hidden = true;
       const removeForm = node('form', '', 'fsb-remove-form');
       removeForm.noValidate = true;
       removeForm.hidden = true;

@@ -23,7 +23,7 @@ _MAX_OUTPUT = 16 * 1024
 _TIMEOUT = 90
 _BANK_READ_LOCK = threading.Lock()
 _ERROR_CODES = {
-    'invalid_request', 'vault_unavailable', 'authorization_required',
+    'invalid_request', 'vault_unavailable', 'authorization_required', 'auth_rejected',
     'bank_failure', 'invalid_bank_result', 'too_many_accounts',
     'duplicate_account', 'unsupported_platform',
 }
