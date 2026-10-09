@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.24` fixes ambiguous planning/cash amounts, backup receipt integrity and
+source-cache registration failures. HTTP concurrency is bounded; business operations
+remain serialized and recheck active users after waiting. Bank integration is unchanged.
+
+Version `0.2.23` hardens the application login: failed attempts are rate limited, sessions are
+random, server-side and revocable ("Abmelden"), and a generated token is printed only once.
+
 Version `0.2.22` bundles 238 local bank and merchant marks, documented sources,
 conservative counterparty recognition and category pictograms for unknown merchants.
 
@@ -34,8 +41,10 @@ Version `0.2.14` adds application-level authentication. By default financial dat
 application assets require a shared access token (add-on option `access_token`;
 if empty, a token is generated on first start, stored in
 `/data/FinanceControl/data/app_access_token` with mode 0600 and printed to the
-add-on log). The browser logs in once through a form and receives an `HttpOnly`,
-`SameSite=Lax` cookie derived from the token; scripts may send `X-Finance-Access`
+add-on log once, at creation; later starts do not repeat it, so note it or set `access_token`).
+The browser logs in through a form and receives an `HttpOnly`, `SameSite=Lax` cookie holding a
+random server-side session (30 days, revoked by the "Abmelden" button or a restart; after 10
+failed attempts in 15 minutes a client is answered with HTTP 429); scripts may send `X-Finance-Access`
 or `Authorization: Bearer`. The existing Host, Origin and CSRF checks are unchanged.
 Deployments that are fully protected by Cloudflare Access can opt out explicitly with
 `require_app_token: false`. See `CHANGELOG.md`.

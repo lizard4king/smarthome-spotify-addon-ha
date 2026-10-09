@@ -1,17 +1,19 @@
 """Household cockpit with optional verified Cloudflare identities and local assets."""
 import argparse
 import base64
-import hashlib
-import hmac
+from collections import OrderedDict, deque
 import json
 import os
 import re
 import secrets
 import sqlite3
+import sys
+import threading
 import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -34,10 +36,20 @@ from .server_bank_refresh import ServerBankRefresh
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
+MAX_REQUEST_WORKERS = 8
+REQUEST_SOCKET_TIMEOUT = 5
 MIN_ACCESS_TOKEN = 16
 ACCESS_COOKIE = 'fc_session'
 ACCESS_HEADER = 'X-Finance-Access'
 LOGIN_PATH = '/login'
+LOGOUT_PATH = '/logout'
+SESSION_LIFETIME = 30 * 24 * 3600
+MAX_SESSIONS = 32
+LOGIN_FAILURE_LIMIT = 10
+LOGIN_FAILURE_WINDOW = 15 * 60
+MAX_THROTTLE_CLIENTS = 256
+LOGOUT_FORM = ('<form method="post" action="/logout" class="logout">'
+               '<button type="submit" class="secondary">Abmelden</button></form>')
 LOCAL_BIND_HOSTS = {'127.0.0.1', '::1', 'localhost'}
 LOGIN_PAGE = (
     '<!doctype html><html lang="de"><head><meta charset="utf-8">'
@@ -62,16 +74,150 @@ LOGIN_PAGE = (
     '<label for="cockpit-key">Cockpit-Schlüssel</label>'
     '<input id="cockpit-key" type="password" name="token" autocomplete="current-password" '
     'aria-describedby="key-help@@ERROR_REF@@" @@INVALID@@autofocus required>'
-    '<p id="key-help" class="field-help">Du findest ihn im Finance-Control-App-Protokoll '
-    'in Home Assistant. Er ist kein Bankpasswort.</p>'
+    '<p id="key-help" class="field-help">Du findest ihn beim ersten Start im Finance-Control-App-Protokoll '
+    'in Home Assistant. Notiere ihn dann oder lege ihn in der Add-on-Option access_token fest. Er ist kein Bankpasswort.</p>'
     '<button type="submit">Cockpit öffnen <span aria-hidden="true">→</span></button>'
     '</form></section></main></body></html>'
 )
 
 
-def _session_value(token):
-    """Cookie value derived from the access token; the token itself is never stored client-side."""
-    return hmac.new(token.encode(), b'finance-control-session-v1', hashlib.sha256).hexdigest()
+class SessionStore:
+    """Random server-side sessions: revocable, expiring, and independent of the access token."""
+
+    def __init__(self, lifetime=SESSION_LIFETIME, limit=MAX_SESSIONS, clock=time.time):
+        self.lifetime = lifetime
+        self.limit = limit
+        self.clock = clock
+        self._expiry = {}
+        self._lock = threading.Lock()
+
+    def create(self):
+        session_id = secrets.token_urlsafe(32)
+        with self._lock:
+            now = self.clock()
+            self._expiry = {key: end for key, end in self._expiry.items() if end > now}
+            while len(self._expiry) >= self.limit:
+                del self._expiry[min(self._expiry, key=self._expiry.get)]
+            self._expiry[session_id] = now + self.lifetime
+        return session_id
+
+    def valid(self, session_id):
+        with self._lock:
+            end = self._expiry.get(session_id)
+            if end is None:
+                return False
+            if end <= self.clock():
+                del self._expiry[session_id]
+                return False
+            return True
+
+    def revoke(self, session_id):
+        with self._lock:
+            self._expiry.pop(session_id, None)
+
+
+class FailureThrottle:
+    """Bounded sliding-window limit for failed credential checks."""
+
+    def __init__(self, limit=LOGIN_FAILURE_LIMIT, window=LOGIN_FAILURE_WINDOW,
+                 clock=time.monotonic, max_clients=MAX_THROTTLE_CLIENTS):
+        if limit < 1 or window <= 0 or max_clients < 1:
+            raise ValueError('Invalid login throttle settings')
+        self.limit = limit
+        self.window = window
+        self.clock = clock
+        self.max_clients = max_clients
+        # Ordered by most recent failure; saturated capacity uses one shared bucket.
+        self._events = OrderedDict()
+        self._overflow = deque()
+        self._lock = threading.Lock()
+
+    def _expire(self, now):
+        while self._events:
+            client, events = next(iter(self._events.items()))
+            if now - events[-1] < self.window:
+                break
+            self._events.popitem(last=False)
+        while self._overflow and now - self._overflow[0] >= self.window:
+            self._overflow.popleft()
+
+    def _bucket(self, client):
+        if client in self._events:
+            return self._events[client]
+        if len(self._events) >= self.max_clients:
+            return self._overflow
+        return None
+
+    def retry_after(self, client):
+        with self._lock:
+            now = self.clock()
+            self._expire(now)
+            events = self._bucket(client)
+            if events is None:
+                return None
+            while events and now - events[0] >= self.window:
+                events.popleft()
+            if len(events) >= self.limit:
+                return max(1, int(self.window - (now - events[0]) + 0.999))
+            return None
+
+    def record_failure(self, client):
+        with self._lock:
+            now = self.clock()
+            self._expire(now)
+            events = self._bucket(client)
+            if events is None:
+                self._events[client] = deque([now])
+                return
+            while events and now - events[0] >= self.window:
+                events.popleft()
+            if len(events) < self.limit:
+                events.append(now)
+            if client in self._events:
+                self._events.move_to_end(client)
+
+    def reset(self, client):
+        with self._lock:
+            self._events.pop(client, None)
+
+
+class BoundedHTTPServer(ThreadingMixIn, HTTPServer):
+    """Limit concurrent requests and release idle connections after a timeout."""
+
+    daemon_threads = True
+    request_queue_size = MAX_REQUEST_WORKERS
+
+    def __init__(self, server_address, handler_class):
+        self._request_slots = threading.BoundedSemaphore(MAX_REQUEST_WORKERS)
+        super().__init__(server_address, handler_class)
+
+    def get_request(self):
+        request, address = super().get_request()
+        request.settimeout(REQUEST_SOCKET_TIMEOUT)
+        return request, address
+
+    def process_request(self, request, client_address):
+        if not self._request_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
+
+    def handle_error(self, request, client_address):
+        # Peers may disconnect while a timed-out handler reads or writes.
+        # Avoid printing request addresses for these expected socket failures.
+        if isinstance(sys.exc_info()[1], OSError):
+            return
+        super().handle_error(request, client_address)
 
 
 def default_cutoff():
@@ -275,6 +421,11 @@ class Cockpit:
                     return {'text': read_document_source(self.database, data['id'])}
                 if action not in actions:
                     raise ValueError('unknown_classification_action')
+                # Interactive amounts have a stricter text contract than source
+                # adapters and previously stored numerical Decimal strings.
+                if (action in {'document-create', 'document-refresh', 'document-save', 'confirm-link'}
+                        and data.get('amount') is not None):
+                    data = {**data, 'amount': format(decimal_text(data['amount']), '.2f')}
                 return actions[action](store, data)
             if route.startswith('/api/intake-'):
                 from . import intake_draft
@@ -556,7 +707,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
     """
     if access_token is not None and len(access_token) < MIN_ACCESS_TOKEN:
         raise ValueError('Zugriffstoken zu kurz.')
-    session_value = _session_value(access_token) if access_token is not None else None
+    sessions = SessionStore()
+    failures = FailureThrottle()
+    dispatch_lock = threading.Lock()
     if identity_verifier is not None:
         administration, server_banking = _server_administration(app.database)
     else:
@@ -593,6 +746,17 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             self.end_headers()
             self.wfile.write(body)
 
+        def client_key(self):
+            # Only the socket peer is trusted. Users behind one proxy share its limit.
+            return self.client_address[0]
+
+        def session_id(self):
+            for part in self.headers.get('Cookie', '').split(';'):
+                name, _, value = part.strip().partition('=')
+                if name == ACCESS_COOKIE and value:
+                    return value
+            return ''
+
         def authorized(self):
             if access_token is None:
                 return True
@@ -600,22 +764,30 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             authorization = self.headers.get('Authorization', '')
             if authorization.startswith('Bearer '):
                 candidates.append(authorization[7:].strip())
-            if any(candidate and secrets.compare_digest(candidate.encode(), access_token.encode())
-                   for candidate in candidates):
-                return True
-            for part in self.headers.get('Cookie', '').split(';'):
-                name, _, value = part.strip().partition('=')
-                if name == ACCESS_COOKIE and value and secrets.compare_digest(
-                        value.encode(), session_value.encode()):
+            candidates = [candidate for candidate in candidates if candidate]
+            if candidates:
+                client = self.client_key()
+                if failures.retry_after(client) is not None:
+                    return False
+                if any(secrets.compare_digest(candidate.encode(), access_token.encode())
+                       for candidate in candidates):
                     return True
-            return False
+                failures.record_failure(client)
+                return False
+            return sessions.valid(self.session_id())
 
-        def require_identity(self, *, discard_body=False):
+        def require_identity(self, *, discard_body=False, recheck=False):
             self.management_user = None
             if identity_verifier is None:
                 return True
             try:
-                identity = identity_verifier.verify(self.headers.get('Cf-Access-Jwt-Assertion', ''))
+                if recheck:
+                    # The signature was verified before waiting for the dispatch lock.
+                    # Recheck only local membership so a removed user cannot proceed.
+                    identity = getattr(self, 'verified_identity', None)
+                else:
+                    identity = identity_verifier.verify(self.headers.get('Cf-Access-Jwt-Assertion', ''))
+                    self.verified_identity = identity
                 self.management_user = administration.resolve_identity(identity, bootstrap_emails)
                 return True
             except (IdentityError, AdministrationError) as error:
@@ -682,11 +854,44 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 return self.reply(400, {'error': 'Anfrage ungültig.'})
             form = parse_qs(self.rfile.read(size).decode('utf-8', 'replace'))
             supplied = form.get('token', [''])[0]
+            client = self.client_key()
+            wait = failures.retry_after(client)
+            if wait is not None:
+                return self.reply_throttled(wait)
             if access_token is None or not secrets.compare_digest(supplied.encode(), access_token.encode()):
+                failures.record_failure(client)
                 return self.login_page(401, error=True)
-            cookie = f'{ACCESS_COOKIE}={session_value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000'
-            if (self.headers.get('X-Forwarded-Proto', '').casefold() == 'https'
-                    or self.headers.get('Origin', '').startswith('https://')):
+            failures.reset(client)
+            cookie = (f'{ACCESS_COOKIE}={sessions.create()}; Path=/; HttpOnly; SameSite=Lax; '
+                      f'Max-Age={SESSION_LIFETIME}')
+            if self.secure_request():
+                cookie += '; Secure'
+            self.send_response(303)
+            self.send_header('Location', '/')
+            self.send_header('Set-Cookie', cookie)
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+
+        def secure_request(self):
+            return (self.headers.get('X-Forwarded-Proto', '').casefold() == 'https'
+                    or self.headers.get('Origin', '').startswith('https://'))
+
+        def reply_throttled(self, wait):
+            body = json.dumps({'error': 'Zu viele fehlgeschlagene Anmeldungen. Bitte später erneut versuchen.'}).encode()
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Retry-After', str(wait))
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(body)
+
+        def handle_logout(self):
+            self.discard_rejected_body()
+            sessions.revoke(self.session_id())
+            cookie = f'{ACCESS_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'
+            if self.secure_request():
                 cookie += '; Secure'
             self.send_response(303)
             self.send_header('Location', '/')
@@ -1034,7 +1239,16 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/style.css': ('style.css', 'text/css; charset=utf-8')}
             if url.path in assets:
                 name, mime = assets[url.path]
-                return self.reply(200, files('finance_control').joinpath('static', name).read_bytes(), mime)
+                content = files('finance_control').joinpath('static', name).read_bytes()
+                if url.path == '/' and access_token is not None:
+                    content = content.replace(b'</header>', LOGOUT_FORM.encode() + b'</header>', 1)
+                return self.reply(200, content, mime)
+            with dispatch_lock:
+                if not self.require_identity(recheck=True):
+                    return
+                return self.dynamic_get(url)
+
+        def dynamic_get(self, url):
             if re.fullmatch(r'/exports/[0-9a-f]{32}\.(csv|json|zip)', url.path):
                 path = (app.database.parent / 'exports' / url.path.rsplit('/', 1)[1]).resolve()
                 if not path.is_relative_to(app.database.parent) or not path.is_file():
@@ -1074,6 +1288,11 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     self.discard_rejected_body()
                     return self.reply(403, {'error': 'Anfrage nicht freigegeben. Seite neu laden.'})
                 return self.handle_login()
+            if urlsplit(self.path).path == LOGOUT_PATH:
+                if not self.trusted_host() or not self.trusted_origin():
+                    self.discard_rejected_body()
+                    return self.reply(403, {'error': 'Anfrage nicht freigegeben. Seite neu laden.'})
+                return self.handle_logout()
             if self.trusted_host() and not self.authorized():
                 self.discard_rejected_body()
                 return self.login_required()
@@ -1093,32 +1312,10 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 data = json.loads(self.rfile.read(size))
                 if not isinstance(data, dict):
                     raise TypeError('Invalid request')
-                if urlsplit(self.path).path.startswith('/api/administration/'):
-                    if administration is None:
-                        return self.management_error(AdministrationError('administration_disabled', 403))
-                    action = urlsplit(self.path).path.removeprefix('/api/administration/')
-                    if action in {'bank-credentials-state', 'bank-credentials-save', 'bank-credentials-delete'}:
-                        return self.reply(200, server_banking.dispatch(self.management_user, action, data))
-                    if action == 'bank-balances-read':
-                        return self.reply(200, bank_jobs.start(self.management_user, data))
-                    if action == 'bank-balances-state':
-                        return self.reply(200, bank_jobs.state(self.management_user, data))
-                    if action == 'postbank-targets':
-                        return self.reply(200, postbank_jobs.targets(self.management_user, data))
-                    if action == 'postbank-read':
-                        return self.reply(200, postbank_jobs.start(self.management_user, data))
-                    if action == 'postbank-state':
-                        return self.reply(200, postbank_jobs.state(self.management_user, data))
-                    if action == 'postbank-commit':
-                        return self.reply(200, bank_refresh.commit_and_remember(
-                            self.management_user, data))
-                    if action == 'bank-refresh-start':
-                        return self.reply(200, bank_refresh.start(self.management_user, data))
-                    if action == 'bank-refresh-state':
-                        return self.reply(200, bank_refresh.state(self.management_user, data))
-                    result = administration.change(self.management_user, action, data)
-                    return self.reply(200, result if result.get('removed') else {'enabled': True, **result})
-                return self.reply(200, app.action(urlsplit(self.path).path, data))
+                with dispatch_lock:
+                    if not self.require_identity(recheck=True):
+                        return
+                    return self.dispatch_action(data)
             except AdministrationError as error:
                 return self.management_error(error)
             except sqlite3.IntegrityError:
@@ -1145,7 +1342,35 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             except (OSError, sqlite3.Error):
                 return self.reply(500, {'error': 'Lokaler Speichervorgang fehlgeschlagen. Bitte erneut prüfen.'})
 
-    server = HTTPServer((host, port), Handler)
+        def dispatch_action(self, data):
+            if urlsplit(self.path).path.startswith('/api/administration/'):
+                if administration is None:
+                    return self.management_error(AdministrationError('administration_disabled', 403))
+                action = urlsplit(self.path).path.removeprefix('/api/administration/')
+                if action in {'bank-credentials-state', 'bank-credentials-save', 'bank-credentials-delete'}:
+                    return self.reply(200, server_banking.dispatch(self.management_user, action, data))
+                if action == 'bank-balances-read':
+                    return self.reply(200, bank_jobs.start(self.management_user, data))
+                if action == 'bank-balances-state':
+                    return self.reply(200, bank_jobs.state(self.management_user, data))
+                if action == 'postbank-targets':
+                    return self.reply(200, postbank_jobs.targets(self.management_user, data))
+                if action == 'postbank-read':
+                    return self.reply(200, postbank_jobs.start(self.management_user, data))
+                if action == 'postbank-state':
+                    return self.reply(200, postbank_jobs.state(self.management_user, data))
+                if action == 'postbank-commit':
+                    return self.reply(200, bank_refresh.commit_and_remember(
+                        self.management_user, data))
+                if action == 'bank-refresh-start':
+                    return self.reply(200, bank_refresh.start(self.management_user, data))
+                if action == 'bank-refresh-state':
+                    return self.reply(200, bank_refresh.state(self.management_user, data))
+                result = administration.change(self.management_user, action, data)
+                return self.reply(200, result if result.get('removed') else {'enabled': True, **result})
+            return self.reply(200, app.action(urlsplit(self.path).path, data))
+
+    server = BoundedHTTPServer((host, port), Handler)
     if port == 0:
         for entry in auto_port_hosts:
             trusted_hosts.discard(entry)
@@ -1286,9 +1511,14 @@ def main():
     server = make_server(app, args.port, args.allowed_hosts, args.host, args.allowed_origins,
                          access_token=access_token, identity_verifier=identity_verifier,
                          bootstrap_emails=bootstrap_emails, bank_product_id=options.get('fints_product_id'))
-    if token_source in ('generated', 'stored'):
-        print(f'Finance-Control-Zugriffstoken ({token_source}; Option access_token hat Vorrang): '
+    if token_source == 'generated':
+        # Printed once, when the token is created. Later starts reuse the stored file silently so
+        # the token does not reappear in every rotated add-on log.
+        print(f'Finance-Control-Zugriffstoken (neu erzeugt; Option access_token hat Vorrang): '
               f'{access_token}', flush=True)
+    elif token_source == 'stored':
+        print('Finance Control: gespeichertes Zugriffstoken wird verwendet (Datei app_access_token '
+              'im Datenordner oder Option access_token).', flush=True)
     elif token_source == 'disabled':
         print('Finance Control: Anwendungs-Login deaktiviert; Zugriffsschutz muss vorgelagert sein.',
               flush=True)

@@ -13,6 +13,7 @@ from importlib.resources import files
 from pathlib import Path
 
 _IDENTIFIER = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z')
+_USER_MONEY = re.compile(r'[+-]?[0-9]+(?:[.,][0-9]{1,2})?\Z')
 
 
 def valid_identifier(value):
@@ -35,6 +36,16 @@ def money(value):
     if result != result.quantize(Decimal('0.01')):
         raise ValueError('Amount must be finite and cent-exact')
     return result
+
+
+def parse_money_input(value):
+    """Parse manually entered EUR text without ambiguous grouping or exponent syntax.
+
+    Internal Decimal values and source-format parsers continue to use ``money``.
+    """
+    if not isinstance(value, str) or _USER_MONEY.fullmatch(value.strip()) is None:
+        raise ValueError('Invalid manual amount')
+    return money(value.strip().replace(',', '.'))
 
 
 @dataclass(frozen=True)
@@ -146,7 +157,7 @@ class Store:
     def add_account(self, account_id, owner, shares, opening, opening_date,
                     institution='SYNTHETIC', kind='CHECKING', currency='EUR', display_name=None,
                     household='HOUSEHOLD'):
-        amount = money(opening)
+        amount = parse_money_input(opening) if isinstance(opening, str) else money(opening)
         opening_date = date.fromisoformat(opening_date).isoformat()
         if currency != 'EUR' or kind not in {'CHECKING', 'SAVINGS', 'CREDIT_CARD', 'DEPOT'}:
             raise ValueError('Unsupported currency or account kind')

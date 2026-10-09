@@ -22,7 +22,7 @@ from .core import Store
 from .ing_period_import import PeriodImportError, import_period_archive, preview_period_import
 from .monthly_archive import _encode as encode_monthly_snapshot
 from .monthly_archive import archive_monthly_snapshot, monthly_source_account_key
-from .statement_model import MonthlySnapshot, StatementError
+from .statement_model import MonthlySnapshot
 
 
 _FIELDS = {'id', 'revision', 'confirmed', 'tan_method', 'tan_medium', 'action',

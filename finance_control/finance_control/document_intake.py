@@ -221,7 +221,7 @@ def _document_root(database):
     return database, root
 
 
-def _cache(root, document_id, text):
+def _cache(root, document_id, text, *, replace_orphan=False):
     if type(document_id) is not int or document_id < 1 or not isinstance(text, str) or len(text) > MAX_TEXT_CHARS:
         raise DocumentIntakeError('Ungültiger Dokumentcache.')
     target = outside_repository(root / f'{document_id}.txt')
@@ -232,13 +232,16 @@ def _cache(root, document_id, text):
         existing = target.read_text(encoding='utf-8')
         if existing == text:
             return
-        if existing:
+        if existing and not replace_orphan:
             raise DocumentIntakeError('Dokumentcache bereits mit anderem Inhalt vorhanden.')
-    with temporary.open('x', encoding='utf-8', newline='') as stream:
-        stream.write(text)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, target)
+    try:
+        with temporary.open('x', encoding='utf-8', newline='') as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def cache_document_source(database, document_id, text):
@@ -248,7 +251,12 @@ def cache_document_source(database, document_id, text):
 
 
 def import_documents(store, database, documents):
-    """Register unreviewed candidates and atomically cache their plaintext."""
+    """Register and cache each new candidate before its database commit.
+
+    Filesystem and SQLite commits cannot be atomic across a process crash. A
+    crash may leave an unreferenced cache, which a later new ID may replace.
+    Earlier documents in the same call remain committed after a later failure.
+    """
     if not isinstance(documents, list):
         raise DocumentIntakeError('Dokumentliste erwartet.')
     _, root = _document_root(database)
@@ -269,11 +277,35 @@ def import_documents(store, database, documents):
         source = data['source_reference']
         existing = store.db.execute('SELECT * FROM classification_documents WHERE source_reference=?', (source,)).fetchone()
         if existing is None:
-            result = register_document(store, data)['document']
+            text = item.get('text', '')
+
+            def cache_before_commit(document_id):
+                _cache(root, document_id, text, replace_orphan=True)
+
+            def remove_uncommitted_cache(document_id):
+                target = root / f'{document_id}.txt'
+                try:
+                    # A rejected redirect must not be followed while cleaning up.
+                    if target.is_symlink():
+                        return
+                    resolved = outside_repository(target)
+                    if (resolved != target or not resolved.is_relative_to(root)
+                            or not resolved.is_file()):
+                        return
+                    if resolved.read_text(encoding='utf-8') == text:
+                        resolved.unlink()
+                except (OSError, ValueError, UnicodeError):
+                    # Preserve the original cache/write error; an orphan can be
+                    # replaced on a later attempt using the same uncommitted ID.
+                    return
+
+            result = register_document(
+                store, data, before_commit=cache_before_commit,
+                on_failure=remove_uncommitted_cache)['document']
             new_ids.append(result['id'])
         else:
             result = dict(existing)
-        _cache(root, result['id'], item.get('text', ''))
+            _cache(root, result['id'], item.get('text', ''))
         results.append(result)
     auto_review = auto_confirm_documents(store, {'confirmed': True, 'ids': new_ids})
     by_id = {item['id']: item for item in auto_review['confirmed']}

@@ -7,7 +7,7 @@ import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from .core import money, valid_identifier, valid_person_id
+from .core import parse_money_input, valid_identifier, valid_person_id
 from .finanzguru_import import load_batch
 
 _KINDS = {'CHECKING', 'SAVINGS', 'CREDIT_CARD', 'DEPOT'}
@@ -40,7 +40,7 @@ def _amount(value, field, nullable=True):
             return None
         raise ValueError('invalid_' + field)
     try:
-        return format(money(value.strip()), '.2f')
+        return format(parse_money_input(value), '.2f')
     except ValueError as error:
         raise ValueError('invalid_' + field) from error
 

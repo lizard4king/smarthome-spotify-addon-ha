@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
 from .cash_components import cash_receipt_key
+from .core import parse_money_input
 from .transfer_corrections import effective_transfer_id
 
 _PLAN_FIELDS = {"title", "start_month", "notes", "items"}
@@ -59,8 +60,8 @@ def _amount(value):
     if not isinstance(value, str) or not value:
         raise ValueError("amount must be decimal text")
     try:
-        amount = Decimal(value)
-    except InvalidOperation as exc:
+        amount = parse_money_input(value)
+    except (InvalidOperation, ValueError) as exc:
         raise ValueError("amount must be decimal text") from exc
     if (not amount.is_finite() or amount < 0 or amount > _MAX_AMOUNT
             or amount != amount.quantize(_CENT)):
@@ -72,8 +73,8 @@ def _signed_amount(value, name):
     if not isinstance(value, str) or not value:
         raise ValueError(f"{name} must be decimal text")
     try:
-        amount = Decimal(value)
-    except InvalidOperation as exc:
+        amount = parse_money_input(value)
+    except (InvalidOperation, ValueError) as exc:
         raise ValueError(f"{name} must be decimal text") from exc
     if (not amount.is_finite() or abs(amount) > _MAX_AMOUNT
             or amount != amount.quantize(_CENT)):

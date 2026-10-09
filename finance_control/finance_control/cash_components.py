@@ -5,7 +5,11 @@ from decimal import Decimal
 
 from .core import money
 
-_EUR_AMOUNT = r"\s*[:=]?\s*(?:EUR\s+([+-]?\d[\d.,]*)|([+-]?\d[\d.,]*)\s+EUR\b)"
+_EUR_AMOUNT = r"\s*[:=]?\s*(?:EUR\s+([+-]?\d[\d.,]*)(?![\w.,])|([+-]?\d[\d.,]*)\s+EUR\b)"
+_CASH_LABEL = re.compile(
+    r"\b(?:Bargeldausz(?:ahlung)?\.?|Barauszahlung|cash\s+withdrawal|Auszahlung)",
+    re.IGNORECASE,
+)
 _CASH_AMOUNT = re.compile(
     r"\b(?:Bargeldausz(?:ahlung)?\.?|Barauszahlung|cash\s+withdrawal|Auszahlung)" + _EUR_AMOUNT,
     re.IGNORECASE,
@@ -97,35 +101,51 @@ def cash_principal(row):
                     ("category", "source_category", "counterparty", "description")
                     if key in columns)
 
-    def amounts(pattern):
-        values = set()
-        for before, after in pattern.findall(text):
+    cash_matches = list(_CASH_AMOUNT.finditer(text))
+    fee_matches = list(_CASH_FEE.finditer(text))
+    # A bare withdrawal label is normal ATM evidence. An immediately following
+    # amount cue must, however, have a complete valid match; otherwise the
+    # full-debit fallback would silently hide malformed explicit evidence.
+    for marker in _CASH_LABEL.finditer(text):
+        following = text[marker.end():].lstrip(" :=\t")
+        has_amount_cue = (re.match(r"EUR(?:\b|(?=[+-]?\d))", following, re.IGNORECASE)
+                          is not None
+                          or bool(following) and following[0] in "+-0123456789")
+        if has_amount_cue and _CASH_AMOUNT.match(text, marker.start()) is None:
+            return Decimal("0.00")
+    if len(fee_matches) != len(list(_FEE_LABEL.finditer(text))):
+        return Decimal("0.00")
+
+    def amounts(matches):
+        values = []
+        for match in matches:
+            before, after = match.groups()
             token = before or after
             if _VALID_AMOUNT.fullmatch(token) is None:
                 return None
             try:
-                values.add(money(token.replace(".", "").replace(",", ".")) if "," in token
-                           else money(token))
+                values.append(money(token.replace(".", "").replace(",", ".")) if "," in token
+                              else money(token))
             except ValueError:
                 return None
         return values
 
-    principals = amounts(_CASH_AMOUNT)
-    fees = amounts(_CASH_FEE)
+    principals = amounts(cash_matches)
+    fees = amounts(fee_matches)
     if principals is None or fees is None:
         return Decimal("0.00")
-    if principals:
-        if len(principals) != 1:
-            return Decimal("0.00")
-        principal = next(iter(principals))
-        if principal > debit or (fees and principal + sum(fees) > debit):
-            return Decimal("0.00")
-        return principal
     # Multiple fee declarations can be duplicate or separate charges; ambiguity
     # keeps the full posting visible instead of guessing a sum.
     if len(fees) > 1:
         return Decimal("0.00")
-    fee = next(iter(fees), Decimal("0.00"))
+    if principals:
+        if len(set(principals)) != 1:
+            return Decimal("0.00")
+        principal = principals[0]
+        if principal > debit or (fees and principal + sum(fees) > debit):
+            return Decimal("0.00")
+        return principal
+    fee = fees[0] if fees else Decimal("0.00")
     return debit - fee if fee <= debit else Decimal("0.00")
 
 
