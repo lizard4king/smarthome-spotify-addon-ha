@@ -1,4 +1,4 @@
-"""Bounded parser and immutable archive for ING/Postbank MT940 periods."""
+"""Bounded parser and immutable archive for supported Giro MT940 periods."""
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -26,7 +26,8 @@ MAX_ROWS = 100_000
 MAX_TEXT = 8192
 _CURRENCY = re.compile(r'[A-Z]{3}', re.ASCII)
 _SOURCE_ACCOUNT = re.compile(r'[^\x00-\x20\x7f]{1,120}\Z')
-_KINDS = {'ING': 'ing-period', 'POSTBANK': 'postbank-period'}
+_KINDS = {'ING': 'ing-period', 'POSTBANK': 'postbank-period',
+          'NASPA': 'naspa-period'}
 
 
 @dataclass(frozen=True)

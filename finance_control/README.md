@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.25` prepares NASPA checking-account previews, controlled imports and
+refresh using the existing owner-bound server banking path. It preserves current
+refresh selections when upgrading the database. NASPA app authorization is polled
+only for an actual bank-reported decoupled challenge after explicit method selection.
+Ordinary and graphical TAN input remains unsupported. Practical NASPA acceptance
+and the source switch require the owner's review; Mastercard and depot are separate.
+
 Version `0.2.24` fixes ambiguous planning/cash amounts, backup receipt integrity and
 source-cache registration failures. HTTP concurrency is bounded; business operations
 remain serialized and recheck active users after waiting. Bank integration is unchanged.

@@ -1,4 +1,4 @@
-"""Owner-bound bridge for bounded ING/Postbank account and period reads."""
+"""Owner-bound bridge for bounded Giro account and period reads."""
 
 from __future__ import annotations
 
@@ -31,7 +31,8 @@ _ERROR_CODES = frozenset({'invalid_request', 'vault_unavailable', 'authorization
                           'auth_rejected',
                           'bank_failure', 'invalid_bank_result', 'unknown_account',
                           'unsupported_platform'})
-_BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517'}
+_BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517',
+               'NASPA': '51050015'}
 
 
 def _fail(code='bank_read_unavailable', status=503):

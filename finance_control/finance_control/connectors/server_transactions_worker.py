@@ -1,4 +1,4 @@
-"""Isolated ING/Postbank statement read; JSON never carries credentials."""
+"""Isolated Giro statement read; JSON never carries credentials."""
 
 from __future__ import annotations
 
@@ -29,7 +29,8 @@ _MAX_INPUT = 16 * 1024
 _MAX_OUTPUT = 8 * 1024 * 1024
 _MAX_ROWS = 10_000
 _MAX_TEXT = 8192
-_BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517'}
+_BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517',
+               'NASPA': '51050015'}
 
 
 def _error(code):
@@ -164,10 +165,19 @@ def run_request(request, vault_factory, reader_factory):
         return _error('vault_unavailable')
     missing = {}
     bestsign = [False]
+    naspa_auth_configured = [False]
     bank_id = request['bank_id']
     try:
         def challenge(value):
-            if bank_id != 'POSTBANK' or not value.decoupled or not bestsign[0]:
+            if not value.decoupled:
+                return None
+            if bank_id == 'POSTBANK':
+                if not bestsign[0]:
+                    return None
+            elif bank_id == 'NASPA':
+                if not naspa_auth_configured[0]:
+                    return None
+            else:
                 return None
             # FinTS subsequently polls the bank through send_tan; True supplies no TAN.
             time.sleep(5)
@@ -192,7 +202,9 @@ def run_request(request, vault_factory, reader_factory):
             matches = [i for i, value in enumerate(safe) if value['label'] == request['tan_medium']]
             return matches[0] if len(matches) == 1 else None
 
-        reader.configure_auth(method, medium, force_selection=(bank_id == 'POSTBANK'))
+        reader.configure_auth(method, medium, force_selection=(bank_id in ('POSTBANK', 'NASPA')))
+        if bank_id == 'NASPA':
+            naspa_auth_configured[0] = True
         if bank_id == 'POSTBANK':
             client = getattr(reader, '_client', None)
             selected = client.get_current_tan_mechanism()

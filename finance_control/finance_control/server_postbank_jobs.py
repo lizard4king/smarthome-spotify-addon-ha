@@ -1,4 +1,4 @@
-"""Owner-bound, bounded Postbank preview jobs with an explicit one-use commit."""
+"""Owner-bound, bounded bank preview jobs with an explicit one-use commit."""
 
 from __future__ import annotations
 
@@ -391,7 +391,7 @@ class ServerPostbankJobs:
                 or type(raw['balance']) is not Balance):
             _fail()
         monthly, period, balance = raw['monthly'], raw['period'], raw['balance']
-        if (profile not in ('POSTBANK', 'ING')
+        if (profile not in ('POSTBANK', 'ING', 'NASPA')
                 or monthly.source_profile != profile or period.source_profile != profile
                 or monthly.source_account != period.source_account
                 or monthly.currency != period.currency

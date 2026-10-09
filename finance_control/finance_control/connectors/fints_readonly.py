@@ -535,7 +535,7 @@ class ReadOnlyFinTS:
             if (start.day != 1 or (start.year, start.month) != (end.year, end.month)
                     or end > date.today()):
                 raise BankReadError(code=BankErrorCode.STATEMENT_INCOMPLETE)
-            if getattr(self._client, '_finance_source_profile', None) not in ('ING', 'POSTBANK'):
+            if getattr(self._client, '_finance_source_profile', None) not in ('ING', 'POSTBANK', 'NASPA'):
                 raise BankReadError(code=BankErrorCode.UNSUPPORTED)
         from fints.models import SEPAAccount
         native = None if account is None else SEPAAccount(
