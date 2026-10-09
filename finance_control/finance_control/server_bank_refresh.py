@@ -102,7 +102,7 @@ class ServerBankRefresh:
 
     def _valid_binding(self, actor, owner, row):
         if (row['binding_owner'] != owner or row['binding_revision'] != row['connection_revision']
-                or row['bank_id'] not in ('ING', 'POSTBANK')):
+                or row['bank_id'] not in ('ING', 'POSTBANK', 'NASPA')):
             return False
         try:
             return self.jobs._check(actor, row['id'], row['connection_revision']) == owner
@@ -247,7 +247,7 @@ class ServerBankRefresh:
                                             binding['bank_id'])
         if (not valid_identifier(account_id) or type(fingerprint) is not str
                 or _FINGERPRINT.fullmatch(fingerprint) is None
-                or bank_id not in ('ING', 'POSTBANK')
+                or bank_id not in ('ING', 'POSTBANK', 'NASPA')
                 or not valid_auth_selection(bank_id, binding['tan_method'], binding['tan_medium'])):
             raise AdministrationError('invalid_action')
         owner = self.jobs._check(actor, connection_id, revision)

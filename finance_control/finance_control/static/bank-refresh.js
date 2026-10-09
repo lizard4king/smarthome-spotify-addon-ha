@@ -18,10 +18,12 @@
     bank_product_unavailable: 'Die Bankverbindung ist auf dem Server noch nicht vollständig eingerichtet.',
     PREVIOUS_MONTH_CHANGED: 'Der vorherige Kontrollmonat wurde geändert. Prüfe die Buchungen erneut.',
   }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Prüfe die Einrichtung und den Serverstatus.');
-  const nameFor = bank => bank === 'ING' ? 'ING' : bank === 'POSTBANK' ? 'Postbank' : 'Bank';
+  const nameFor = bank => bank === 'ING' ? 'ING'
+    : bank === 'POSTBANK' ? 'Postbank'
+      : bank === 'NASPA' ? 'Nassauische Sparkasse' : 'Bank';
   const validRecord = item => item && typeof item.id === 'string' && item.id
     && Number.isSafeInteger(item.revision) && item.revision >= 0
-    && ['ING', 'POSTBANK'].includes(item.bank_id);
+    && ['ING', 'POSTBANK', 'NASPA'].includes(item.bank_id);
   const formatDate = value => {
     if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
       return 'Noch kein erfolgreicher Abruf';
@@ -157,8 +159,8 @@
       const credentialsById = new Map(credentialRows
         .filter(row => row && typeof row.id === 'string')
         .map(row => [row.id, row]));
-      const eligible = connections.filter(row =>
-        credentialsById.get(row.id)?.server_credentials_present === true);
+      const refreshEligible = connections.filter(row => ['POSTBANK', 'ING', 'NASPA'].includes(row.bank_id)
+        && credentialsById.get(row.id)?.server_credentials_present === true);
       if (!connections.length) {
         message(setup, 'Es sind keine eigenen Bankverbindungen vorhanden. Registriere eine Verbindung und hinterlege den Zugang in der Verwaltung.');
         button.disabled = true;
@@ -172,7 +174,7 @@
         message(setup, `${banks}: Zugang in der Verwaltung auf dem Server hinterlegen.`);
       }
       for (const row of connections) {
-        if (!['POSTBANK', 'ING'].includes(row.bank_id)) continue;
+        if (!['POSTBANK', 'ING', 'NASPA'].includes(row.bank_id)) continue;
         const details = document.createElement('details');
         details.className = 'fbr-import-setup';
         const summary = document.createElement('summary');
@@ -195,11 +197,11 @@
           message(content, 'Hinterlege den Zugang auf dem Server in der Verwaltung, um Buchungen manuell einzurichten.');
         }
       }
-      button.disabled = eligible.length === 0;
-      if (!eligible.length) {
+      button.disabled = refreshEligible.length === 0;
+      if (!refreshEligible.length) {
         message(setup, 'Es ist kein eigener Bankzugang für den automatischen Abruf eingerichtet.');
       }
-      return eligible.length > 0;
+      return refreshEligible.length > 0;
     };
 
     async function poll() {

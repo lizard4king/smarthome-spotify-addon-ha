@@ -10,7 +10,11 @@
   };
   const isRecord = value => value && typeof value.id === 'string' && value.id.length > 0
     && Number.isSafeInteger(value.revision) && value.revision >= 0;
-  const errorText = code => ({
+  const errorText = (code, bankId) => {
+    if (bankId === 'NASPA' && ['authorization_required', 'invalid_bank_auth_selection'].includes(code)) {
+      return 'Der NASPA-Abruf wurde nicht freigegeben. Prüfe die S-pushTAN-App. Numerische oder grafische TAN-Verfahren werden hier noch nicht unterstützt.';
+    }
+    return ({
     auth_rejected: 'Die Bank hat die Anmeldung abgelehnt. Prüfe den hinterlegten Zugang. (auth_rejected)',
     bank_failure: 'Der Bankabruf ist fehlgeschlagen. Die genaue Ursache ist noch unbekannt. (bank_failure)',
     invalid_bank_result: 'Die Bankantwort konnte nicht verarbeitet werden. (invalid_bank_result)',
@@ -41,7 +45,8 @@
     stale_preview: 'Der Datenbestand wurde geändert. Bitte eine neue Vorschau abrufen.',
     invalid_target: 'Bitte das zugehörige Girokonto als Ziel wählen.',
     invalid_period: 'Bitte einen Monat der letzten 90 Tage und einen Stichtag im selben Monat bis heute wählen.',
-  }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Bitte prüfe den Serverstatus.');
+    }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Bitte prüfe den Serverstatus.');
+  };
   const safeString = (value, max = 1000) => typeof value === 'string' && value.length <= max ? value : '';
   const dateValue = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '—';
   const todayISO = () => {
@@ -57,7 +62,8 @@
     container.replaceChildren();
     container.classList.add('pbt-host');
     const root = node('section', '', 'pbt-root');
-    const bankName = record?.bankId === 'ING' ? 'ING' : 'Postbank';
+    const bankName = record?.bankId === 'ING' ? 'ING'
+      : record?.bankId === 'NASPA' ? 'Nassauische Sparkasse' : 'Postbank';
     const heading = node('h3', `${bankName}-Buchungen`, 'pbt-title');
     const intro = node('p', 'Lies gebuchte Giro-Umsätze für einen Zeitraum ein und prüfe sie vor der Übernahme.', 'pbt-intro');
     const status = node('p', 'Zielkonten werden geladen.', 'pbt-status');
@@ -71,7 +77,7 @@
       status.textContent = message;
       status.classList.toggle('pbt-error', error);
     };
-    const invalid = () => !isRecord(record) || !['POSTBANK','ING'].includes(record.bankId);
+    const invalid = () => !isRecord(record) || !['POSTBANK','ING','NASPA'].includes(record.bankId);
     if (invalid()) {
       setStatus(record?.bankId && record.bankId !== 'POSTBANK'
         ? 'Dieser Abruf ist für diese Bank nicht verfügbar.'
@@ -256,7 +262,9 @@
           if(!select.select.value)return;
           if(method) auth.tan_method=select.select.value; else auth.tan_medium=select.select.value;
           authPanel.hidden=true;
-          setStatus('Die Auswahl wird verwendet. Falls die Bank eine Handyfreigabe verlangt, bestätige sie in der Banking-App.');
+          setStatus(record.bankId==='NASPA'
+            ? 'Die Auswahl wird verwendet. Falls NASPA eine Freigabe anfordert, bestätige sie in der S-pushTAN-App.'
+            : 'Die Auswahl wird verwendet. Falls die Bank eine Handyfreigabe verlangt, bestätige sie in der Banking-App.');
           startRead(action);
         });
         authPanel.append(select.label,node('p','Es wird keine TAN in dieser Oberfläche eingegeben.','pbt-auth-note'),continueButton);
@@ -275,11 +283,11 @@
         if(!current())return;
         const response=await request('/api/administration/postbank-state',{job_id:jobId});
         if(!current())return;
-        if(!response.ok) {setStatus(errorText(response.code),true);return;}
+        if(!response.ok) {setStatus(errorText(response.code,record.bankId),true);return;}
         const state=response.result;
         if(!state||state.job_id!==jobId) {setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;}
         if(state.status==='running')continue;
-        if(state.status==='error') {setStatus(errorText(state.code),true);return;}
+        if(state.status==='error') {setStatus(errorText(state.code,record.bankId),true);return;}
         if(state.status==='complete') {handleResult(action,state.result,jobId);return;}
         setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;
       }
@@ -295,7 +303,10 @@
       }
       setBusy(true);
       results.replaceChildren();
-      setStatus(action==='accounts'?`${bankName}-Konten werden gelesen.`:`${bankName}-Buchungen werden gelesen. Falls nötig, bestätige die Freigabe in Deiner Banking-App.`);
+      setStatus(record.bankId==='NASPA'
+        ? `${bankName}-${action==='accounts'?'Konten':'Buchungen'} werden gelesen. Falls NASPA eine Freigabe anfordert, bestätige sie in der S-pushTAN-App.`
+        : action==='accounts'?`${bankName}-Konten werden gelesen.`
+        : `${bankName}-Buchungen werden gelesen. Falls nötig, bestätige die Freigabe in Deiner Banking-App.`);
       const selected=fields();
       const data={id:record.id,revision:record.revision,confirmed:true,
         tan_method:record.bankId==='ING'?null:auth.tan_method,
@@ -304,10 +315,10 @@
         as_of:action==='period'?selected.as_of:null};
       const response=await request('/api/administration/postbank-read',data);
       if(!current())return;
-      if(!response.ok) {setStatus(errorText(response.code),true);setBusy(false);return;}
+      if(!response.ok) {setStatus(errorText(response.code,record.bankId),true);setBusy(false);return;}
       const job=response.result;
       if(!job||job.status!=='running'||typeof job.job_id!=='string'||!job.job_id) {
-        setStatus(errorText(job?.code),true);setBusy(false);return;
+        setStatus(errorText(job?.code,record.bankId),true);setBusy(false);return;
       }
       await poll(job.job_id,action);
       if(current())setBusy(false);
@@ -320,7 +331,7 @@
         job_id:periodJobId,review_token:reviewToken,confirmed:true,
       });
       if(!current())return;
-      if(!response.ok) {setStatus(errorText(response.code),true);setBusy(false);return;}
+      if(!response.ok) {setStatus(errorText(response.code,record.bankId),true);setBusy(false);return;}
       const result=response.result;
       if(!result||result.status!=='imported') {setStatus('Die Übernahme konnte nicht bestätigt werden.',true);setBusy(false);return;}
       const summary=node('div','','pbt-imported');

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.25
+
+- Add NASPA Giro to owner-bound server transaction previews, controlled imports and refresh.
+- Preserve NASPA MT940 text and local period identities, with synthetic replay and balance checks.
+- Poll NASPA app authorizations only after explicit authentication selection and a bank-reported decoupled challenge; ordinary or graphical TAN entry remains unsupported.
+- Keep practical NASPA acceptance separate from code validation; existing imports remain until a controlled source switch succeeds.
+
 ## 0.2.24
 
 - Reject ambiguous plan amounts and malformed cash/fee declarations.
