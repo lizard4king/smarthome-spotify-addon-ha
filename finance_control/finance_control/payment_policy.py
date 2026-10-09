@@ -5,6 +5,8 @@ import re
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
+from .core import parse_money_input
+
 _POLICY_FIELDS = {"title", "person_a_label", "person_b_label", "principles", "phases"}
 _PHASE_FIELDS = {
     "name", "active", "valid_from", "valid_to", "trigger", "person_a_share", "person_b_share",
@@ -49,8 +51,8 @@ def _decimal_text(value, name, quantum, maximum):
     if not isinstance(value, str) or not value:
         raise ValueError(f"{name} must be decimal text")
     try:
-        parsed = Decimal(value)
-    except InvalidOperation as exc:
+        parsed = parse_money_input(value) if quantum == _CENT else Decimal(value)
+    except (InvalidOperation, ValueError) as exc:
         raise ValueError(f"{name} must be decimal text") from exc
     if (not parsed.is_finite() or parsed < 0 or parsed > maximum
             or parsed != parsed.quantize(quantum)):

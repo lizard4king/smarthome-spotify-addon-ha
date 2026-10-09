@@ -7,7 +7,6 @@ from decimal import Decimal, localcontext
 import io
 import json
 from pathlib import Path
-import re
 import tempfile
 
 from .bank_archive import _directory

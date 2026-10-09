@@ -8,10 +8,22 @@ import sqlite3
 import tempfile
 import zipfile
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
+from threading import RLock
 
 from .drive_api import DriveApiError
 from .import_preview import outside_repository
+
+_BACKUP_STATE_LOCK = RLock()
+
+
+def _serialized_backup_state(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _BACKUP_STATE_LOCK:
+            return function(*args, **kwargs)
+    return wrapped
 
 
 def create_backup_package(store, database):
@@ -188,6 +200,7 @@ def _reporting_history_signature(parent):
     return _checksum(path) if path is not None else None
 
 
+@_serialized_backup_state
 def mark_backup_needed(database):
     """Mark a committed web write without inspecting private database content."""
     database = outside_repository(database)
@@ -358,6 +371,7 @@ def backup_sync_status(database, target_directory=None, environ=None):
             'last_drive_sync': state.get('last_drive_sync'), 'error': error}
 
 
+@_serialized_backup_state
 def sync_pending_backup_packages(database, target_directory=None, environ=None):
     """Flush the local immutable outbox; an unavailable target is a normal offline state."""
     database = outside_repository(database)
@@ -395,16 +409,24 @@ def sync_pending_backup_packages(database, target_directory=None, environ=None):
         return {**backup_sync_status(database, target_directory, environ), 'synced': 0}
     for source in packages:
         try:
-            verified = verified_packages.get(source.name)
-            if not isinstance(verified, dict) or verified.get('size') != source.stat().st_size:
+            # A cached restore check is reusable only for the exact current bytes.
+            cached = verified_packages.get(source.name)
+            source_size = source.stat().st_size
+            source_hash = _checksum(source)
+            if (isinstance(cached, dict) and cached.get('size') == source_size
+                    and cached.get('sha256') == source_hash):
+                verified = cached
+            else:
                 verified = verify_backup_package(source, database.parent)
+            if verified_packages.get(source.name) != verified:
                 verified_packages[source.name] = verified
                 _write_sync_state(database, state)
             receipt = synced_packages.get(source.name)
             if target is not None:
                 destination = target / f'finance-control-backup-{source.name}'
                 if (isinstance(receipt, dict) and receipt.get('sha256') == verified['sha256']
-                        and destination.is_file() and destination.stat().st_size == verified['size']):
+                        and destination.is_file() and destination.stat().st_size == verified['size']
+                        and _checksum(destination) == verified['sha256']):
                     continue
                 copied_result = _copy_verified_package(source, database, target, verified=verified)
             else:
@@ -428,6 +450,10 @@ def sync_pending_backup_packages(database, target_directory=None, environ=None):
             copied += int(copied_result['copied'])
             _write_sync_state(database, state)
         except (ValueError, FileExistsError, zipfile.BadZipFile):
+            # A stale receipt cannot make a corrupt source or conflicting target
+            # disappear from the pending count on the next status request.
+            synced_packages.pop(source.name, None)
+            _write_sync_state(database, state)
             errors.append(source.name)
             continue
         except OSError:
@@ -452,10 +478,12 @@ def sync_pending_backup_packages(database, target_directory=None, environ=None):
     return {**backup_sync_status(database, target_directory, environ), 'synced': copied}
 
 
+@_serialized_backup_state
 def maintain_backup(store, database, target_directory=None, environ=None):
     """Create one local package for a changed database and opportunistically flush it."""
     database = outside_repository(database)
     state = _read_sync_state(database)
+    starting_generation = state.get('dirty_generation')
     signature = _database_signature(database)
     reporting_history_signature = _reporting_history_signature(database.parent)
     created = False
@@ -473,7 +501,7 @@ def maintain_backup(store, database, target_directory=None, environ=None):
         # the next maintenance pass does not create a duplicate package.
         state['database_signature'] = _database_signature(database)
         state['reporting_history_signature'] = _reporting_history_signature(database.parent)
-        state['backed_up_generation'] = state.get('dirty_generation')
+        state['backed_up_generation'] = starting_generation
         state['last_local_backup'] = datetime.now(UTC).isoformat()
         state['last_local_package'] = package['download_url'].rsplit('/', 1)[-1]
         state.setdefault('verified_packages', {})[state['last_local_package']] = verified

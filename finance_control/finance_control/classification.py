@@ -10,7 +10,7 @@ from decimal import Decimal
 from itertools import combinations
 
 from .budget import canonical_category_id
-from .core import money
+from .core import money, parse_money_input
 from .payment_status import statuses_for_transactions
 from .transfer_corrections import (
     effective_transfer_id,
@@ -97,7 +97,8 @@ def _optional_amount(value):
 
 
 def _allocated_amount(value):
-    amount = _optional_amount(value)
+    amount = (format(parse_money_input(value), '.2f')
+              if isinstance(value, str) else None)
     if amount is None or money(amount) <= 0:
         raise ValueError('invalid_allocated_amount')
     return amount
@@ -1360,7 +1361,7 @@ def _document(row):
     return value
 
 
-def register_document(store, data):
+def register_document(store, data, *, before_commit=None, on_failure=None):
     required = {'kind', 'vendor', 'title', 'document_date', 'amount', 'currency', 'source_reference', 'warnings', 'status'}
     if not isinstance(data, dict) or set(data) != required:
         raise ValueError('invalid_document')
@@ -1380,9 +1381,15 @@ def register_document(store, data):
         cursor = store.db.execute('INSERT INTO classification_documents(kind,vendor,title,document_date,amount,currency,source_reference,warnings,status,revision) VALUES (?,?,?,?,?,?,?,?,?,1)', value)
         result = _document(store.db.execute('SELECT * FROM classification_documents WHERE id=?', (cursor.lastrowid,)).fetchone())
         _audit(store, 'document_registered', result, document_id=result['id'])
+        if before_commit is not None:
+            before_commit(result['id'])
         store.db.commit()
     except Exception:
-        store.db.rollback()
+        try:
+            if on_failure is not None and 'cursor' in locals():
+                on_failure(cursor.lastrowid)
+        finally:
+            store.db.rollback()
         raise
     return {'document': result}
 

@@ -4,7 +4,7 @@ import csv
 import io
 from datetime import date
 
-from .core import Plan, forecast, money
+from .core import Plan, forecast, money, parse_money_input
 
 
 def month_end(value):
@@ -18,7 +18,12 @@ def decimal_text(value):
     """Accept a decimal comma or decimal point, never ambiguous thousands grouping."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError('Betrag fehlt.')
-    return money(value.strip().replace(',', '.'))
+    try:
+        return parse_money_input(value)
+    except ValueError as error:
+        raise ValueError(
+            'Betrag benötigt höchstens zwei Nachkommastellen ohne Tausendertrennung.'
+        ) from error
 
 
 def parse_plan(values):

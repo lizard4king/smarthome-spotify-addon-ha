@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from . import budget
+from .core import parse_money_input
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z", re.ASCII)
 _SECRET_KEY = re.compile(
@@ -41,8 +42,9 @@ def _decimal(value, name, *, positive=False, signed=False,
     if not isinstance(value, str) or not value:
         raise ValueError(f"{name} must be decimal text")
     try:
-        parsed = Decimal(value)
-    except InvalidOperation as exc:
+        parsed = (parse_money_input(value) if quantum == Decimal('0.01')
+                  else Decimal(value))
+    except (InvalidOperation, ValueError) as exc:
         raise ValueError(f"{name} must be decimal text") from exc
     if (not parsed.is_finite() or (parsed <= 0 if positive else (parsed < 0 and not signed))
             or abs(parsed) > maximum or parsed != parsed.quantize(quantum)):

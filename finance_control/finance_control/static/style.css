@@ -134,3 +134,5 @@ main>nav[aria-label="Bereiche"] a[aria-selected="true"]{background:#17617b;color
 header{padding:14px max(24px,calc((100vw - 1200px)/2))}header h1{margin:0;font-size:24px;line-height:1.2}header .badge{padding:7px 10px;font-size:12px}
 main>nav[aria-label="Bereiche"]{padding:10px 0;gap:8px}#active-area-announcement{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
 @media(max-width:760px){header{display:flex;padding:10px;gap:10px}header h1{font-size:20px}header .badge{max-width:45%;margin:0}main>nav[aria-label="Bereiche"]{padding:6px 0;margin-bottom:8px}.cockpit-tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.cockpit-tools>button{flex:1 1 65px;width:auto;font-size:.85rem}.cockpit-tools>details{width:100%}.cockpit-tools summary{padding:7px 10px}#active-area-announcement{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}
+
+header .logout{margin:0}header .logout button{white-space:nowrap}@media(max-width:760px){header .logout{margin-top:14px}}

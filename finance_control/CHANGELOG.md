@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.24
+
+- Reject ambiguous plan amounts and malformed cash/fee declarations.
+- Reverify backup packages and copied checksums before accepting sync receipts.
+- Commit new document registrations only after their source cache is written.
+- Bound HTTP clients, serialize business actions and revalidate queued user access.
+- Add synthetic non-bank browser checks to the local Windows CI runner.
+
+## 0.2.23
+
+- Limits failed access-token attempts per client (10 in 15 minutes, then HTTP 429 with Retry-After); applies to the login form and to `X-Finance-Access`/Bearer requests.
+- Replaces the token-derived session cookie with random server-side sessions (30 days, at most 32). Sessions end on restart; rotating the access token no longer needs to be paired with cookie invalidation.
+- Adds "Abmelden" (`POST /logout`) to the header when token login is active.
+- Prints a newly generated access token once at creation; later starts only state that the stored token is in use. Note the token or set the add-on option `access_token`.
+
 ## 0.2.22
 
 - Expands locally served bank and merchant marks from 55 to 238, with documented official sources, preserved raster bytes and LF-normalized SVGs.

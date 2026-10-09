@@ -6,7 +6,7 @@ import re
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
-from .core import money
+from .core import money, parse_money_input
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z", re.ASCII)
 _KINDS = {"asset", "liability", "investment"}
@@ -29,8 +29,8 @@ def _amount(value, name, *, positive):
     if not isinstance(value, str) or not value:
         raise ValueError(f"{name} must be decimal text")
     try:
-        parsed = Decimal(value)
-    except InvalidOperation as error:
+        parsed = parse_money_input(value)
+    except (InvalidOperation, ValueError) as error:
         raise ValueError(f"{name} must be decimal text") from error
     if (not parsed.is_finite() or parsed < 0 or (positive and parsed == 0)
             or parsed > _MAX_AMOUNT or parsed != parsed.quantize(Decimal("0.01"))):
