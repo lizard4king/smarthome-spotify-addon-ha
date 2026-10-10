@@ -9,7 +9,45 @@
     setup_required: 'Einrichtung erforderlich',
     error: 'Abruf fehlgeschlagen',
   }[value] || 'Status nicht verfügbar');
-  const errorText = code => ({
+  const diagnosticText = (code, diagnostic) => {
+    if (!['bank_failure', 'invalid_bank_result'].includes(code)
+        || !diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)
+        || !Object.hasOwn(diagnostic, 'stage')
+        || ![1, 2].includes(Object.keys(diagnostic).length)
+        || Object.keys(diagnostic).some(key => !['stage', 'bank_error_code'].includes(key))) return '';
+    const stages = {
+      accounts: 'Beim Lesen der Kontenliste.',
+      control_month: 'Beim Lesen des Kontrollmonats.',
+      period: 'Beim Lesen des gewählten Zeitraums.',
+      balance: 'Beim Lesen des Kontostands.',
+    };
+    if (!Object.hasOwn(stages, diagnostic.stage)) return '';
+    const stage = stages[diagnostic.stage];
+    if (!Object.hasOwn(diagnostic, 'bank_error_code')) return ` ${stage}`;
+    if (code !== 'bank_failure') return '';
+    const details = {
+      ONLINE_LOGIN_REQUIRED: 'Die Bank verlangt eine erneute Online-Anmeldung.',
+      CREDENTIALS_REJECTED: 'Die Bank hat die Zugangsdaten abgelehnt.',
+      AUTH_TEMPORARY: 'Die Bankfreigabe ist vorübergehend nicht verfügbar.',
+      UNSUPPORTED: 'Die Bank unterstützt diesen Abruf nicht.',
+      CONNECTION: 'Die Verbindung zur Bank ist fehlgeschlagen.',
+      TIMEOUT: 'Die Bank hat nicht rechtzeitig geantwortet.',
+      TLS: 'Die gesicherte Verbindung zur Bank ist fehlgeschlagen.',
+      DIALOG_INIT: 'Der Bankdialog konnte nicht gestartet werden.',
+      NO_RESPONSE: 'Die Bank hat keine Antwort geliefert.',
+      BANK_REJECTED: 'Die Bank hat die Anfrage abgelehnt.',
+      UNKNOWN: 'Die Bank meldet einen nicht näher bestimmten Fehler.',
+      DATA_FORMAT: 'Das Datenformat der Bankantwort ist ungültig.',
+      IDENTIFICATION_FORMAT: 'Die Bank konnte die Identifikation nicht verarbeiten.',
+      PRODUCT_FORMAT: 'Die Bank konnte die Produktkennung nicht verarbeiten.',
+      STATEMENT_INCOMPLETE: 'Der Kontoauszug ist unvollständig.',
+      STATEMENT_FORMAT: 'Das Format des Kontoauszugs ist ungültig.',
+      STATEMENT_ID_MISSING: 'Im Kontoauszug fehlt eine Buchungskennung.',
+    };
+    if (!Object.hasOwn(details, diagnostic.bank_error_code)) return '';
+    return ` ${stage} ${details[diagnostic.bank_error_code]}`;
+  };
+  const errorText = (code, diagnostic) => ({
     authorization_required: 'Die Bankfreigabe ist erforderlich. Öffne die Banking-App und versuche es danach erneut.',
     auth_rejected: 'Die ING/Bank hat die Anmeldung abgelehnt. Prüfe den gespeicherten Zugang.',
     bank_read_busy: 'Für diese Bankverbindung läuft bereits ein Abruf.',
@@ -17,7 +55,8 @@
     vault_unavailable: 'Der sichere Serverspeicher ist derzeit nicht verfügbar.',
     bank_product_unavailable: 'Die Bankverbindung ist auf dem Server noch nicht vollständig eingerichtet.',
     PREVIOUS_MONTH_CHANGED: 'Der vorherige Kontrollmonat wurde geändert. Prüfe die Buchungen erneut.',
-  }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Prüfe die Einrichtung und den Serverstatus.');
+  }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Prüfe die Einrichtung und den Serverstatus.')
+    + diagnosticText(code, diagnostic);
   const nameFor = bank => bank === 'ING' ? 'ING'
     : bank === 'POSTBANK' ? 'Postbank'
       : bank === 'NASPA' ? 'Nassauische Sparkasse' : 'Bank';
@@ -88,7 +127,8 @@
       try {
         return {ok: true, data: await window.api(path, body)};
       } catch (error) {
-        return {ok: false, code: typeof error?.code === 'string' ? error.code : ''};
+        return {ok: false, code: typeof error?.code === 'string' ? error.code : '',
+          diagnostic: error?.diagnostic};
       }
     };
     const renderConnections = rows => {
@@ -104,7 +144,7 @@
         view.feedback.replaceChildren();
         if (['error', 'cooldown', 'setup_required'].includes(row.status)
             && (row.status === 'error' || typeof row.code === 'string')) {
-          message(view.feedback, errorText(row.code), true);
+          message(view.feedback, errorText(row.code, row.diagnostic), true);
         }
         if (Number.isSafeInteger(row.inserted) && row.inserted >= 0
             && (row.status === 'updated' || ['error', 'setup_required', 'cooldown'].includes(row.status)
@@ -238,7 +278,7 @@
         const response = await request('/api/administration/bank-refresh-state', {});
         if (!live()) return;
         if (!response.ok) {
-          message(status, errorText(response.code), true);
+          message(status, errorText(response.code, response.diagnostic), true);
           setBusy(false);
           return;
         }
@@ -270,7 +310,7 @@
       const response = await request('/api/administration/bank-refresh-start', {});
       if (!live()) return;
       if (!response.ok) {
-        message(status, errorText(response.code), true);
+        message(status, errorText(response.code, response.diagnostic), true);
         setBusy(false);
         return;
       }

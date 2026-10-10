@@ -24,6 +24,7 @@ from .ing_period_import import (BankBalanceRecord, PeriodImportError,
 from .monthly_archive import _encode as encode_monthly_snapshot
 from .monthly_archive import archive_monthly_snapshot, monthly_source_account_key
 from .statement_model import MonthlySnapshot
+from .server_transactions_gateway import validated_diagnostic
 
 
 _FIELDS = {'id', 'revision', 'confirmed', 'tan_method', 'tan_medium', 'action',
@@ -122,6 +123,25 @@ def _safe_accounts(raw):
         seen.add(fingerprint)
         clean.append({'fingerprint': fingerprint, 'masked_account': masked})
     return {'status': 'ok', 'accounts': clean}
+
+
+def _safe_error_result(raw):
+    """Forward only a fixed error code and an independently validated diagnostic."""
+    if set(raw) not in ({'status', 'code'}, {'status', 'code', 'diagnostic'}):
+        return {'code': 'bank_import_unavailable'}
+    code = raw.get('code')
+    if type(code) is not str or code not in _SAFE_ERRORS:
+        return {'code': 'bank_import_unavailable'}
+    result = {'code': code}
+    if code in ('bank_failure', 'invalid_bank_result') and 'diagnostic' in raw:
+        try:
+            diagnostic = validated_diagnostic(raw['diagnostic'])
+            if code == 'invalid_bank_result' and 'bank_error_code' in diagnostic:
+                return result
+            result['diagnostic'] = diagnostic
+        except ValueError:
+            pass
+    return result
 
 
 def _database_digest(database):
@@ -362,8 +382,7 @@ class ServerPostbankJobs:
             if raw.get('status') in ('needs_method', 'needs_medium'):
                 status, value = 'complete', {'result': _safe_option_result(raw)}
             elif raw.get('status') == 'error':
-                status, value = 'error', {'code': raw.get('code') if set(raw) == {'status', 'code'} and raw.get('code') in _SAFE_ERRORS
-                                           else 'bank_import_unavailable'}
+                status, value = 'error', _safe_error_result(raw)
             elif raw.get('status') == 'ok' and request['action'] == 'accounts':
                 status, value = 'complete', {'result': _safe_accounts(raw)}
             elif raw.get('status') == 'ok' and request['action'] == 'period':
@@ -469,7 +488,9 @@ class ServerPostbankJobs:
         with self._lock:
             return {'job_id': job['job_id'], 'status': job['status'],
                     **({'result': job['result']} if job['status'] == 'complete' else {}),
-                    **({'code': job['code']} if job['status'] == 'error' else {})}
+                    **({'code': job['code']} if job['status'] == 'error' else {}),
+                    **({'diagnostic': dict(job['diagnostic'])}
+                       if job['status'] == 'error' and 'diagnostic' in job else {})}
 
     def commit(self, actor, data):
         if type(data) is not dict or set(data) != {'job_id', 'review_token', 'confirmed'}:

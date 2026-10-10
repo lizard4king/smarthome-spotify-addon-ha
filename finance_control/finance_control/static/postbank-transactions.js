@@ -10,11 +10,49 @@
   };
   const isRecord = value => value && typeof value.id === 'string' && value.id.length > 0
     && Number.isSafeInteger(value.revision) && value.revision >= 0;
-  const errorText = (code, bankId) => {
+  const diagnosticText = (code, diagnostic) => {
+    if (!['bank_failure', 'invalid_bank_result'].includes(code)
+        || !diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)
+        || !Object.hasOwn(diagnostic, 'stage')
+        || ![1, 2].includes(Object.keys(diagnostic).length)
+        || Object.keys(diagnostic).some(key => !['stage', 'bank_error_code'].includes(key))) return '';
+    const stages = {
+      accounts: 'Beim Lesen der Kontenliste.',
+      control_month: 'Beim Lesen des Kontrollmonats.',
+      period: 'Beim Lesen des gewählten Zeitraums.',
+      balance: 'Beim Lesen des Kontostands.',
+    };
+    if (!Object.hasOwn(stages, diagnostic.stage)) return '';
+    const stage = stages[diagnostic.stage];
+    if (!Object.hasOwn(diagnostic, 'bank_error_code')) return ` ${stage}`;
+    if (code !== 'bank_failure') return '';
+    const details = {
+      ONLINE_LOGIN_REQUIRED: 'Die Bank verlangt eine erneute Online-Anmeldung.',
+      CREDENTIALS_REJECTED: 'Die Bank hat die Zugangsdaten abgelehnt.',
+      AUTH_TEMPORARY: 'Die Bankfreigabe ist vorübergehend nicht verfügbar.',
+      UNSUPPORTED: 'Die Bank unterstützt diesen Abruf nicht.',
+      CONNECTION: 'Die Verbindung zur Bank ist fehlgeschlagen.',
+      TIMEOUT: 'Die Bank hat nicht rechtzeitig geantwortet.',
+      TLS: 'Die gesicherte Verbindung zur Bank ist fehlgeschlagen.',
+      DIALOG_INIT: 'Der Bankdialog konnte nicht gestartet werden.',
+      NO_RESPONSE: 'Die Bank hat keine Antwort geliefert.',
+      BANK_REJECTED: 'Die Bank hat die Anfrage abgelehnt.',
+      UNKNOWN: 'Die Bank meldet einen nicht näher bestimmten Fehler.',
+      DATA_FORMAT: 'Das Datenformat der Bankantwort ist ungültig.',
+      IDENTIFICATION_FORMAT: 'Die Bank konnte die Identifikation nicht verarbeiten.',
+      PRODUCT_FORMAT: 'Die Bank konnte die Produktkennung nicht verarbeiten.',
+      STATEMENT_INCOMPLETE: 'Der Kontoauszug ist unvollständig.',
+      STATEMENT_FORMAT: 'Das Format des Kontoauszugs ist ungültig.',
+      STATEMENT_ID_MISSING: 'Im Kontoauszug fehlt eine Buchungskennung.',
+    };
+    if (!Object.hasOwn(details, diagnostic.bank_error_code)) return '';
+    return ` ${stage} ${details[diagnostic.bank_error_code]}`;
+  };
+  const errorText = (code, bankId, diagnostic) => {
     if (bankId === 'NASPA' && ['authorization_required', 'invalid_bank_auth_selection'].includes(code)) {
       return 'Der NASPA-Abruf wurde nicht freigegeben. Prüfe die S-pushTAN-App. Numerische oder grafische TAN-Verfahren werden hier noch nicht unterstützt.';
     }
-    return ({
+    const base = ({
     auth_rejected: 'Die Bank hat die Anmeldung abgelehnt. Prüfe den hinterlegten Zugang. (auth_rejected)',
     bank_failure: 'Der Bankabruf ist fehlgeschlagen. Die genaue Ursache ist noch unbekannt. (bank_failure)',
     invalid_bank_result: 'Die Bankantwort konnte nicht verarbeitet werden. (invalid_bank_result)',
@@ -46,6 +84,8 @@
     invalid_target: 'Bitte das zugehörige Girokonto als Ziel wählen.',
     invalid_period: 'Bitte einen Monat der letzten 90 Tage und einen Stichtag im selben Monat bis heute wählen.',
     }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Bitte prüfe den Serverstatus.');
+    const detail = diagnosticText(code, diagnostic);
+    return (code === 'bank_failure' && detail ? 'Der Bankabruf ist fehlgeschlagen.' : base) + detail;
   };
   const safeString = (value, max = 1000) => typeof value === 'string' && value.length <= max ? value : '';
   const dateValue = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '—';
@@ -126,7 +166,7 @@
       try { return {ok: true, result: await window.api(path, data)}; }
       catch (error) {
         const code = typeof error?.code === 'string' ? error.code : '';
-        return {ok: false, code};
+        return {ok: false, code, diagnostic: error?.diagnostic};
       }
     };
     const selectField = (labelText, className, items, keyName, valueName) => {
@@ -283,11 +323,11 @@
         if(!current())return;
         const response=await request('/api/administration/postbank-state',{job_id:jobId});
         if(!current())return;
-        if(!response.ok) {setStatus(errorText(response.code,record.bankId),true);return;}
+        if(!response.ok) {setStatus(errorText(response.code,record.bankId,response.diagnostic),true);return;}
         const state=response.result;
         if(!state||state.job_id!==jobId) {setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;}
         if(state.status==='running')continue;
-        if(state.status==='error') {setStatus(errorText(state.code,record.bankId),true);return;}
+        if(state.status==='error') {setStatus(errorText(state.code,record.bankId,state.diagnostic),true);return;}
         if(state.status==='complete') {handleResult(action,state.result,jobId);return;}
         setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;
       }
@@ -315,10 +355,10 @@
         as_of:action==='period'?selected.as_of:null};
       const response=await request('/api/administration/postbank-read',data);
       if(!current())return;
-      if(!response.ok) {setStatus(errorText(response.code,record.bankId),true);setBusy(false);return;}
+      if(!response.ok) {setStatus(errorText(response.code,record.bankId,response.diagnostic),true);setBusy(false);return;}
       const job=response.result;
       if(!job||job.status!=='running'||typeof job.job_id!=='string'||!job.job_id) {
-        setStatus(errorText(job?.code,record.bankId),true);setBusy(false);return;
+        setStatus(errorText(job?.code,record.bankId,job?.diagnostic),true);setBusy(false);return;
       }
       await poll(job.job_id,action);
       if(current())setBusy(false);

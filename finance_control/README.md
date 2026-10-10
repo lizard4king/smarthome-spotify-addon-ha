@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.27` gives directly bound bank accounts priority over generic CSV
+uploads. NASPA can continue through supported file imports without a direct
+bank connection. Failed bank reads now show a validated stage and, where
+available, a fixed error category; raw bank messages remain outside the UI.
+
 Version `0.2.26` shows each account's latest recorded bank or reconciled statement
 balance, with its own date, independently of the selected booking month. Unknown
 balances remain unavailable. Successful server transaction imports retain the

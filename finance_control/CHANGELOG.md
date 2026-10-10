@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.27
+
+- Give direct bank sources priority: reject a generic CSV upload completely if it targets any bank-bound account; keep unbound file imports and internal bank imports available.
+- Carry fixed, validated error stages through manual bank reads and automatic refresh without exposing bank messages or personal values.
+- Show the safe diagnostic beside failed bank reads and clear it for new attempts and successful updates.
+
 ## 0.2.26
 
 - Show the latest recorded account balance and its bank/statement date in both account views, independently of the selected booking month.

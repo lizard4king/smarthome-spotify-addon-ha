@@ -6,6 +6,7 @@ process-wide worker, never on construction or on a read-only status request.
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 from .administration import AdministrationError, _id, _revision
 from .connectors.server_bank_rules import valid_auth_selection
 from .core import Store, valid_identifier
+from .server_transactions_gateway import validated_diagnostic
 
 
 _FINGERPRINT = re.compile(r'[0-9a-f]{64}\Z')
@@ -47,6 +49,27 @@ def _code(value):
     return value if type(value) is str and value in _SAFE_CODES else 'bank_import_unavailable'
 
 
+def _diagnostic(code, value):
+    if code not in ('bank_failure', 'invalid_bank_result'):
+        return None
+    try:
+        safe = validated_diagnostic(value)
+    except ValueError:
+        return None
+    if code == 'invalid_bank_result' and 'bank_error_code' in safe:
+        return None
+    return safe
+
+
+def _stored_diagnostic(code, value):
+    if type(value) is not str or len(value) > 128:
+        return None
+    try:
+        return _diagnostic(code, json.loads(value))
+    except (ValueError, TypeError):
+        return None
+
+
 def _month_start(day):
     return day.replace(day=1)
 
@@ -60,8 +83,9 @@ def _month_end(start):
 
 
 class _RefreshError(Exception):
-    def __init__(self, code):
+    def __init__(self, code, diagnostic=None):
         self.code = code
+        self.diagnostic = _diagnostic(code, diagnostic)
         super().__init__(code)
 
 
@@ -93,7 +117,8 @@ class ServerBankRefresh:
                 "SELECT c.id,c.label,c.bank_id,c.revision AS connection_revision,"
                 "b.owner_id AS binding_owner,b.revision AS binding_revision,"
                 "b.account_id,b.account_fingerprint,b.tan_method,b.tan_medium,"
-                "b.last_attempt_at,b.last_success_at,b.last_status,b.last_code,b.last_inserted "
+                "b.last_attempt_at,b.last_success_at,b.last_status,b.last_code,b.last_inserted,"
+                "b.last_diagnostic "
                 "FROM app_bank_connections c LEFT JOIN server_bank_refresh_bindings b "
                 "ON b.connection_id=c.id "
                 "WHERE c.user_id=? AND c.status!='REVOKED' ORDER BY c.rowid",
@@ -138,7 +163,8 @@ class ServerBankRefresh:
             # The worker may have committed between the list query and this view.
             with self.administration._connection() as db:
                 fresh = db.execute(
-                    'SELECT last_status,last_code,last_inserted,last_success_at,last_attempt_at '
+                    'SELECT last_status,last_code,last_inserted,last_success_at,last_attempt_at,'
+                    'last_diagnostic '
                     'FROM server_bank_refresh_bindings WHERE connection_id=? AND owner_id=?',
                     (row['id'], owner)).fetchone()
             if fresh is not None:
@@ -163,6 +189,10 @@ class ServerBankRefresh:
                 item['status'] = 'cooldown'
                 if row['last_code']:
                     item['code'] = _code(row['last_code'])
+                    if row['last_status'] == 'error':
+                        diagnostic = _stored_diagnostic(item['code'], row['last_diagnostic'])
+                        if diagnostic is not None:
+                            item['diagnostic'] = diagnostic
                 if (row['last_status'] in ('error', 'setup_required')
                         and type(row['last_inserted']) is int and row['last_inserted'] > 0):
                     item['inserted'] = row['last_inserted']
@@ -175,6 +205,9 @@ class ServerBankRefresh:
             item['code'] = 'bank_import_unavailable'
         if status == 'error' and 'code' not in item:
             item['code'] = _code(row['last_code'])
+            diagnostic = _stored_diagnostic(item['code'], row['last_diagnostic'])
+            if diagnostic is not None:
+                item['diagnostic'] = diagnostic
         if status == 'setup_required' and row['last_code']:
             item['code'] = _code(row['last_code'])
         if (type(row['last_inserted']) is int
@@ -280,26 +313,31 @@ class ServerBankRefresh:
                 'tan_method=excluded.tan_method,tan_medium=excluded.tan_medium,'
                 'bank_id=excluded.bank_id,last_attempt_at=excluded.last_attempt_at,'
                 'last_success_at=excluded.last_success_at,'
-                "last_status='updated',last_code=NULL,last_inserted=0",
+                "last_status='updated',last_code=NULL,last_diagnostic=NULL,last_inserted=0",
                 (connection_id, owner, revision, account_id, fingerprint,
                  binding['tan_method'], binding['tan_medium'], bank_id,
                  self._now().isoformat(), self._now().isoformat(), 'updated', 0))
         return {'remembered': True}
 
-    def _record(self, row, *, status, now, code=None, inserted=None, attempt=False):
+    def _record(self, row, *, status, now, code=None, inserted=None, attempt=False,
+                diagnostic=None):
+        safe = _diagnostic(code, diagnostic) if status == 'error' else None
+        encoded = (json.dumps(safe, separators=(',', ':'), sort_keys=True)
+                   if safe is not None else None)
         with self.administration._connection(write=True) as db:
             if attempt:
                 db.execute(
                     'UPDATE server_bank_refresh_bindings SET last_attempt_at=?,last_status=?, '
-                    'last_code=NULL,last_inserted=NULL WHERE connection_id=? AND owner_id=? AND revision=?',
+                    'last_code=NULL,last_diagnostic=NULL,last_inserted=NULL '
+                    'WHERE connection_id=? AND owner_id=? AND revision=?',
                     (now.isoformat(), 'running', row['id'], row['binding_owner'],
                      row['binding_revision']))
             else:
                 db.execute(
-                    'UPDATE server_bank_refresh_bindings SET last_status=?,last_code=?,last_attempt_at=?, '
+                    'UPDATE server_bank_refresh_bindings SET last_status=?,last_code=?,last_diagnostic=?,last_attempt_at=?, '
                     'last_inserted=?,last_success_at=CASE WHEN ? THEN ? ELSE last_success_at END '
                     'WHERE connection_id=? AND owner_id=? AND revision=?',
-                    (status, code, now.isoformat(), inserted, status == 'updated', now.isoformat(),
+                    (status, code, encoded, now.isoformat(), inserted, status == 'updated', now.isoformat(),
                      row['id'], row['binding_owner'], row['binding_revision']))
 
     def _run_binding(self, actor, owner, row, planned):
@@ -332,7 +370,8 @@ class ServerBankRefresh:
                         time.sleep(_POLL_SECONDS)
                         continue
                     if state.get('status') == 'error':
-                        raise _RefreshError(_code(state.get('code')))
+                        code = _code(state.get('code'))
+                        raise _RefreshError(code, state.get('diagnostic'))
                     result = state.get('result')
                     if state.get('status') != 'complete' or type(result) is not dict:
                         raise _RefreshError('invalid_bank_result')
@@ -356,7 +395,8 @@ class ServerBankRefresh:
             self._record(row, status='error', now=self._now(), code=_code(error.code), inserted=inserted)
         except _RefreshError as error:
             status = 'setup_required' if error.code == 'authorization_required' else 'error'
-            self._record(row, status=status, now=self._now(), code=_code(error.code), inserted=inserted)
+            self._record(row, status=status, now=self._now(), code=_code(error.code),
+                         inserted=inserted, diagnostic=error.diagnostic)
         except Exception:
             self._record(row, status='error', now=self._now(), code='bank_import_unavailable', inserted=inserted)
 
@@ -387,11 +427,13 @@ class ServerBankRefresh:
                                      self._now().astimezone(ZoneInfo('Europe/Berlin')).date())
             except _RefreshError as error:
                 view.update(status='error', code=_code(error.code))
+                view.pop('diagnostic', None)
                 continue
             if planned:
                 candidates.append((row, planned))
             elif view['status'] not in ('error', 'running'):
                 view['status'] = 'updated'
+                view.pop('diagnostic', None)
         if not candidates:
             return {'status': 'running' if any(item['status'] == 'running' for item in views)
                     else 'complete', 'connections': views}
@@ -417,6 +459,7 @@ class ServerBankRefresh:
             if view['id'] in ready:
                 view['status'] = 'running'
                 view.pop('code', None)
+                view.pop('diagnostic', None)
                 view.pop('inserted', None)
         return {'status': 'running', 'connections': views}
 

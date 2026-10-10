@@ -31,6 +31,14 @@ _ERROR_CODES = frozenset({'invalid_request', 'vault_unavailable', 'authorization
                           'auth_rejected',
                           'bank_failure', 'invalid_bank_result', 'unknown_account',
                           'unsupported_platform'})
+_DIAGNOSTIC_STAGES = frozenset({'accounts', 'control_month', 'period', 'balance'})
+_DIAGNOSTIC_BANK_CODES = frozenset({
+    'ONLINE_LOGIN_REQUIRED', 'CREDENTIALS_REJECTED', 'AUTH_TEMPORARY',
+    'UNSUPPORTED', 'CONNECTION', 'TIMEOUT', 'TLS', 'DIALOG_INIT',
+    'NO_RESPONSE', 'BANK_REJECTED', 'UNKNOWN', 'DATA_FORMAT',
+    'IDENTIFICATION_FORMAT', 'PRODUCT_FORMAT', 'STATEMENT_INCOMPLETE',
+    'STATEMENT_FORMAT', 'STATEMENT_ID_MISSING',
+})
 _BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517',
                'NASPA': '51050015'}
 
@@ -84,6 +92,20 @@ def _currency(value):
     if type(value) is not str or _CURRENCY.fullmatch(value) is None:
         raise ValueError('currency')
     return value
+
+
+def validated_diagnostic(value):
+    """Accept only the fixed, non-sensitive worker diagnostic vocabulary."""
+    if (type(value) is not dict
+            or set(value) not in ({'stage'}, {'stage', 'bank_error_code'})
+            or type(value['stage']) is not str
+            or value['stage'] not in _DIAGNOSTIC_STAGES):
+        raise ValueError('diagnostic')
+    if 'bank_error_code' in value and (
+            type(value['bank_error_code']) is not str
+            or value['bank_error_code'] not in _DIAGNOSTIC_BANK_CODES):
+        raise ValueError('diagnostic')
+    return value.copy()
 
 
 def _monthly(value, start, bank_id):
@@ -156,9 +178,16 @@ def _validated_output(payload, request):
         if type(result) is not dict:
             raise ValueError('result')
         if result.get('status') == 'error':
-            if (set(result) != {'status', 'code'} or type(result['code']) is not str
+            if (set(result) not in ({'status', 'code'}, {'status', 'code', 'diagnostic'})
+                    or type(result['code']) is not str
                     or result['code'] not in _ERROR_CODES):
                 raise ValueError('error')
+            if 'diagnostic' in result:
+                if result['code'] not in ('bank_failure', 'invalid_bank_result'):
+                    raise ValueError('diagnostic')
+                diagnostic = validated_diagnostic(result['diagnostic'])
+                if result['code'] == 'invalid_bank_result' and 'bank_error_code' in diagnostic:
+                    raise ValueError('diagnostic')
             return result
         if result.get('status') in ('needs_method', 'needs_medium'):
             if set(result) != {'status', 'options'} or type(result['options']) is not list or not 1 <= len(result['options']) <= 20:
