@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 from collections import Counter
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -19,7 +19,8 @@ from .administration import AdministrationError, _id, _revision
 from .connectors.fints_readonly import Balance
 from .connectors.ing_period_snapshot import PeriodSnapshot, archive_period
 from .core import Store
-from .ing_period_import import PeriodImportError, import_period_archive, preview_period_import
+from .ing_period_import import (BankBalanceRecord, PeriodImportError,
+                                import_period_archive, preview_period_import)
 from .monthly_archive import _encode as encode_monthly_snapshot
 from .monthly_archive import archive_monthly_snapshot, monthly_source_account_key
 from .statement_model import MonthlySnapshot
@@ -346,6 +347,7 @@ class ServerPostbankJobs:
     def _run(self, job_id, actor, request):
         try:
             raw = self.gateway.read(actor, request)
+            retrieved_at = datetime.now(UTC)
             with self._lock:
                 job = self._jobs.get(job_id)
                 account_id = job['account_id'] if job else None
@@ -365,7 +367,7 @@ class ServerPostbankJobs:
             elif raw.get('status') == 'ok' and request['action'] == 'accounts':
                 status, value = 'complete', {'result': _safe_accounts(raw)}
             elif raw.get('status') == 'ok' and request['action'] == 'period':
-                status, value = 'complete', self._preview(raw, account_id, profile)
+                status, value = 'complete', self._preview(raw, account_id, profile, retrieved_at)
             else:
                 _fail()
         except AdministrationError as error:
@@ -384,7 +386,7 @@ class ServerPostbankJobs:
                 self._active = None
             self._prune()
 
-    def _preview(self, raw, account_id, profile):
+    def _preview(self, raw, account_id, profile, retrieved_at):
         if (set(raw) != {'status', 'monthly', 'period', 'balance'}
                 or type(raw['monthly']) is not MonthlySnapshot
                 or type(raw['period']) is not PeriodSnapshot
@@ -443,7 +445,9 @@ class ServerPostbankJobs:
                         for row in period.rows[:_MAX_PREVIEW_ROWS]]}
         return {'result': dto, 'review_token': token, 'db_digest': digest,
                 'period_archive': period_path, 'monthly_archive': month_path,
-                'source_account': period.source_account, 'legacy_prefix': legacy}
+                'source_account': period.source_account, 'legacy_prefix': legacy,
+                'balance_record': BankBalanceRecord(balance.amount, balance.currency,
+                                                    balance.booked_on, retrieved_at)}
 
     def _job(self, actor, job_id):
         job_id = _id(job_id)
@@ -501,7 +505,8 @@ class ServerPostbankJobs:
                     writable, job['period_archive'], account_id=job['account_id'],
                     confirmed_source_account=job['source_account'],
                     source_category='Bankabruf', confirmed_legacy_prefix=job['legacy_prefix'],
-                    initial_month_archive=job['monthly_archive'])
+                    initial_month_archive=job['monthly_archive'],
+                    bank_balance=job['balance_record'])
             finally:
                 writable.close()
             dto = {'status': 'imported', 'count': result.count, 'inserted': result.inserted,

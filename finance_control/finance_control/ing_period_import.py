@@ -2,7 +2,7 @@
 
 import csv
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, localcontext
 import io
 import json
@@ -26,6 +26,16 @@ class PeriodImportResult:
     count: int
     inserted: int
     skipped: int
+
+
+@dataclass(frozen=True)
+class BankBalanceRecord:
+    """An explicit bank-reported balance captured at read time."""
+
+    amount: Decimal
+    currency: str
+    booked_on: date
+    retrieved_at: datetime
 
 
 def _cash(value):
@@ -87,7 +97,8 @@ def _current_rows(db, account_id, start, next_start):
 
 
 def import_period_archive(store, archive, *, account_id, confirmed_source_account, source_category,
-                          confirmed_legacy_prefix=(), initial_month_archive=None):
+                          confirmed_legacy_prefix=(), initial_month_archive=None,
+                          bank_balance: BankBalanceRecord | None = None):
     """Append only a verified suffix; preserve earlier classifications and context."""
     snapshot = read_period_archive(archive)
     validate_period(snapshot)
@@ -108,6 +119,19 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
         raise PeriodImportError('TRANSACTION_ACTIVE')
     if initial_month_archive is not None and not isinstance(initial_month_archive, (str, Path)):
         raise PeriodImportError('INITIAL_ARCHIVE_INVALID')
+    if bank_balance is not None:
+        if (type(bank_balance) is not BankBalanceRecord
+                or type(bank_balance.amount) is not Decimal
+                or type(bank_balance.currency) is not str
+                or bank_balance.currency != snapshot.currency
+                or type(bank_balance.booked_on) is not date
+                or type(bank_balance.retrieved_at) is not datetime
+                or bank_balance.retrieved_at.utcoffset() is None):
+            raise PeriodImportError('BANK_BALANCE_INVALID')
+        try:
+            balance_amount = _cash(bank_balance.amount)
+        except ValueError:
+            raise PeriodImportError('BANK_BALANCE_INVALID') from None
     key = period_key(snapshot)
     source_key = period_source_key(snapshot)
     namespace = f'{snapshot.source_profile.lower()}-period'
@@ -250,6 +274,20 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
             db.execute('UPDATE ing_period_imports SET as_of=?,archive_sha256=?,closing_balance=?,row_payload_json=?,ledger_ids_json=?,booking_count=? '
                        'WHERE period_key=?', (end, archive_sha256, _cash(snapshot.closing_balance), row_json,
                                             ledger_ids_json, count, key))
+        if bank_balance is not None:
+            db.execute(
+                'INSERT INTO bank_account_balances '
+                '(account_id,source_key,amount,currency,booked_on,retrieved_at) '
+                'VALUES (?,?,?,?,?,?) ON CONFLICT(account_id) DO UPDATE SET '
+                'source_key=excluded.source_key,amount=excluded.amount,'
+                'currency=excluded.currency,booked_on=excluded.booked_on,'
+                'retrieved_at=excluded.retrieved_at '
+                'WHERE excluded.booked_on>bank_account_balances.booked_on '
+                'OR (excluded.booked_on=bank_account_balances.booked_on '
+                'AND excluded.retrieved_at>bank_account_balances.retrieved_at)',
+                (account_id, source_key, balance_amount, bank_balance.currency,
+                 bank_balance.booked_on.isoformat(),
+                 bank_balance.retrieved_at.astimezone(UTC).isoformat()))
         db.commit()
         return PeriodImportResult(count, len(suffix), previous_count)
     except PeriodImportError:

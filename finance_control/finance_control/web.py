@@ -266,6 +266,10 @@ class Cockpit:
         store = Store(self.database)
         try:
             accounts = store.accounts()
+            from .current_balances import latest_by_account
+            current_balances = latest_by_account(store, accounts)
+            accounts = [account | {'current_balance': current_balances.get(account['id'])}
+                        for account in accounts]
             status = store.status(as_of) if accounts else None
             if self.profile is not None:
                 people = self.profile['people']
@@ -278,7 +282,8 @@ class Cockpit:
                 } for account in accounts]
             try:
                 dashboard_data = dashboard.build(
-                    store, as_of, accounts, reporting_history=self.reporting_history)
+                    store, as_of, accounts, reporting_history=self.reporting_history,
+                    current_balances=current_balances)
             except dashboard.DashboardConfigurationError:
                 dashboard_data = {
                     'as_of': as_of, 'month': as_of[:7], 'accounts': [],

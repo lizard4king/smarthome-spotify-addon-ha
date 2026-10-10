@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.26
+
+- Show the latest recorded account balance and its bank/statement date in both account views, independently of the selected booking month.
+- Keep unknown balances unavailable instead of substituting monthly movements or opening balances.
+- Persist the balance already returned by successful server transaction reads without a second bank request.
+- Combine refresh status and collapsed connection settings into one row per registration; retain and distinguish separate registrations with the same name.
+
 ## 0.2.25
 
 - Add NASPA Giro to owner-bound server transaction previews, controlled imports and refresh.
