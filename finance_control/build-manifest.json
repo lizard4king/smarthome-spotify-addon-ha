@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "18725cf66cc514e1dd08671e245978ffbf53cd68567f18a916920e5f8b54cb1c",
-  "addon_version": "0.2.27",
+  "addon_tree_sha256": "a1d828f007ad3891fd110ff69ad5aa6452f0989c6cedde4ea5a55c9fca9d44e9",
+  "addon_version": "0.2.28",
   "deployment_files": {
-    "Dockerfile": "25037a684073c3382ed699726d4b428a6f1dd6e5ae89170c1b9c6711054b232c",
-    "README.md": "659a0c2adb3921e1c2cb572c76d7053e6c18bec9a0aa86126c3a7ee217cd5809",
+    "Dockerfile": "28d2cd07ef306382fd548e993a5c7e8fa162a7b3998f27fe2262a6bcdf696ca9",
+    "README.md": "e110516526e3b2541c75d90f3e505745d7394f1a31c3142d68755090f15e7195",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "effdf24b6d6050c5b928b7f21933a5c95e39cbf1126eb8dd35e6991523e99d62",
+    "config.yaml": "daff334b5c5f946b6494260d2624ad28b8055b686b18f9ac91a0967da578ad24",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "9b83e2cfd2799fa96fe2748248510c1403de596c0ce641ad644de44547f64aba"
   },
@@ -41,15 +41,15 @@
     "connectors/amazon_portability.py": "066ddc8afb9d8786e3c0fd53fca0a80cec53e1111ba154d8b5dd1ddb1a62e8a6",
     "connectors/camt_bookings.py": "28bdb4fd56527a3b1c446f452c6121bd50bed22a40a169c70b1e50fc9456fee5",
     "connectors/credit_card.py": "a59c173d2053994ed8beef7b924e65324f3f6c64744a0d4b4a1d2bbf47795a0b",
-    "connectors/fints_readonly.py": "676c90f73f9ffd6effba889b028e48b7eb5d08284a86baa6778668a8e092775e",
-    "connectors/ing_period_snapshot.py": "001334fcd84e8b4a15b5a93c44caa0a656a7b874ac0e466a7332c83a52e0378d",
+    "connectors/fints_readonly.py": "693bad17541803b89976de3a6a511ab3bb3cc377d626162f3bd7e918e8ad9bb3",
+    "connectors/ing_period_snapshot.py": "2285114c24d84c552c4f1581224d9076a8a0d315a7d82d8551fcdeb67b6a3961",
     "connectors/ing_sync.py": "441f595685dcdb6f0191ee25cd9d65771dc770a6fbe95b4001a9d2e22673dec3",
     "connectors/mt940_statements.py": "c9fb148c90f4fdc444f639c78b7a766af1fb8f835eabd8ad43cb13be1de6cd2d",
     "connectors/probe.py": "7dbece4e9d7cb049f49e7d2ec353b13054b005ce1e56652da24b564a478cb97f",
     "connectors/profiles.py": "60ff2a129cbc527f2c646adcda48242d1e3fe06440b4ad57192a66a8fffabd0b",
-    "connectors/server_balance_worker.py": "941a2c3719b769962dc18bb2f3233f42aa8b427e0dd20677822d5ed66e30a5dd",
+    "connectors/server_balance_worker.py": "a28d6705331d62c4de8c4b13fb7f338e8304f6b5d34394806d0bae950d2ff017",
     "connectors/server_bank_rules.py": "99362944e2b040eb6da3b1190767ab94b100a31cb07ecde67c8ea9984a36861c",
-    "connectors/server_transactions_worker.py": "9f87d183eafb6f41118754b2227d9c24dc32d20bc6ead3b3325f6c22de57645e",
+    "connectors/server_transactions_worker.py": "16d1484b6d1029063252c717e230950d14282e34bb70cc36636dbe5a0a7e2c00",
     "connectors/synthetic.py": "15350c66e7749544ccc7e454f7c562495645968d3b89560e67d88db2e6b20edd",
     "core.py": "1dcbae4cb29da8f32dd0a93be67396b9341c5c43ec698b4c8da8089bc6538037",
     "current_balances.py": "f3ea8cba399ef1cd1e0ecb3598253a41a25c85a368d97543e4049863ae143c3f",
@@ -147,10 +147,10 @@
     "security/server_vault.py": "21b150771a34751be2aef2a753858eb50a8092f8aa607f0ceb35e6136e309af8",
     "server_balance_gateway.py": "ac76fa6a623e20ce713fc7f47e038629d792c0ce7f242d5c16c4a67c38f51372",
     "server_balance_jobs.py": "f05e4df1db65563eea2d7ca98a3f63b395b29eaa059e00796c431baabc13242b",
-    "server_bank_refresh.py": "053765451b1f3810d619671e92c72523adf9943f921b86006244af53851ebe93",
+    "server_bank_refresh.py": "2315fc3a3802eb660d5aa4b182e77d0d69d0f728d926b4f01247caa40f432e60",
     "server_banking.py": "6826c07c7c911eca64a889170c9f6d36f7b6f620df17303b21fc7504eb6cb8e8",
     "server_postbank_jobs.py": "7c457ed37c39439ee68426346bec715b9ea42a7c050b8ba26d55d8c250e3cb34",
-    "server_transactions_gateway.py": "d23ca04c8f6a5f0473249c4cebfd40bfe8aef68321218c51b52352e10ab389e8",
+    "server_transactions_gateway.py": "2ebd6a6adbb1c141183c771130bd46159f1f12c8430cc7a919e705b3297cb147",
     "split_preview.py": "f49bb7a27592b1183dbb9cb6565917f495ad445d2d2134aa71ea4377d2344e61",
     "statement_archive.py": "a5f37e88e5a3d782cf246bf907d8708720d90c716536c1aff7bea5ab18ee0ca2",
     "statement_import.py": "36dadc2d0fda02471933483b8f18237af7a0ad35ee391acbcda43ec09a2d05f9",
@@ -435,6 +435,6 @@
     "web.py": "9c7507996a7032c1ecfec6d370e4850d9128c017960a74e028c407e01c129f1d"
   },
   "schema_version": 1,
-  "source_commit": "d23b9a32a501e0b35f4e47cc0ab1ede2dbbef9cf",
-  "source_tree_sha256": "17c97d025052aae34eb4142013cd8553cb9454594ea23b2a7581020e850f67b8"
+  "source_commit": "cd64f25eb6437ca684aa56a4febb0388f09a0c0f",
+  "source_tree_sha256": "c307c9079b51658c30da0b6f0f8f533dc0d7694d7f1a7541819fe7d4d6ecd758"
 }

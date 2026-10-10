@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.28
+
+- Accept absent optional FinTS account fields without changing existing string-based account fingerprints; still reject invalid or duplicate identities.
+- Preserve the bank's actual period closing date and reject dates outside the requested month or beyond the request.
+- Keep full page, amount and previous-month controls; stop refresh batches after a partial close and retry the unfinished month.
+
 ## 0.2.27
 
 - Give direct bank sources priority: reject a generic CSV upload completely if it targets any bank-bound account; keep unbound file imports and internal bank imports available.

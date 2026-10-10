@@ -583,7 +583,8 @@ class ReadOnlyFinTS:
                                 source = statement.source_account
                                 parts = source.split('/')
                                 matches = source == account.iban or source == account.accountnumber
-                                if len(parts) == 2:
+                                if (len(parts) == 2 and type(account.accountnumber) is str
+                                        and account.accountnumber):
                                     matches = matches or (parts[0] == account.blz and parts[1].lstrip('0') == account.accountnumber.lstrip('0'))
                                 if not matches:
                                     raise BankReadError(code=BankErrorCode.DATA_FORMAT)

@@ -164,7 +164,7 @@ def _period(value, start, end, bank_id):
                               _money(value['opening_balance']), _money(value['closing_balance']),
                               _currency(value['currency']), tuple(rows))
     validate_period(snapshot)
-    if snapshot.month_start != start or snapshot.as_of != end:
+    if snapshot.month_start != start or not start <= snapshot.as_of <= end:
         raise ValueError('period')
     return snapshot
 
@@ -239,7 +239,7 @@ def _validated_output(payload, request):
         if type(balance) is not dict or set(balance) != {'amount', 'currency', 'booked_on'}:
             raise ValueError('balance')
         booked = _date(balance['booked_on'])
-        if not end <= booked <= date.today() or balance['currency'] != period.currency:
+        if not period.as_of <= booked <= date.today() or balance['currency'] != period.currency:
             raise ValueError('balance')
         return {'status': 'ok', 'monthly': monthly, 'period': period,
                 'balance': Balance(_money(balance['amount']), period.currency, booked)}

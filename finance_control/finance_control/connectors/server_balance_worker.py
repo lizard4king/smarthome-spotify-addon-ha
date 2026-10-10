@@ -47,11 +47,12 @@ def _valid(request):
 def _account_identity(account):
     if type(account) is not AccountRef:
         raise ValueError('invalid account')
-    values = (account.iban, account.bic, account.accountnumber,
-              account.subaccount, account.blz)
+    values = tuple('' if value is None else value for value in (
+        account.iban, account.bic, account.accountnumber,
+        account.subaccount, account.blz))
     if (any(type(value) is not str or len(value) > 100
             or any(not character.isprintable() for character in value) for value in values)
-            or not (account.iban or account.accountnumber)):
+            or not (values[0] or values[2])):
         raise ValueError('invalid account')
     return values
 

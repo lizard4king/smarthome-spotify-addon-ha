@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.28` accepts absent optional FinTS account fields while preserving
+existing string-based account fingerprints. Period reads retain the actual bank
+closing date, including an earlier close within the requested month. Page and
+balance controls stay strict; automatic refresh retries an unfinished month
+before entering the next one. Practical bank acceptance remains separate.
+
 Version `0.2.27` gives directly bound bank accounts priority over generic CSV
 uploads. NASPA can continue through supported file imports without a direct
 bank connection. Failed bank reads now show a validated stage and, where
