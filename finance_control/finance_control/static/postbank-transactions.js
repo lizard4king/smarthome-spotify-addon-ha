@@ -100,6 +100,63 @@
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   };
   const monthStartISO = () => `${todayISO().slice(0, 7)}-01`;
+  const exactFields = (value,keys) => value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value,key));
+  const strictDate = value => typeof value === 'string' && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)
+    && value.slice(0,4) !== '0000' && Number.isFinite(Date.parse(`${value}T00:00:00Z`))
+    && new Date(`${value}T00:00:00Z`).toISOString().slice(0,10) === value;
+  const decimal = value => typeof value === 'string' && value === value.trim()
+    && /^-?(?:0|[1-9][0-9]{0,11})\.[0-9]{2}$/.test(value) && value !== '-0.00';
+  const historyText = value => typeof value === 'string' && [...value].length <= 2048
+    && !/[\u0000-\u0008\u000b-\u001f\u007f]/.test(value)
+    && [...value].every(character=>character.codePointAt(0) < 0xd800 || character.codePointAt(0) > 0xdfff);
+  const currencyValid = value => typeof value === 'string' && value.length === 3 && /^[A-Z]{3}$/.test(value);
+  // Exact integer cents validate the response; displayed amounts remain the original server strings.
+  const cents = value => BigInt(value.replace('.',''));
+  const historyPeriodValid = (start,end) => {
+    if (!strictDate(start) || !strictDate(end) || !start.endsWith('-01')
+        || start.slice(0,7) !== end.slice(0,7) || end >= monthStartISO()) return false;
+    const next = new Date(`${end}T00:00:00Z`);next.setUTCDate(next.getUTCDate()+1);
+    return next.getUTCDate() === 1
+      && (new Date(`${todayISO()}T00:00:00Z`)-new Date(`${start}T00:00:00Z`))/86400000 <= 366;
+  };
+  const historyValid = result => {
+    if (!exactFields(result,['status','history']) || result.status !== 'history') return false;
+    const value=result.history;
+    if (!exactFields(value,['masked_account','month_start','as_of','count','totals','rows'])
+        || typeof value.masked_account !== 'string' || !/^••••(?:[A-Za-z0-9]{4})?$/.test(value.masked_account)
+        || ![4,8].includes(value.masked_account.length)
+        || !historyPeriodValid(value.month_start,value.as_of)
+        || !Number.isInteger(value.count) || value.count < 0 || value.count > 10000
+        || !Array.isArray(value.rows) || value.rows.length > 50 || value.rows.length !== Math.min(value.count,50)
+        || !Array.isArray(value.totals) || value.totals.length > 32
+        || value.totals.length > value.count || (value.count > 0 && !value.totals.length)) return false;
+    const currencies = new Set();
+    const valid = value.totals.every(total => {
+      if(!exactFields(total,['currency','credits','debits','net']) || !currencyValid(total.currency)
+          || currencies.has(total.currency) || !['credits','debits','net'].every(key=>decimal(total[key]))
+          || total.credits.startsWith('-') || total.debits.startsWith('-')
+          || cents(total.net) !== cents(total.credits)-cents(total.debits)) return false;
+      currencies.add(total.currency);return true;
+    })
+      && value.rows.every(row => exactFields(row,['booked_on','value_on','amount','currency','counterparty','purpose','booking_text'])
+        && strictDate(row.booked_on) && row.booked_on >= value.month_start && row.booked_on <= value.as_of
+        && (row.value_on === null || strictDate(row.value_on)) && decimal(row.amount) && currencies.has(row.currency)
+        && ['counterparty','purpose','booking_text'].every(key=>historyText(row[key])));
+    if(!valid) return false;
+    const visible = new Map();
+    for(const row of value.rows) {
+      const sums=visible.get(row.currency) || {credits:0n,debits:0n};
+      const amount=cents(row.amount);
+      if(amount >= 0n) sums.credits += amount;else sums.debits -= amount;
+      visible.set(row.currency,sums);
+    }
+    return value.totals.every(total=>{
+      const sums=visible.get(total.currency) || {credits:0n,debits:0n};
+      return value.count <= 50 ? visible.has(total.currency) && sums.credits === cents(total.credits) && sums.debits === cents(total.debits)
+        : sums.credits <= cents(total.credits) && sums.debits <= cents(total.debits);
+    });
+  };
   const reconciliationValid = value => {
     const keys = ['period_start','period_end','currency','ledger_opening_date','ledger_initial_balance',
       'ledger_opening_balance','ledger_closing_balance','bank_opening_balance','bank_closing_balance',
@@ -184,9 +241,21 @@
       ui.legacyConfirmation = null;
       ui.updateCommitButton = null;
     };
-    const renderReadError = state => {
+    const readErrorText = (code,diagnostic,action) => {
+      if(action==='history') {
+        const message={
+          invalid_period:'Wähle einen vollständig abgeschlossenen Kalendermonat mit Monatsbeginn innerhalb der letzten 366 Tage.',
+          invalid_target:'Wähle für die historische Lesediagnose ausdrücklich ein lokal als Sparkonto (SAVINGS) geführtes EUR-Ziel.',
+          invalid_action:'Die historische Lesediagnose ist für diese Bankverbindung nicht verfügbar.',
+        }[code];
+        if(message) return message;
+      }
+      return errorText(code,record.bankId,diagnostic);
+    };
+    const renderReadError = (state,action) => {
       clearReview();
-      setStatus(errorText(state.code,record.bankId,state.diagnostic),true);
+      setStatus(readErrorText(state.code,state.diagnostic,action),true);
+      if(action==='history') return;
       if (state.code !== 'CONTROL_MONTH_BALANCE_MISMATCH' || !reconciliationValid(state.reconciliation)) return;
       const proof = state.reconciliation;
       const card = node('section','','pbt-reconciliation');
@@ -220,6 +289,9 @@
       month_start: ui.month?.value ? `${ui.month.value}-01` : null,
       as_of: ui.asOf?.value || null,
     });
+    const historySelectionValid = () => record.bankId === 'ING' && !!ui.source?.value
+      && targets.some(target=>target.id === ui.target?.value && target.kind === 'SAVINGS' && target.currency === 'EUR')
+      && historyPeriodValid(ui.month?.value ? `${ui.month.value}-01` : null,ui.asOf?.value);
     const setBusy = value => {
       busy = value;
       root.querySelectorAll('button,select,input').forEach(control => { control.disabled = value; });
@@ -290,11 +362,14 @@
       const grid = node('div', '', 'pbt-fields'); grid.append(sourceField.label,targetField.label,monthLabel,asOfLabel);
       const disclosure = node('p',`${bankName} wird direkte Quelle; vorhandene Kategorien und Belege bleiben erhalten.`,'pbt-disclosure');
       const button = node('button','Buchungen prüfen','pbt-primary pbt-period-button'); button.type='button'; button.disabled=true;
+      const historyButton = record.bankId === 'ING' ? node('button','Historischen Monat prüfen','pbt-secondary pbt-history-button') : null;
+      if(historyButton) {historyButton.type='button';historyButton.addEventListener('click',()=>startRead('history'));}
       const update = () => {button.disabled=busy || !ui.source.value || !ui.target.value
         || !/^\d{4}-\d{2}$/.test(ui.month.value) || !/^\d{4}-\d{2}-\d{2}$/.test(ui.asOf.value)
         || ui.asOf.value < `${ui.month.value}-01` || ui.asOf.value > todayISO()
         || ui.asOf.value.slice(0,7) !== ui.month.value
-        || (new Date(`${todayISO()}T12:00:00Z`)-new Date(`${ui.month.value}-01T12:00:00Z`))/86400000 > 90;};
+        || (new Date(`${todayISO()}T12:00:00Z`)-new Date(`${ui.month.value}-01T12:00:00Z`))/86400000 > 90;
+        if(historyButton) historyButton.disabled=busy || !historySelectionValid();};
       for (const control of [ui.source,ui.target,ui.month,ui.asOf]) control.addEventListener('change',()=>{
         readVersion += 1;
         clearReview();
@@ -306,6 +381,7 @@
       ui.periodButton=button;
       ui.updatePeriodButton=update;
       accountPanel.replaceChildren(grid,disclosure,button);
+      if(historyButton) accountPanel.append(node('p','Historische Lesediagnose: Wähle ein lokal als Sparkonto (SAVINGS) geführtes EUR-Ziel und einen vollständig abgeschlossenen Monat der letzten 366 Tage. Die lokale Zuordnung bestätigt keinen Bankkontotyp. Auch eine leere Bankantwort beweist keine Vollständigkeit.','pbt-history-note'),historyButton);
       accountPanel.hidden=false;
       update();
       setStatus('Wähle das maskierte Bankkonto und das passende Finance-Control-Konto ausdrücklich aus.');
@@ -313,6 +389,43 @@
     const fieldValue = (parent,label,value) => {
       const cell=node('div','','pbt-summary-item');
       cell.append(node('span',label),node('strong',value)); parent.append(cell);
+    };
+    const renderHistory = result => {
+      clearReview();
+      const selected=fields();
+      if(!historySelectionValid() || !historyValid(result)
+          || result.history.month_start !== selected.month_start || result.history.as_of !== selected.as_of) {
+        setStatus('Die historische Bankantwort konnte nicht sicher angezeigt werden.',true);return;
+      }
+      const history=result.history;
+      const card=node('section','','pbt-preview pbt-history');
+      card.setAttribute('aria-label','Historische Lesediagnose');
+      card.append(node('h4','Historischer ING-Monat: Lesediagnose'),
+        node('p','Keine Übernahme und keine Änderung der Kontenzuordnung. Eine leere Bankantwort beweist keine Vollständigkeit. Das Ziel ist lokal als Sparkonto (SAVINGS) zugeordnet.','pbt-history-note'));
+      const summary=node('div','','pbt-summary');
+      fieldValue(summary,'Bankkonto',history.masked_account);
+      fieldValue(summary,'Zeitraum',`${history.month_start} bis ${history.as_of}`);
+      fieldValue(summary,'Gelieferte Buchungen',history.count);
+      for(const total of history.totals) {
+        fieldValue(summary,'Gutschriften',`${total.credits} ${total.currency}`);
+        fieldValue(summary,'Belastungen',`${total.debits} ${total.currency}`);
+        fieldValue(summary,'Summe der gelieferten Buchungen',`${total.net} ${total.currency}`);
+      }
+      card.append(summary);
+      if(!history.count) card.append(node('p','Die Bank hat für diesen Monat keine Buchungen geliefert.','pbt-limit'));
+      const list=node('div','','pbt-row-list');
+      for(const row of history.rows) {
+        const item=node('article','','pbt-row');const top=node('div','','pbt-row-top');
+        const left=node('div','','pbt-row-main');
+        left.append(node('span',row.booked_on,'pbt-row-date'),node('strong',row.counterparty || 'Ohne Gegenpartei'));
+        top.append(left,node('strong',`${row.amount} ${row.currency}`));
+        const details=node('details','','pbt-row-details');
+        details.append(node('summary','Buchungstext und Wertstellung'),node('p',`Wertstellung: ${row.value_on || 'Nicht geliefert'}`),node('pre',row.booking_text || 'Kein weiterer Buchungstext'));
+        item.append(top,node('p',row.purpose || 'Kein Verwendungszweck','pbt-description'),details);list.append(item);
+      }
+      card.append(list);
+      if(history.count > history.rows.length) card.append(node('p',`Es werden die ersten ${history.rows.length} von ${history.count} gelieferten Buchungen angezeigt.`,'pbt-limit'));
+      results.append(card);setStatus('Historische Lesediagnose abgeschlossen. Es wurde nichts übernommen.');
     };
     const renderPreview = preview => {
       if (!preview || typeof preview !== 'object' || typeof preview.review_token !== 'string'
@@ -408,8 +521,7 @@
       setStatus('Prüfe Konto, Zeitraum, Vorschau und Kontrollsalden vor der Übernahme.');
     };
     const handleResult = (action,result,jobId) => {
-      if(!result||typeof result!=='object') {setStatus('Der Abruf lieferte kein gültiges Ergebnis.',true);return;}
-      if(result.status==='needs_method'||result.status==='needs_medium') {
+      if(result?.status==='needs_method'||result?.status==='needs_medium') {
         if(record.bankId==='ING') {
           setStatus('Für diese ING-Verbindung ist die angebotene Freigabeart nicht verfügbar. Es wurde keine Auswahl geraten.',true);
           return;
@@ -436,6 +548,8 @@
         return;
       }
       authPanel.hidden=true;
+      if(action==='history') {renderHistory(result);return;}
+      if(!result||typeof result!=='object') {setStatus('Der Abruf lieferte kein gültiges Ergebnis.',true);return;}
       if(action==='accounts'&&result.status==='ok') {renderAccounts(result.accounts);return;}
       if(action==='period'&&result.status==='preview') {periodJobId=jobId;renderPreview(result);return;}
       setStatus('Der Abruf lieferte ein unerwartetes Ergebnis.',true);
@@ -448,11 +562,11 @@
         if(!active())return;
         const response=await request('/api/administration/postbank-state',{job_id:jobId});
         if(!active())return;
-        if(!response.ok) {setStatus(errorText(response.code,record.bankId,response.diagnostic),true);return;}
+        if(!response.ok) {setStatus(readErrorText(response.code,response.diagnostic,action),true);return;}
         const state=response.result;
         if(!state||state.job_id!==jobId) {setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;}
         if(state.status==='running')continue;
-        if(state.status==='error') {renderReadError(state);return;}
+        if(state.status==='error') {renderReadError(state,action);return;}
         if(state.status==='complete') {handleResult(action,state.result,jobId);return;}
         setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;
       }
@@ -460,6 +574,9 @@
     }
     async function startRead(action) {
       if(busy||!current())return;
+      if(action==='history' && !historySelectionValid()) {
+        setStatus('Wähle für die historische Lesediagnose ein lokales EUR-Sparkonto und einen vollständig abgeschlossenen Monat der letzten 366 Tage.',true);return;
+      }
       if(action==='period') {
         if(!ui.source?.value||!ui.target?.value||!/^\d{4}-\d{2}$/.test(ui.month.value)
             ||!/^\d{4}-\d{2}-\d{2}$/.test(ui.asOf.value)||ui.asOf.value<`${ui.month.value}-01`) {
@@ -474,17 +591,18 @@
         : action==='accounts'?`${bankName}-Konten werden gelesen.`
         : `${bankName}-Buchungen werden gelesen. Falls nötig, bestätige die Freigabe in Deiner Banking-App.`);
       const selected=fields();
+      const selectedPeriod=action==='period'||action==='history';
       const data={id:record.id,revision:record.revision,confirmed:true,
         tan_method:record.bankId==='ING'?null:auth.tan_method,
-        tan_medium:record.bankId==='ING'?null:auth.tan_medium,action,account_fingerprint:action==='period'?selected.account_fingerprint:null,
-        account_id:action==='period'?selected.account_id:null,month_start:action==='period'?selected.month_start:null,
-        as_of:action==='period'?selected.as_of:null};
+        tan_medium:record.bankId==='ING'?null:auth.tan_medium,action,account_fingerprint:selectedPeriod?selected.account_fingerprint:null,
+        account_id:selectedPeriod?selected.account_id:null,month_start:selectedPeriod?selected.month_start:null,
+        as_of:selectedPeriod?selected.as_of:null};
       const response=await request('/api/administration/postbank-read',data);
       if(!current() || readVersion !== version)return;
-      if(!response.ok) {setStatus(errorText(response.code,record.bankId,response.diagnostic),true);setBusy(false);return;}
+      if(!response.ok) {setStatus(readErrorText(response.code,response.diagnostic,action),true);setBusy(false);return;}
       const job=response.result;
       if(!job||job.status!=='running'||typeof job.job_id!=='string'||!job.job_id) {
-        setStatus(errorText(job?.code,record.bankId,job?.diagnostic),true);setBusy(false);return;
+        setStatus(readErrorText(job?.code,job?.diagnostic,action),true);setBusy(false);return;
       }
       await poll(job.job_id,action,version);
       if(current() && readVersion === version)setBusy(false);

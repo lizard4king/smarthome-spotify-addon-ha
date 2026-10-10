@@ -17,6 +17,7 @@ from .ing_period_snapshot import validate_period
 from .mt940_statements import MonthlySnapshot, StatementRow
 from .server_balance_worker import _account_identity, _fingerprint, _masked, _balance
 from .server_bank_rules import valid_auth_selection, valid_product_id
+from ..history_read import history_period, summarize_history
 
 
 _FIELDS = {'connection_id', 'owner_user_id', 'bank_id', 'bank_code', 'product_id',
@@ -74,12 +75,14 @@ def _valid(request):
         return False
     if request['action'] == 'accounts':
         return all(request[key] is None for key in ('account_fingerprint', 'month_start', 'as_of'))
-    if request['action'] != 'period' or type(request['account_fingerprint']) is not str or _FP.fullmatch(request['account_fingerprint']) is None:
+    if request['action'] not in ('period', 'history') or type(request['account_fingerprint']) is not str or _FP.fullmatch(request['account_fingerprint']) is None:
         return False
     try:
         start, end = _date(request['month_start']), _date(request['as_of'])
     except (ValueError, TypeError):
         return False
+    if request['action'] == 'history':
+        return bank_id == 'ING' and history_period(start, end)
     return (start.day == 1 and (start.year, start.month) == (end.year, end.month)
             and end <= date.today() and (date.today() - start).days <= 90)
 
@@ -244,6 +247,11 @@ def run_request(request, vault_factory, reader_factory):
             return _error('unknown_account')
         account = matches[0]
         start, end = _date(request['month_start']), _date(request['as_of'])
+        if request['action'] == 'history':
+            stage = 'period'
+            bookings = reader.read(ReadOperation.TRANSACTIONS, account, start, end)
+            return {'status': 'ok', 'history': summarize_history(
+                bookings, _masked(_account_identity(account)), start, end)}
         previous_end = start - timedelta(days=1)
         previous_start = date(previous_end.year, previous_end.month, 1)
         stage = 'control_month'

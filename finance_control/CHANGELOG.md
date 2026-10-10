@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.35
+
+- Add an owner-bound, read-only historical ING month check for explicitly selected savings targets, without import authority or balance changes.
+- Show bounded transaction details and exact totals per currency; empty results never prove completeness.
+- Preserve normal import and automatic refresh limits, authentication, revision checks and financial reconciliation rules.
+
 ## 0.2.34
 
 - Correct the static return type of fully validated reconciliation evidence without changing runtime values or validation rules.

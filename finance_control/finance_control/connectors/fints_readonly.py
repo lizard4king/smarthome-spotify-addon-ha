@@ -277,6 +277,13 @@ class Booking:
     reference_diagnostics: tuple[tuple[str, str], ...] = field(default=(), repr=False, compare=False)
     source_entry_date: date | None = field(default=None, repr=False, compare=False)
     source_booking_code: str | None = field(default=None, repr=False, compare=False)
+    # TRANSACTIONS historically exposes MT940 value date as booked_on. Keep that
+    # contract; history displays the independent entry date and value date.
+    entry_on: date | None = field(default=None, repr=False, compare=False)
+    value_on: date | None = field(default=None, repr=False, compare=False)
+    counterparty: str = field(default='', repr=False, compare=False)
+    purpose: str = field(default='', repr=False, compare=False)
+    booking_text: str = field(default='', repr=False, compare=False)
 
 
 def _source_entry_date(value):
@@ -688,7 +695,12 @@ class ReadOnlyFinTS:
                                 external_id, money(data['amount'].amount), data['amount'].currency,
                                 data['date'],
                                 _reference_diagnostics(data) if external_id is None else (),
-                                source_entry_date, source_booking_code))
+                                source_entry_date, source_booking_code,
+                                entry_on=_source_entry_date(data.get('entry_date')),
+                                value_on=_source_entry_date(data.get('date')),
+                                counterparty=data.get('applicant_name') or data.get('recipient_name') or '',
+                                purpose=data.get('purpose') or data.get('transaction_details') or '',
+                                booking_text=data.get('posting_text') or data.get('transaction_details') or ''))
                         return tuple(bookings)
                     if operation is ReadOperation.CAMT_TRANSACTIONS:
                         from .camt_bookings import parse_booked_camt
