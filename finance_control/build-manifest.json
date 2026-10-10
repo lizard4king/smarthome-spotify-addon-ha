@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "a1d828f007ad3891fd110ff69ad5aa6452f0989c6cedde4ea5a55c9fca9d44e9",
-  "addon_version": "0.2.28",
+  "addon_tree_sha256": "1659da78adb9d56922c1240824edf34bd7b85c3bb701b44cf1324ddc85608b7d",
+  "addon_version": "0.2.29",
   "deployment_files": {
-    "Dockerfile": "28d2cd07ef306382fd548e993a5c7e8fa162a7b3998f27fe2262a6bcdf696ca9",
-    "README.md": "e110516526e3b2541c75d90f3e505745d7394f1a31c3142d68755090f15e7195",
+    "Dockerfile": "553a85acaf6d95e68dec551082438058d8b76b678283a08245db8a23a8498319",
+    "README.md": "66f1c66e21645bd9b4c6a6cdff700bbf419816b11e69d7262a3a560f6b44c7d7",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "daff334b5c5f946b6494260d2624ad28b8055b686b18f9ac91a0967da578ad24",
+    "config.yaml": "b2b267561887e50b4d7f74fcbe96e7cb54f8b654fef7f7c236cb1098b8cee876",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "9b83e2cfd2799fa96fe2748248510c1403de596c0ce641ad644de44547f64aba"
   },
@@ -147,9 +147,9 @@
     "security/server_vault.py": "21b150771a34751be2aef2a753858eb50a8092f8aa607f0ceb35e6136e309af8",
     "server_balance_gateway.py": "ac76fa6a623e20ce713fc7f47e038629d792c0ce7f242d5c16c4a67c38f51372",
     "server_balance_jobs.py": "f05e4df1db65563eea2d7ca98a3f63b395b29eaa059e00796c431baabc13242b",
-    "server_bank_refresh.py": "2315fc3a3802eb660d5aa4b182e77d0d69d0f728d926b4f01247caa40f432e60",
+    "server_bank_refresh.py": "77550bbe9599b2a5b3fae9467204b462e07267aa347298d1d746dd04372aab09",
     "server_banking.py": "6826c07c7c911eca64a889170c9f6d36f7b6f620df17303b21fc7504eb6cb8e8",
-    "server_postbank_jobs.py": "7c457ed37c39439ee68426346bec715b9ea42a7c050b8ba26d55d8c250e3cb34",
+    "server_postbank_jobs.py": "65c76120c5bba0bdbbc69848a80d67b5f42d86668c1372b5d3f75fa7bdd72089",
     "server_transactions_gateway.py": "2ebd6a6adbb1c141183c771130bd46159f1f12c8430cc7a919e705b3297cb147",
     "split_preview.py": "f49bb7a27592b1183dbb9cb6565917f495ad445d2d2134aa71ea4377d2344e61",
     "statement_archive.py": "a5f37e88e5a3d782cf246bf907d8708720d90c716536c1aff7bea5ab18ee0ca2",
@@ -164,7 +164,7 @@
     "static/bank-paypal.png": "b94a7952974e87a72f0b7a46ee3b3ea0f05801ac05bd7b166d9c173fac58ec56",
     "static/bank-postbank.svg": "0e6cb3732979dbfa789623fbb8433402ffe739ff86e9116e83db978397838cc2",
     "static/bank-refresh.css": "8dc63734b0ae833e9af9956b6db97c6717b4777b707eab42053ceff8c5f5f2db",
-    "static/bank-refresh.js": "785222cb722e7820519f54981c0bed8e3e02c93d065e227a11fd1385273b98a7",
+    "static/bank-refresh.js": "85c0160552430dfa29ac17f3d814ac6a1f18093ce0392f48dd00fcb83b9fb0f9",
     "static/bank-sparkasse.png": "70718559e06e4f00752feb8a7ced473f42875d45b181d89d49d76991e7cb5d7a",
     "static/bonsy.js": "64ecd75424b3a3f69c24cb92320cd2d4ea5b9b3dd53d446e882845dcbfec275c",
     "static/booking_editor.css": "f13e76007fd1bba5c27e1192a56f43897988d1857961254a03caeb747feb3d8a",
@@ -419,8 +419,8 @@
     "static/lucide-LICENSE.txt": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
     "static/plan_actual.js": "fea50161b6e7653e202d3aabf3e3bc8f75e63c89197580f075a570bfc643ddeb",
-    "static/postbank-transactions.css": "c529d0b24dee6e5ca6e39b1da1c5695f3c48a516e8a2807842a08991010df77c",
-    "static/postbank-transactions.js": "baa304a392d327e1f026d5112baa455b20fd5c3aef9c54e932e24af65625275e",
+    "static/postbank-transactions.css": "9060ffd23d444c377c3ba099cf54294d25c87166ec57ddb6890ad34ea46b79d7",
+    "static/postbank-transactions.js": "23eb566876ac64f6e7da1bd8098e19f71b076f0cd63d25ef55270696651c5c67",
     "static/purchases.css": "07dd9af3e73e89e083da44941878a8a377012c0ef755e2fa308a25993b484b16",
     "static/purchases.js": "3e5753837a6bac64d2c1367217986ec05ca22e802e7ee7f77946248123348089",
     "static/server-banking.css": "a693cdd1bba6e935b046deeff8663156d718455895a674e5067bc20301dbfc0e",
@@ -435,6 +435,6 @@
     "web.py": "9c7507996a7032c1ecfec6d370e4850d9128c017960a74e028c407e01c129f1d"
   },
   "schema_version": 1,
-  "source_commit": "cd64f25eb6437ca684aa56a4febb0388f09a0c0f",
-  "source_tree_sha256": "c307c9079b51658c30da0b6f0f8f533dc0d7694d7f1a7541819fe7d4d6ecd758"
+  "source_commit": "a57e6da806da47ed4a4cb2dd80230829150afeb8",
+  "source_tree_sha256": "618c119c67b1ca30e77fe58a976072e4f0e6125e01fe038a9c08d240c1e10558"
 }
