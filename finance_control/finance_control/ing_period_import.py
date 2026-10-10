@@ -164,8 +164,21 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
                         or initial.source_account != snapshot.source_account
                         or initial.period_end != snapshot.month_start - timedelta(days=1)):
                     raise PeriodImportError('INITIAL_ARCHIVE_MISMATCH')
-                adopt_monthly_archive(store, initial_month_archive, account_id,
-                                      confirmed_source_account, manage_transaction=False)
+                try:
+                    adopt_monthly_archive(store, initial_month_archive, account_id,
+                                          confirmed_source_account, manage_transaction=False)
+                except ValueError as error:
+                    # Only fixed reconciliation reasons may leave this boundary;
+                    # other failures retain the generic IMPORT_FAILED handling.
+                    code = {
+                        'month_precedes_ledger_opening': 'CONTROL_MONTH_OPENING_DATE_MISMATCH',
+                        'ledger_control_balance_mismatch': 'CONTROL_MONTH_BALANCE_MISMATCH',
+                        'ledger_month_multiset_mismatch': 'CONTROL_MONTH_ROWS_MISMATCH',
+                        'bank_source_binding_conflict': 'SOURCE_BINDING_CONFLICT',
+                    }.get(str(error))
+                    if code is None:
+                        raise
+                    raise PeriodImportError(code) from None
         _source_guard(db, snapshot, account_id, source_key)
         _ledger_control(db, account, account_id, start, snapshot.opening_balance)
         if db.execute('SELECT 1 FROM bank_monthly_adoptions WHERE account_id=? AND period_start=?',

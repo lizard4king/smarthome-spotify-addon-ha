@@ -41,6 +41,25 @@ def _error(code, stage=None, bank_code=None):
     return result
 
 
+def _bank_failure(stage, error, masked_account=None):
+    """Only typed bank metadata and a previously validated identity suffix."""
+    result = _error('bank_failure', stage, error.code)
+    diagnostic = result['diagnostic']
+    if isinstance(error.origin, BankErrorOrigin) and error.origin is not BankErrorOrigin.OTHER:
+        diagnostic['bank_error_origin'] = error.origin.value
+    codes = []
+    for value in error.bank_return_codes if type(error.bank_return_codes) in (tuple, list) else ():
+        if type(value) is str and re.fullmatch(r'[0-9]{4}', value) and value not in codes:
+            codes.append(value)
+        if len(codes) == 16:
+            break
+    if codes:
+        diagnostic['bank_return_codes'] = codes
+    if stage == 'balance' and type(masked_account) is str and re.fullmatch(r'••••[A-Za-z0-9]{4}', masked_account):
+        diagnostic['masked_account'] = masked_account
+    return result
+
+
 def _valid(request):
     if type(request) is not dict or set(request) != _FIELDS:
         return False
@@ -112,6 +131,7 @@ def run_request(request, vault_factory, reader_factory):
     except Exception:
         return _error('vault_unavailable')
     stage = 'accounts'
+    masked_account = None
     try:
         def reject_challenge(_challenge):
             raise BankReadError(code=BankErrorCode.SCA_REQUIRED)
@@ -130,12 +150,14 @@ def run_request(request, vault_factory, reader_factory):
         result, account_errors, seen = [], [], set()
         for account in accounts:
             stage = 'accounts'
+            masked_account = None
             values = _account_identity(account)
             fingerprint = _fingerprint(request, values)
             if fingerprint in seen:
                 return _error('duplicate_account', stage)
             seen.add(fingerprint)
             identity = {'fingerprint': fingerprint, 'masked_account': _masked(values)}
+            masked_account = identity['masked_account']
             stage = 'balance'
             try:
                 raw_balance = reader.read(ReadOperation.BALANCE, account)
@@ -167,7 +189,7 @@ def run_request(request, vault_factory, reader_factory):
                           BankErrorCode.GRAPHICAL_TAN, BankErrorCode.AUTH_SETUP_REQUIRED,
                           BankErrorCode.AUTH_SELECTION_INVALID, BankErrorCode.TAN_LIMIT}:
             return _error('authorization_required', stage)
-        return _error('bank_failure', stage, error.code)
+        return _bank_failure(stage, error, masked_account)
     except (ValueError, TypeError, UnicodeError, OverflowError):
         return _error('invalid_bank_result', stage)
     except Exception:
