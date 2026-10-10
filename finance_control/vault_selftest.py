@@ -10,6 +10,7 @@ from pathlib import Path
 
 from finance_control.security import server_vault
 from finance_control.security.credentials import Credentials
+from finance_control.security.server_card_store import CardSecret, ServerCardStore
 
 
 _CONNECTION = 'a' * 32
@@ -76,6 +77,28 @@ def _check() -> None:
             reopened.delete(_CONNECTION, _OWNER)
             if reopened.has(_CONNECTION, _OWNER):
                 raise RuntimeError('delete_failed')
+            cards = ServerCardStore(directory)
+            card_id = cards.new_card_id()
+            secret = CardSecret('5412345678901234')
+            cards.save(_CONNECTION, _OWNER, card_id, secret)
+            card_path = directory / cards._record_name(_CONNECTION, _OWNER, card_id)
+            if (stat.S_IMODE(card_path.stat().st_mode) != 0o600
+                    or secret.card_number.encode('ascii') in card_path.read_bytes()
+                    or cards.load(_CONNECTION, _OWNER, card_id) != secret):
+                raise RuntimeError('card_store_failed')
+            sealed_card = card_path.read_bytes()
+            card_path.write_bytes(sealed_card[:-1] + bytes([sealed_card[-1] ^ 1]))
+            try:
+                cards.has(_CONNECTION, _OWNER, card_id)
+            except server_vault.ServerVaultError:
+                pass
+            else:
+                raise RuntimeError('card_tamper_accepted')
+            card_path.write_bytes(sealed_card)
+            if cards.delete_connection(_CONNECTION, _OWNER) != 1:
+                raise RuntimeError('card_cleanup_failed')
+            if cards.has(_CONNECTION, _OWNER, card_id):
+                raise RuntimeError('card_delete_failed')
         finally:
             server_vault.APPROVED_DIRECTORY = original_directory
 

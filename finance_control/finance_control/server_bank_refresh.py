@@ -16,6 +16,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .administration import AdministrationError, _id, _revision
+from .bank_account_policy import bank_account_kind_supported
 from .connectors.server_bank_rules import valid_auth_selection
 from .core import Store, valid_identifier
 from .server_transactions_gateway import validated_diagnostic
@@ -117,12 +118,14 @@ class ServerBankRefresh:
             rows = db.execute(
                 "SELECT c.id,c.label,c.bank_id,c.revision AS connection_revision,"
                 "b.owner_id AS binding_owner,b.revision AS binding_revision,"
-                "b.account_id,b.account_fingerprint,b.tan_method,b.tan_medium,"
+                "b.account_id,a.display_name AS account_name,b.account_fingerprint,"
+                "b.tan_method,b.tan_medium,"
                 "b.last_attempt_at,b.last_success_at,b.last_status,b.last_code,b.last_inserted,"
                 "b.last_diagnostic "
                 "FROM app_bank_connections c LEFT JOIN server_bank_refresh_bindings b "
                 "ON b.connection_id=c.id "
-                "WHERE c.user_id=? AND c.status!='REVOKED' ORDER BY c.rowid",
+                "LEFT JOIN accounts a ON a.id=b.account_id "
+                "WHERE c.user_id=? AND c.status!='REVOKED' ORDER BY c.rowid,b.account_id",
                 (owner,)).fetchall()
         return owner, [dict(row) for row in rows]
 
@@ -140,7 +143,7 @@ class ServerBankRefresh:
             context = _ACTIVE_CONTEXT
             return (context is not None and context[0] == self.database
                     and context[1] == owner
-                    and (row['id'], row['connection_revision']) in context[2])
+                    and (row['id'], row['connection_revision'], row['account_id']) in context[2])
 
     def _acquire_active(self, owner, candidates):
         global _ACTIVE_CONTEXT
@@ -148,7 +151,7 @@ class ServerBankRefresh:
             if not _GLOBAL_WORKER_LOCK.acquire(blocking=False):
                 return False
             _ACTIVE_CONTEXT = (self.database, owner,
-                               frozenset((row['id'], row['connection_revision'])
+                               frozenset((row['id'], row['connection_revision'], row['account_id'])
                                          for row, _ in candidates))
             return True
 
@@ -166,11 +169,16 @@ class ServerBankRefresh:
                 fresh = db.execute(
                     'SELECT last_status,last_code,last_inserted,last_success_at,last_attempt_at,'
                     'last_diagnostic '
-                    'FROM server_bank_refresh_bindings WHERE connection_id=? AND owner_id=?',
-                    (row['id'], owner)).fetchone()
+                    'FROM server_bank_refresh_bindings '
+                    'WHERE connection_id=? AND account_id=? AND owner_id=?',
+                    (row['id'], row['account_id'], owner)).fetchone()
             if fresh is not None:
                 row.update(dict(fresh))
-        item = {'id': row['id'], 'label': row['label'], 'bank_id': row['bank_id'],
+        item = {'id': row['id'], 'binding_id': (f"{row['id']}:{row['account_id']}"
+                                                   if row['account_id'] is not None else None),
+                'account_id': row['account_id'],
+                'account_name': row['account_name'],
+                'label': row['label'], 'bank_id': row['bank_id'],
                 'status': 'setup_required', 'last_success_at': row['last_success_at']}
         if not self._valid_binding(actor, owner, row):
             return item
@@ -300,15 +308,28 @@ class ServerBankRefresh:
                 (account_id, bank_id)).fetchone()
             if (connection is None or connection['user_id'] != owner
                     or connection['bank_id'] != bank_id or connection['revision'] != revision
-                    or account is None or tuple(account) != ('CHECKING', 'EUR')
+                    or account is None or not bank_account_kind_supported(
+                        bank_id, account['kind'], account['currency'])
                     or checkpoint is None):
+                raise AdministrationError('invalid_target', 409)
+            other_target = db.execute(
+                'SELECT connection_id FROM server_bank_refresh_bindings '
+                'WHERE account_id=? AND connection_id!=?',
+                (account_id, connection_id)).fetchone()
+            if other_target is not None:
+                raise AdministrationError('invalid_target', 409)
+            other_source = db.execute(
+                'SELECT account_id FROM server_bank_refresh_bindings '
+                'WHERE connection_id=? AND account_fingerprint=? AND account_id!=?',
+                (connection_id, fingerprint, account_id)).fetchone()
+            if other_source is not None:
                 raise AdministrationError('invalid_target', 409)
             db.execute(
                 'INSERT INTO server_bank_refresh_bindings '
                 '(connection_id,owner_id,revision,account_id,account_fingerprint,'
                 'tan_method,tan_medium,bank_id,last_attempt_at,last_success_at,'
                 'last_status,last_inserted) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) '
-                'ON CONFLICT(connection_id) DO UPDATE SET owner_id=excluded.owner_id,'
+                'ON CONFLICT(connection_id,account_id) DO UPDATE SET owner_id=excluded.owner_id,'
                 'revision=excluded.revision,account_id=excluded.account_id,'
                 'account_fingerprint=excluded.account_fingerprint,'
                 'tan_method=excluded.tan_method,tan_medium=excluded.tan_medium,'
@@ -330,16 +351,16 @@ class ServerBankRefresh:
                 db.execute(
                     'UPDATE server_bank_refresh_bindings SET last_attempt_at=?,last_status=?, '
                     'last_code=NULL,last_diagnostic=NULL,last_inserted=NULL '
-                    'WHERE connection_id=? AND owner_id=? AND revision=?',
-                    (now.isoformat(), 'running', row['id'], row['binding_owner'],
+                    'WHERE connection_id=? AND account_id=? AND owner_id=? AND revision=?',
+                    (now.isoformat(), 'running', row['id'], row['account_id'], row['binding_owner'],
                      row['binding_revision']))
             else:
                 db.execute(
                     'UPDATE server_bank_refresh_bindings SET last_status=?,last_code=?,last_diagnostic=?,last_attempt_at=?, '
                     'last_inserted=?,last_success_at=CASE WHEN ? THEN ? ELSE last_success_at END '
-                    'WHERE connection_id=? AND owner_id=? AND revision=?',
+                    'WHERE connection_id=? AND account_id=? AND owner_id=? AND revision=?',
                     (status, code, encoded, now.isoformat(), inserted, status == 'updated', now.isoformat(),
-                     row['id'], row['binding_owner'], row['binding_revision']))
+                     row['id'], row['account_id'], row['binding_owner'], row['binding_revision']))
 
     def _run_binding(self, actor, owner, row, planned):
         inserted = 0
@@ -471,9 +492,9 @@ class ServerBankRefresh:
             self._clear_active()
             _GLOBAL_WORKER_LOCK.release()
             raise AdministrationError('bank_import_unavailable', 503) from None
-        ready = {row['id'] for row, _ in candidates}
+        ready = {(row['id'], row['account_id']) for row, _ in candidates}
         for view in views:
-            if view['id'] in ready:
+            if (view['id'], view['account_id']) in ready:
                 view['status'] = 'running'
                 view.pop('code', None)
                 view.pop('diagnostic', None)

@@ -1,4 +1,4 @@
-"""Transactional Giro month-prefix import with local ordinal identities."""
+"""Transactional bank statement import with local ordinal identities."""
 
 import csv
 from dataclasses import dataclass
@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 
 from .bank_archive import _directory
+from .bank_account_policy import bank_account_kind_supported
 from .connectors.ing_period_snapshot import (
     period_key, period_source_key, read_period_archive, row_payload, validate_period,
 )
@@ -147,9 +148,10 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
         account = db.execute('SELECT * FROM accounts WHERE id=?', (account_id,)).fetchone()
         if account is None or account['currency'] != snapshot.currency:
             raise PeriodImportError('ACCOUNT_CURRENCY_MISMATCH')
-        # Check inside the write transaction as well as the web preview: a
-        # changed target must never turn a checking-account import into savings.
-        if snapshot.source_profile in ('POSTBANK', 'ING', 'NASPA') and account['kind'] != 'CHECKING':
+        # Recheck the bank-specific account kind inside the write transaction;
+        # the preview is not an authorization to change the target later.
+        if not bank_account_kind_supported(snapshot.source_profile, account['kind'],
+                                           account['currency']):
             raise PeriodImportError('invalid_target')
         if initial_month_archive is not None:
             already_bound = db.execute('SELECT 1 FROM bank_source_accounts WHERE source_key=?',

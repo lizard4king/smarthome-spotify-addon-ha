@@ -1,10 +1,15 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.30` adds direct period refresh for Postbank and ING checking and
+savings accounts and a separate owner-bound Mastercard C.12 setup with
+asynchronous read-only transaction retrieval. Additional-account and card
+acceptance remain pending.
+
 Version `0.2.29` adds a controlled, one-time source switch for uniquely matched
 legacy bookings. Text differences are shown side by side and require an
 additional explicit confirmation. Ambiguous tuples remain blocked; existing
 bank checkpoints stay strict, and legacy text, categories and links are
-preserved. Practical server acceptance is not yet confirmed.
+preserved. Practical server acceptance was pending at that release.
 
 Version `0.2.28` accepts absent optional FinTS account fields while preserving
 existing string-based account fingerprints. Period reads retain the actual bank

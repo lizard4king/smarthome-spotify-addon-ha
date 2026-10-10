@@ -16,6 +16,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from .administration import AdministrationError, _id, _revision
+from .bank_account_policy import (bank_account_kind_supported,
+                                  supported_bank_account_kinds)
 from .connectors.fints_readonly import Balance
 from .connectors.ing_period_snapshot import PeriodSnapshot, archive_period
 from .core import Store
@@ -157,13 +159,14 @@ def _database_digest(database):
         original.close()
 
 
-def _target(database, account_id):
+def _target(database, account_id, bank_id):
     store = Store(database, readonly=True)
     try:
         row = store.db.execute(
             'SELECT id,display_name,owner,currency,kind FROM accounts WHERE id=?',
             (account_id,)).fetchone()
-        if row is None or row['kind'] != 'CHECKING':
+        if (row is None or not bank_account_kind_supported(
+                bank_id, row['kind'], row['currency'])):
             raise AdministrationError('invalid_target')
         return {'id': row['id'], 'name': row['display_name'] or row['id'],
                 'owner': row['owner'], 'currency': row['currency']}
@@ -316,13 +319,19 @@ class ServerPostbankJobs:
             raise AdministrationError('invalid_action')
         connection_id, revision = _id(data['id']), _revision(data['revision'])
         self._check(actor, connection_id, revision)
+        bank_id = self.gateway.profile(actor, connection_id, revision)
+        kinds = supported_bank_account_kinds(bank_id)
+        if not kinds:
+            raise AdministrationError('invalid_bank')
         try:
             store = Store(self.database, readonly=True)
             try:
                 rows = store.db.execute(
-                    "SELECT id,display_name,owner,currency FROM accounts WHERE kind='CHECKING' ORDER BY id")
+                    'SELECT id,display_name,owner,currency,kind FROM accounts ORDER BY id')
                 targets = [{'id': row['id'], 'name': row['display_name'] or row['id'],
-                            'owner': row['owner'], 'currency': row['currency']} for row in rows]
+                            'owner': row['owner'], 'currency': row['currency']}
+                           for row in rows if bank_account_kind_supported(
+                               bank_id, row['kind'], row['currency'])]
             finally:
                 store.close()
             self._check(actor, connection_id, revision)
@@ -355,7 +364,7 @@ class ServerPostbankJobs:
             if (start.day != 1 or (start.year, start.month) != (end.year, end.month)
                     or end > today or (today - start).days > 90):
                 raise AdministrationError('invalid_period')
-            _target(self.database, data['account_id'])
+            _target(self.database, data['account_id'], profile)
         else:
             raise AdministrationError('invalid_action')
         with self._lock:
@@ -440,7 +449,7 @@ class ServerPostbankJobs:
                 or monthly.closing_balance != period.opening_balance
                 or balance.currency != period.currency):
             _fail()
-        target = _target(self.database, account_id)
+        target = _target(self.database, account_id, profile)
         if target['currency'] != period.currency:
             _fail('invalid_target', 409)
         _previous_month_control(self.database, account_id, monthly)

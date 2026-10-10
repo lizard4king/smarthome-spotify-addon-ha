@@ -1,12 +1,15 @@
-"""FinTS V3 C.12 credit-card reads and source-free normalized DTOs.
+"""FinTS V3 C.12 credit-card reads and normalized booking context.
 
 Segment layouts follow DK change G112, chapter C.12 (HKKKU/HIKKU and
-HKKKS/HIKKS, all version 1). Card numbers and descriptive text are kept only
-inside FinTS request/response objects and are never copied into DTOs.
+HKKKS/HIKKS, all version 1). Structured card identities stay in ephemeral
+FinTS objects. Known card identities are masked in descriptive booking data,
+which is retained for an authenticated server preview.
 """
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+import hashlib
+import hmac
 import re
 from zoneinfo import ZoneInfo
 
@@ -25,6 +28,10 @@ _BANK_TIMEZONE = ZoneInfo('Europe/Berlin')
 
 class CreditCardReadError(ValueError):
     """Static, source-independent error for malformed card replies or metadata."""
+
+
+class CreditCardUnsupportedError(CreditCardReadError):
+    """The bank did not advertise the required C.12 read segment."""
 
 
 class AmountWithCreditDebit1(DataElementGroup):
@@ -149,6 +156,20 @@ class CreditCardMetadata:
     account: KTI1 | None = field(default=None, repr=False)
     card_account_number: str | None = field(default=None, repr=False)
 
+    @property
+    def masked_number(self):
+        """Display label for a locally supplied PAN, without exposing its prefix."""
+        _check_metadata(self)
+        return f'•••• {self.card_number[-4:]}'
+
+    def fingerprint(self, key):
+        """Stable opaque selector scoped to a caller-held secret key."""
+        _check_metadata(self)
+        if type(key) is not bytes or len(key) < 16:
+            _invalid()
+        return hmac.new(key, b'finance-control/card/v1:' + self.card_number.encode('ascii'),
+                        hashlib.sha256).hexdigest()
+
 
 @dataclass(frozen=True)
 class CreditCardBooking:
@@ -162,6 +183,15 @@ class CreditCardBooking:
     original_currency: str | None
     original_exchange_rate: Decimal | None
     billed: bool | None
+    descriptions: tuple[tuple[str | None, str | None], ...] = ()
+    merchant_name: str | None = None
+    country_code: str | None = None
+    terminal_id: str | None = None
+    booking_reference: str | None = None
+    fee_code: str | None = None
+    billing_label: str | None = None
+    atm_fee_reference: str | None = None
+    foreign_use_fee_reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -215,7 +245,7 @@ def _check_dates(start_date, end_date):
 def _bpd_parameters(client, segment_type):
     segment = client.bpd.find_segment_first(segment_type, 1)
     if segment is None:
-        raise CreditCardReadError('Kreditkartenabruf ist nicht als unterstützt gemeldet.')
+        raise CreditCardUnsupportedError('Kreditkartenabruf ist nicht als unterstützt gemeldet.')
     return segment.parameter
 
 
@@ -233,6 +263,20 @@ def _decimal(value, *, optional=False):
         return None
     if type(value) is not Decimal or not value.is_finite():
         _invalid()
+    return value
+
+
+def _text(value, max_length, card_numbers=()):
+    if value is None:
+        return None
+    if (type(value) is not str or not 1 <= len(value) <= max_length or
+            any(ord(char) < 32 or ord(char) == 127 for char in value)):
+        _invalid()
+    # Preserve unrelated long bank references. Match only actual request/booking
+    # card numbers, including versions separated by ASCII spaces or hyphens.
+    for number in card_numbers:
+        pattern = r'[ -]*'.join(number)
+        value = re.sub(pattern, '•••• ' + number[-4:], value)
     return value
 
 
@@ -290,7 +334,9 @@ def _balance(value, *, extra=None, optional=False):
                              last_billing_date, expected_billing_date)
 
 
-def _booking(value):
+def _booking(value, card_numbers=()):
+    def text(value, limit):
+        return _text(value, limit, card_numbers)
     currency = value.booking_currency
     if type(currency) is not str or re.fullmatch(r'[A-Z]{3}', currency) is None:
         _invalid()
@@ -304,6 +350,8 @@ def _booking(value):
         if type(original_currency) is not str or re.fullmatch(r'[A-Z]{3}', original_currency) is None:
             _invalid()
     exchange_rate = _decimal(value.exchange_rate, optional=True)
+    if exchange_rate is not None and exchange_rate <= 0:
+        _invalid()
     billed = value.billed
     if billed is not None and type(billed) is not bool:
         _invalid()
@@ -312,6 +360,13 @@ def _booking(value):
         _date_value(value.billing_date, optional=True), _date_value(value.value_date, optional=True),
         _signed_amount(value.booking_amount_value, value.booking_credit_debit), currency,
         original_amount, original_currency, exchange_rate, billed,
+        tuple((text(getattr(value, f'description_{index}_base'), 50),
+               text(getattr(value, f'description_{index}_additional'), 50))
+              for index in range(1, 5)),
+        text(value.merchant_name, 140), text(value.country_code, 3),
+        text(value.terminal_id, 35), text(value.booking_reference, 35),
+        text(value.fee_code, 4), text(value.billing_label, 30),
+        text(value.atm_fee_reference, 40), text(value.foreign_use_fee_reference, 40),
     )
 
 
@@ -339,6 +394,23 @@ def _fetch(client, command_class, response_type, parameter_type, metadata, start
     def process(segments):
         if not segments or len(segments) > _MAX_TRANSACTIONS:
             _invalid()
+        # Collect every proven card identity before normalizing any booking.
+        # A later supplementary-card row may mention its PAN in an earlier row.
+        card_numbers = {metadata.card_number}
+        booking_count = 0
+        for segment in segments:
+            if not isinstance(segment, response_type):
+                _invalid()
+            _check_response_identity(segment, metadata)
+            for item in segment.bookings:
+                booking_count += 1
+                if booking_count > _MAX_TRANSACTIONS:
+                    _invalid()
+                if (type(item.card_number) is not str or
+                        re.fullmatch(r'[0-9]{16,30}', item.card_number) is None):
+                    _invalid()
+                card_numbers.add(item.card_number)
+        card_numbers = tuple(sorted(card_numbers, key=lambda value: (-len(value), value)))
         bookings = []
         balance = None
         last_billing_date = expected_billing_date = None
@@ -364,11 +436,7 @@ def _fetch(client, command_class, response_type, parameter_type, metadata, start
             for item in segment.bookings:
                 if len(bookings) >= _MAX_TRANSACTIONS:
                     _invalid()
-                # Supplementary cards may legitimately have a different card number.
-                if (type(item.card_number) is not str or
-                        re.fullmatch(r'[0-9]{16,30}', item.card_number) is None):
-                    _invalid()
-                booking = _booking(item)
+                booking = _booking(item, card_numbers)
                 if ((start_date is not None and booking.booking_date < start_date) or
                         (end_date is not None and booking.booking_date > end_date) or
                         booking.booking_date > _bank_today()):
