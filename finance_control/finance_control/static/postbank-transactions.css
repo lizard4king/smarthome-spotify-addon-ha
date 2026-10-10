@@ -45,6 +45,15 @@
 .pbt-imported{border-left:3px solid #167c72;padding:10px 12px;background:var(--pbt-soft)}
 .pbt-imported p{margin-top:4px!important;color:var(--pbt-muted);font-size:12px}
 .pbt-import-warning{padding:8px 10px;border-left:3px solid #b97721;background:#fff8e9;color:#704b1c!important}
+.pbt-legacy-review{display:grid;gap:12px;min-width:0;padding:12px;border:1px solid #d9b777;border-radius:9px;background:#fffaf0}
+.pbt-legacy-item{display:grid;gap:8px;min-width:0;padding:11px;border:1px solid #e6dcc8;border-radius:8px;background:#fff}
+.pbt-legacy-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
+.pbt-legacy-side{min-width:0}
+.pbt-legacy-side h5{margin:0 0 6px;font-size:12px;color:var(--pbt-muted)}
+.pbt-legacy-side strong,.pbt-legacy-side pre{overflow-wrap:anywhere}
+.pbt-legacy-side pre{margin:6px 0 0;white-space:pre-wrap;font:12px/1.45 Arial,sans-serif}
+.pbt-legacy-confirmation{display:flex;align-items:flex-start;gap:10px;min-height:44px;cursor:pointer}
+.pbt-legacy-confirmation input{flex:none;width:20px;height:20px;margin:1px 0}
 @media(max-width:640px){
   .pbt-fields{grid-template-columns:1fr;gap:9px}
   .pbt-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
@@ -52,5 +61,6 @@
   .pbt-row{padding:10px}
   .pbt-row-top{gap:8px}
   .pbt-row-top>strong{font-size:12px}
+  .pbt-legacy-comparison{grid-template-columns:1fr}
 }
 @media(max-width:360px){.pbt-summary{grid-template-columns:1fr}}

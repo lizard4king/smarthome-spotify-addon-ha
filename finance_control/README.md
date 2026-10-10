@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.29` adds a controlled, one-time source switch for uniquely matched
+legacy bookings. Text differences are shown side by side and require an
+additional explicit confirmation. Ambiguous tuples remain blocked; existing
+bank checkpoints stay strict, and legacy text, categories and links are
+preserved. Practical server acceptance is not yet confirmed.
+
 Version `0.2.28` accepts absent optional FinTS account fields while preserving
 existing string-based account fingerprints. Period reads retain the actual bank
 closing date, including an earlier close within the requested month. Page and

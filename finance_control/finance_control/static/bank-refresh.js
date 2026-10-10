@@ -55,6 +55,8 @@
     vault_unavailable: 'Der sichere Serverspeicher ist derzeit nicht verfügbar.',
     bank_product_unavailable: 'Die Bankverbindung ist auf dem Server noch nicht vollständig eingerichtet.',
     PREVIOUS_MONTH_CHANGED: 'Der vorherige Kontrollmonat wurde geändert. Prüfe die Buchungen erneut.',
+    legacy_text_confirmation_required: 'Vorhandene Buchungstexte müssen geprüft werden. Öffne „Verbindung bearbeiten“ für die Gegenüberstellung.',
+    LEGACY_TEXT_REVIEW_LIMIT: 'Mehr als 100 Textabweichungen benötigen eine gesonderte Prüfung.',
   }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Prüfe die Einrichtung und den Serverstatus.')
     + diagnosticText(code, diagnostic);
   const nameFor = bank => bank === 'ING' ? 'ING'

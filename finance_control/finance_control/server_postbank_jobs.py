@@ -42,6 +42,7 @@ _SAFE_ERRORS = frozenset({
     'unsupported_platform', 'unknown_connection', 'forbidden',
     'stale_revision', 'unauthorized', 'invalid_bank',
     'LEGACY_PREFIX_AMBIGUOUS', 'LEGACY_TEXT_MISMATCH', 'LEGACY_MONTH_OVERLAP',
+    'LEGACY_TEXT_REVIEW_LIMIT', 'legacy_text_confirmation_required',
     'PREVIOUS_MONTH_UNVERIFIED', 'SOURCE_BINDING_REQUIRED',
     'OPENING_BALANCE_MISMATCH', 'ACCOUNT_OPENING_MISMATCH',
     'ACCOUNT_CURRENCY_MISMATCH', 'MONTH_ALREADY_ADOPTED',
@@ -171,22 +172,22 @@ def _target(database, account_id):
 
 
 def _legacy_prefix(database, account_id, period):
-    """Match only a unique complete current-month prefix; never infer identities."""
+    """Return the unique financial prefix and its normalized text differences."""
     store = Store(database, readonly=True)
     try:
         checkpoint = store.db.execute(
             'SELECT 1 FROM ing_period_imports WHERE account_id=? AND month_start=?',
             (account_id, period.month_start.isoformat())).fetchone()
         if checkpoint is not None:
-            return ()
+            return (), []
         existing = store.db.execute(
-            'SELECT t.external_id,t.date,t.amount,t.currency,c.description '
+            'SELECT t.external_id,t.date,t.amount,t.currency,c.counterparty,c.description '
             'FROM transactions t LEFT JOIN transaction_context c '
             'ON c.account_id=t.account_id AND c.external_id=t.external_id '
             'WHERE t.account_id=? AND t.date>=? AND t.date<=?',
             (account_id, period.month_start.isoformat(), period.as_of.isoformat())).fetchall()
         if not existing:
-            return ()
+            return (), []
         if len(existing) > len(period.rows):
             _fail('LEGACY_MONTH_OVERLAP', 409)
         bank_keys = [(row.booked_on.isoformat(), _cash(row.amount), row.currency)
@@ -194,25 +195,45 @@ def _legacy_prefix(database, account_id, period):
         counts = Counter(bank_keys)
         bank_by_key = dict(zip(bank_keys, period.rows))
         by_key = {}
+        differences = []
+        matched_rows = []
         for row in existing:
             key = (row['date'], _cash(Decimal(row['amount'])), row['currency'])
             if key in by_key or counts[key] != 1:
                 _fail('LEGACY_PREFIX_AMBIGUOUS', 409)
             by_key[key] = row['external_id']
+            bank = bank_by_key[key]
+            matched_rows.append((key, row, bank, _text(row['description']),
+                                 _text(bank.description), _text(row['counterparty']),
+                                 _text(bank.counterparty)))
         prefix = bank_keys[:len(existing)]
         if len(set(prefix)) != len(prefix) or set(prefix) != set(by_key):
             _fail('LEGACY_MONTH_OVERLAP', 409)
-        for row in existing:
-            key = (row['date'], _cash(Decimal(row['amount'])), row['currency'])
-            bank = bank_by_key[key]
-            bank_description = _text(bank.description)
-            local_description = _text(row['description'])
-            merged = _text(' | '.join(part for part in (bank.description, bank.booking_text)
-                                      if part)) if bank.booking_text != bank.description else bank_description
-            if (not bank_description or not local_description
-                    or local_description not in {bank_description, merged}):
-                _fail('LEGACY_TEXT_MISMATCH', 409)
-        return tuple(by_key[key] for key in prefix)
+        for (key, row, bank, local_description, bank_description,
+             local_counterparty, bank_counterparty) in matched_rows:
+            if (not local_description or not bank_description
+                    or local_description != bank_description
+                    or local_counterparty != bank_counterparty):
+                difference = {
+                    'external_id': row['external_id'],
+                    'booked_on': key[0],
+                    'amount': key[1],
+                    'currency': key[2],
+                    'local_description': row['description'] or '',
+                    'bank_description': bank.description or '',
+                    'bank_booking_text': bank.booking_text or '',
+                    'local_counterparty': row['counterparty'] or '',
+                    'bank_counterparty': bank.counterparty or '',
+                }
+                for text_key in ('local_description', 'bank_description', 'bank_booking_text',
+                                 'local_counterparty', 'bank_counterparty'):
+                    text_value = difference[text_key]
+                    if type(text_value) is not str or len(text_value) > 8192:
+                        _fail('LEGACY_TEXT_REVIEW_LIMIT', 409)
+                differences.append(difference)
+                if len(differences) > 100:
+                    _fail('LEGACY_TEXT_REVIEW_LIMIT', 409)
+        return tuple(by_key[key] for key in prefix), differences
     finally:
         store.close()
 
@@ -429,7 +450,7 @@ class ServerPostbankJobs:
         month_path = archive_monthly_snapshot(monthly, archives / 'monthly').path
         period_path = archive_period(period, archives / 'period').path
         digest = _database_digest(self.database)
-        legacy = _legacy_prefix(self.database, account_id, period)
+        legacy, legacy_text_differences = _legacy_prefix(self.database, account_id, period)
         result = preview_period_import(
             self.database, period_path, account_id=account_id,
             confirmed_source_account=period.source_account,
@@ -447,6 +468,7 @@ class ServerPostbankJobs:
                'currency': period.currency,
                'month_start': period.month_start.isoformat(),
                'as_of': period.as_of.isoformat(), 'account_id': account_id,
+               'legacy_text_differences': legacy_text_differences,
                'masked_account': _masked(period.source_account),
                'bank_balance': {'amount': _cash(balance.amount), 'currency': balance.currency,
                                 'booked_on': balance.booked_on.isoformat()},
@@ -465,6 +487,7 @@ class ServerPostbankJobs:
         return {'result': dto, 'review_token': token, 'db_digest': digest,
                 'period_archive': period_path, 'monthly_archive': month_path,
                 'source_account': period.source_account, 'legacy_prefix': legacy,
+                'legacy_text_differences': legacy_text_differences,
                 'balance_record': BankBalanceRecord(balance.amount, balance.currency,
                                                     balance.booked_on, retrieved_at)}
 
@@ -493,7 +516,10 @@ class ServerPostbankJobs:
                        if job['status'] == 'error' and 'diagnostic' in job else {})}
 
     def commit(self, actor, data):
-        if type(data) is not dict or set(data) != {'job_id', 'review_token', 'confirmed'}:
+        base_fields = {'job_id', 'review_token', 'confirmed'}
+        optional_field = 'confirmed_legacy_text_differences'
+        if (type(data) is not dict or set(data) not in (base_fields, base_fields | {optional_field})
+                or (optional_field in data and type(data[optional_field]) is not bool)):
             raise AdministrationError('invalid_action')
         if data['confirmed'] is not True:
             raise AdministrationError('confirmation_required')
@@ -503,6 +529,9 @@ class ServerPostbankJobs:
                     or 'period_archive' not in job or type(data['review_token']) is not str
                     or not secrets.compare_digest(data['review_token'], job['review_token'])):
                 raise AdministrationError('invalid_review_token', 409)
+            if (job.get('legacy_text_differences')
+                    and data.get(optional_field) is not True):
+                raise AdministrationError('legacy_text_confirmation_required', 409)
             job['committing'] = True
             job['committed'] = True
         try:
