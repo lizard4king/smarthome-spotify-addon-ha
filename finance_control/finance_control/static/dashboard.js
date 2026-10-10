@@ -494,7 +494,12 @@
     const link = add(footer, 'a', '', 'Plan & Ist'); link.href = '#plan-actual';
   }
   window.financeDashboardRender = (payload, requestedArea = 'dashboard') => {
-    if (!payload || typeof payload !== 'object') return;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+        || !Array.isArray(payload.accounts) || !Array.isArray(payload.bookings))
+      throw new Error('Die Daten für die Buchungsansicht fehlen oder sind unvollständig.');
+    const rootId = requestedArea === 'category-outflows' ? 'category-outflows-root' : 'dashboard-root';
+    if (!document.getElementById(rootId))
+      throw new Error('Der Anzeigebereich für die Buchungen fehlt.');
     snapshot = payload;
     area = requestedArea === 'category-outflows' ? requestedArea : 'dashboard';
     paint();

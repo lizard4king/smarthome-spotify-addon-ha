@@ -8,6 +8,16 @@ import re
 _PRODUCT = re.compile(r'[A-Za-z0-9]{25}\Z')
 _TAN_METHOD = re.compile(r'[0-9]{1,8}\Z')
 
+# Wire tokens only: this module must stay independent of reader/gateway imports.
+BALANCE_DIAGNOSTIC_BANK_CODES = frozenset({
+    'ONLINE_LOGIN_REQUIRED', 'CREDENTIALS_REJECTED', 'AUTH_TEMPORARY',
+    'UNSUPPORTED', 'CONNECTION', 'TIMEOUT', 'TLS', 'DIALOG_INIT',
+    'NO_RESPONSE', 'BANK_REJECTED', 'UNKNOWN', 'DATA_FORMAT',
+    'IDENTIFICATION_FORMAT', 'PRODUCT_FORMAT', 'STATEMENT_INCOMPLETE',
+    'STATEMENT_FORMAT', 'STATEMENT_ID_MISSING',
+})
+BALANCE_ISOLATED_BANK_CODES = frozenset({'UNSUPPORTED', 'DATA_FORMAT'})
+
 
 def valid_product_id(value):
     return type(value) is str and _PRODUCT.fullmatch(value) is not None

@@ -12,8 +12,13 @@ from contextlib import redirect_stderr, redirect_stdout
 from datetime import date
 from decimal import Decimal
 
-from .fints_readonly import AccountRef, Balance, BankErrorCode, BankReadError, ReadOperation
-from .server_bank_rules import valid_auth_selection, valid_product_id
+from .fints_readonly import (
+    AccountRef, Balance, BankErrorCode, BankErrorOrigin, BankReadError, ReadOperation,
+)
+from .server_bank_rules import (
+    BALANCE_DIAGNOSTIC_BANK_CODES, BALANCE_ISOLATED_BANK_CODES,
+    valid_auth_selection, valid_product_id,
+)
 
 
 _FIELDS = {'connection_id', 'owner_user_id', 'bank_id', 'bank_code', 'product_id',
@@ -26,8 +31,14 @@ _MAX_INPUT = 16 * 1024
 _MAX_ACCOUNTS = 20
 
 
-def _error(code):
-    return {'status': 'error', 'code': code}
+
+def _error(code, stage=None, bank_code=None):
+    result = {'status': 'error', 'code': code}
+    if stage is not None:
+        result['diagnostic'] = {'stage': stage}
+        if isinstance(bank_code, BankErrorCode) and bank_code.value in BALANCE_DIAGNOSTIC_BANK_CODES:
+            result['diagnostic']['bank_error_code'] = bank_code.value
+    return result
 
 
 def _valid(request):
@@ -100,6 +111,7 @@ def run_request(request, vault_factory, reader_factory):
         credentials = vault.load(request['connection_id'], request['owner_user_id'])
     except Exception:
         return _error('vault_unavailable')
+    stage = 'accounts'
     try:
         def reject_challenge(_challenge):
             raise BankReadError(code=BankErrorCode.SCA_REQUIRED)
@@ -112,32 +124,54 @@ def run_request(request, vault_factory, reader_factory):
             lambda options: _choose_exact(options, request['tan_medium']))
         accounts = reader.read(ReadOperation.ACCOUNTS)
         if type(accounts) not in (tuple, list):
-            return _error('invalid_bank_result')
+            return _error('invalid_bank_result', stage)
         if len(accounts) > _MAX_ACCOUNTS:
-            return _error('too_many_accounts')
-        result, seen = [], set()
+            return _error('too_many_accounts', stage)
+        result, account_errors, seen = [], [], set()
         for account in accounts:
+            stage = 'accounts'
             values = _account_identity(account)
             fingerprint = _fingerprint(request, values)
             if fingerprint in seen:
-                return _error('duplicate_account')
+                return _error('duplicate_account', stage)
             seen.add(fingerprint)
-            balance = _balance(reader.read(ReadOperation.BALANCE, account))
-            result.append({'fingerprint': fingerprint, 'masked_account': _masked(values),
-                           **balance})
-        return {'status': 'ok', 'accounts': result}
+            identity = {'fingerprint': fingerprint, 'masked_account': _masked(values)}
+            stage = 'balance'
+            try:
+                raw_balance = reader.read(ReadOperation.BALANCE, account)
+            except BankReadError as error:
+                if (error.code.value not in BALANCE_ISOLATED_BANK_CODES
+                        or error.origin in {BankErrorOrigin.DIALOG_INIT, BankErrorOrigin.TRANSPORT,
+                                            BankErrorOrigin.SYSTEM_SYNC, BankErrorOrigin.ACCOUNTS}):
+                    raise
+                failure = _error('bank_failure', stage, error.code)
+                account_errors.append({**identity, 'code': failure['code'],
+                                       'diagnostic': failure['diagnostic']})
+                continue
+            # Isolate only validation of returned data, never transport exceptions.
+            try:
+                balance = _balance(raw_balance)
+            except (ValueError, TypeError, UnicodeError, OverflowError):
+                account_errors.append({**identity, 'code': 'invalid_bank_result',
+                                       'diagnostic': {'stage': stage}})
+                continue
+            result.append({**identity, **balance})
+        response = {'status': 'ok', 'accounts': result}
+        if account_errors:
+            response['account_errors'] = account_errors
+        return response
     except BankReadError as error:
         if error.code is BankErrorCode.AUTH_REJECTED:
-            return _error('auth_rejected')
+            return _error('auth_rejected', stage)
         if error.code in {BankErrorCode.SCA_REQUIRED, BankErrorCode.LOCAL_AUTH_ABORT,
                           BankErrorCode.GRAPHICAL_TAN, BankErrorCode.AUTH_SETUP_REQUIRED,
                           BankErrorCode.AUTH_SELECTION_INVALID, BankErrorCode.TAN_LIMIT}:
-            return _error('authorization_required')
-        return _error('bank_failure')
+            return _error('authorization_required', stage)
+        return _error('bank_failure', stage, error.code)
     except (ValueError, TypeError, UnicodeError, OverflowError):
-        return _error('invalid_bank_result')
+        return _error('invalid_bank_result', stage)
     except Exception:
-        return _error('bank_failure')
+        return _error('bank_failure', stage)
 
 
 def _real_vault():

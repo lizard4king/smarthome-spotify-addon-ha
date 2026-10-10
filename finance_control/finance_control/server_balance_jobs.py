@@ -57,6 +57,8 @@ class ServerBalanceJobs:
                 status, value = 'complete', {'result': result}
             else:
                 status, value = 'error', {'code': result['code']}
+                if 'diagnostic' in result:
+                    value['diagnostic'] = result['diagnostic']
         except AdministrationError as error:
             status, value = 'error', {'code': error.code if error.code in _ERROR_CODES
                                      else 'bank_read_unavailable'}
@@ -132,4 +134,6 @@ class ServerBalanceJobs:
                 response['result'] = job['result']
             elif job['status'] == 'error':
                 response['code'] = job['code']
+                if 'diagnostic' in job:
+                    response['diagnostic'] = job['diagnostic']
             return response

@@ -12,7 +12,10 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from .administration import AdministrationError, BANKS, _id, _revision
-from .connectors.server_bank_rules import valid_auth_selection, valid_product_id
+from .connectors.server_bank_rules import (
+    BALANCE_DIAGNOSTIC_BANK_CODES, BALANCE_ISOLATED_BANK_CODES,
+    valid_auth_selection, valid_product_id,
+)
 
 
 _FINGERPRINT = re.compile(r'[0-9a-f]{64}\Z')
@@ -27,6 +30,21 @@ _ERROR_CODES = {
     'bank_failure', 'invalid_bank_result', 'too_many_accounts',
     'duplicate_account', 'unsupported_platform',
 }
+_DIAGNOSTIC_STAGES = frozenset({'accounts', 'balance'})
+
+
+def validated_diagnostic(value):
+    """Accept only fixed stage/code tokens, never bank text or account data."""
+    if (type(value) is not dict
+            or set(value) not in ({'stage'}, {'stage', 'bank_error_code'})
+            or type(value['stage']) is not str
+            or value['stage'] not in _DIAGNOSTIC_STAGES):
+        raise ValueError('diagnostic')
+    if 'bank_error_code' in value and (
+            type(value['bank_error_code']) is not str
+            or value['bank_error_code'] not in BALANCE_DIAGNOSTIC_BANK_CODES):
+        raise ValueError('diagnostic')
+    return value.copy()
 
 
 def _fail(code='bank_read_unavailable', status=503):
@@ -53,14 +71,27 @@ def _validated_output(payload):
     if type(result) is not dict:
         _fail()
     if result.get('status') == 'error':
-        if (set(result) != {'status', 'code'} or type(result['code']) is not str
+        if (set(result) not in ({'status', 'code'}, {'status', 'code', 'diagnostic'})
+                or type(result['code']) is not str
                 or result['code'] not in _ERROR_CODES):
             _fail()
+        if 'diagnostic' in result:
+            try:
+                diagnostic = validated_diagnostic(result['diagnostic'])
+            except ValueError:
+                _fail()
+            if (result['code'] not in {'bank_failure', 'invalid_bank_result', 'auth_rejected',
+                                       'authorization_required', 'too_many_accounts', 'duplicate_account'}
+                    or (result['code'] != 'bank_failure' and 'bank_error_code' in diagnostic)):
+                _fail()
         return result
-    if result.get('status') != 'ok' or set(result) != {'status', 'accounts'}:
+    if (result.get('status') != 'ok'
+            or set(result) not in ({'status', 'accounts'}, {'status', 'accounts', 'account_errors'})):
         _fail()
     accounts = result['accounts']
-    if type(accounts) is not list or len(accounts) > 20:
+    account_errors = result.get('account_errors', [])
+    if (type(accounts) is not list or type(account_errors) is not list
+            or len(accounts) + len(account_errors) > 20):
         _fail()
     seen = set()
     for account in accounts:
@@ -85,6 +116,27 @@ def _validated_output(payload):
                 _fail()
         except (InvalidOperation, ValueError, OverflowError):
             _fail()
+    for item in account_errors:
+        if (type(item) is not dict
+                or set(item) != {'fingerprint', 'masked_account', 'code', 'diagnostic'}
+                or type(item['fingerprint']) is not str
+                or _FINGERPRINT.fullmatch(item['fingerprint']) is None
+                or item['fingerprint'] in seen
+                or type(item['masked_account']) is not str
+                or _MASK.fullmatch(item['masked_account']) is None
+                or type(item['code']) is not str
+                or item['code'] not in {'bank_failure', 'invalid_bank_result'}):
+            _fail()
+        try:
+            diagnostic = validated_diagnostic(item['diagnostic'])
+        except ValueError:
+            _fail()
+        if (diagnostic['stage'] != 'balance'
+                or (item['code'] == 'bank_failure'
+                    and diagnostic.get('bank_error_code') not in BALANCE_ISOLATED_BANK_CODES)
+                or (item['code'] == 'invalid_bank_result' and 'bank_error_code' in diagnostic)):
+            _fail()
+        seen.add(item['fingerprint'])
     return result
 
 

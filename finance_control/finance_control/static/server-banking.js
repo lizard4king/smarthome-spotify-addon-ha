@@ -12,15 +12,65 @@
   const validConnection = connection => connection && typeof connection.id === 'string' &&
     connection.id.length > 0 && Number.isSafeInteger(connection.revision) && connection.revision >= 0;
 
-  const balanceError = code => ({
+  const diagnosticText = (code, diagnostic) => {
+    if (!['bank_failure', 'invalid_bank_result', 'authorization_required', 'auth_rejected'].includes(code) || !diagnostic ||
+        typeof diagnostic !== 'object' || Array.isArray(diagnostic) ||
+        !Object.hasOwn(diagnostic, 'stage') ||
+        Object.keys(diagnostic).some(key => !['stage', 'bank_error_code'].includes(key))) return '';
+    const stages = {accounts: 'Beim Lesen der Kontenliste.', balance: 'Beim Lesen des Kontostands.'};
+    if (typeof diagnostic.stage !== 'string' || !Object.hasOwn(stages, diagnostic.stage)) return '';
+    if (!Object.hasOwn(diagnostic, 'bank_error_code')) return ` ${stages[diagnostic.stage]}`;
+    if (!['bank_failure', 'invalid_bank_result'].includes(code) || typeof diagnostic.bank_error_code !== 'string') return '';
+    const details = {
+      ONLINE_LOGIN_REQUIRED: 'Die Bank verlangt eine erneute Online-Anmeldung.',
+      CREDENTIALS_REJECTED: 'Die Bank hat die Zugangsdaten abgelehnt.',
+      AUTH_TEMPORARY: 'Die Bankfreigabe ist vorübergehend nicht verfügbar.',
+      UNSUPPORTED: 'Die Bank unterstützt diesen Abruf nicht.',
+      CONNECTION: 'Die Verbindung zur Bank ist fehlgeschlagen.',
+      TIMEOUT: 'Die Bank hat nicht rechtzeitig geantwortet.',
+      TLS: 'Die gesicherte Verbindung zur Bank ist fehlgeschlagen.',
+      DIALOG_INIT: 'Der Bankdialog konnte nicht gestartet werden.',
+      NO_RESPONSE: 'Die Bank hat keine Antwort geliefert.',
+      BANK_REJECTED: 'Die Bank hat die Anfrage abgelehnt.',
+      UNKNOWN: 'Die Bank meldet einen nicht näher bestimmten Fehler.',
+      DATA_FORMAT: 'Das Datenformat der Bankantwort ist ungültig.',
+      IDENTIFICATION_FORMAT: 'Die Bank konnte die Identifikation nicht verarbeiten.',
+      PRODUCT_FORMAT: 'Die Bank konnte die Produktkennung nicht verarbeiten.',
+      STATEMENT_INCOMPLETE: 'Der Kontoauszug ist unvollständig.',
+      STATEMENT_FORMAT: 'Das Format des Kontoauszugs ist ungültig.',
+      STATEMENT_ID_MISSING: 'Im Kontoauszug fehlt eine Buchungskennung.',
+    };
+    if (!Object.hasOwn(details, diagnostic.bank_error_code)) return '';
+    return ` ${stages[diagnostic.stage]} ${details[diagnostic.bank_error_code]}`;
+  };
+  const balanceError = (code, diagnostic) => {
+    const messages = {
     authorization_required: 'Die Freigabe für den Bankabruf fehlt.',
-    auth_rejected: 'Die ING/Bank hat die Anmeldung abgelehnt. Prüfe den gespeicherten Zugang.',
+    auth_rejected: 'Die Bank hat die Anmeldung abgelehnt. Prüfe den gespeicherten Zugang.',
+    bank_failure: 'Der Bankabruf ist fehlgeschlagen. Die genaue Ursache ist noch unbekannt. (bank_failure)',
+    invalid_bank_result: 'Die Bankantwort konnte nicht verarbeitet werden. (invalid_bank_result)',
+    bank_read_unavailable: 'Der Bankabruf ist auf dem Server derzeit nicht verfügbar. (bank_read_unavailable)',
+    server_banking_unsupported: 'Der Server unterstützt diesen Bankabruf nicht.',
+    unsupported_platform: 'Diese Plattform unterstützt den Bankabruf nicht.',
+    too_many_accounts: 'Die Bank liefert mehr Konten als unterstützt. (too_many_accounts)',
+    duplicate_account: 'Die Bank liefert ein Konto mehrfach. Die Kontostände sind nicht eindeutig zuordenbar. (duplicate_account)',
+    stale_revision: 'Die Bankverbindung wurde geändert. Lade die Verwaltung neu und starte erneut.',
+    unknown_connection: 'Die Bankverbindung ist nicht mehr verfügbar.',
+    forbidden: 'Du darfst diese Bankverbindung nicht abrufen.',
+    unauthorized: 'Die Serversitzung ist abgelaufen. Melde Dich erneut an.',
+    invalid_bank: 'Diese Bank wird für den Abruf nicht unterstützt.',
+    invalid_request: 'Die Abrufanfrage ist ungültig. Lade die Verwaltung neu. (invalid_request)',
     bank_read_timeout: 'Der Bankabruf hat das Zeitlimit erreicht. Es wurde kein neuer Abruf gestartet.',
     bank_read_busy: 'Für diese Bankverbindung läuft bereits ein Abruf.',
     vault_unavailable: 'Der sichere Serverspeicher ist derzeit nicht verfügbar.',
     bank_product_unavailable: 'Die FinTS-Produktkennung fehlt auf dem Server.',
     invalid_bank_auth_selection: 'Die gewählte TAN-Methode oder das TAN-Gerät ist für diese Bank nicht verfügbar.',
-  }[code] || 'Kontostände konnten nicht abgerufen werden. Bitte prüfe den Serverstatus.');
+    };
+    const base = typeof code === 'string' && Object.hasOwn(messages, code)
+      ? messages[code] : 'Kontostände konnten nicht abgerufen werden. Bitte prüfe den Serverstatus.';
+    const detail = diagnosticText(code, diagnostic);
+    return (code === 'bank_failure' && detail ? 'Der Bankabruf ist fehlgeschlagen.' : base) + detail;
+  };
 
   const safeText = (value, max = 128) => typeof value === 'string' && value.length <= max ? value : '';
 
@@ -119,7 +169,7 @@
       }
     };
 
-    const showBalances = (container, accounts) => {
+    const showBalances = (container, accounts, accountErrors = []) => {
       container.replaceChildren();
       const list = node('div', '', 'fsb-balance-list');
       for (const account of accounts) {
@@ -135,8 +185,16 @@
         row.append(node('small', bookedOn ? `Stand: ${bookedOn}` : 'Stand unbekannt'));
         list.append(row);
       }
+      const readCount = list.childElementCount;
+      for (const account of accountErrors) {
+        const row = node('article', '', 'fsb-balance-row fsb-error');
+        row.append(node('strong', `${safeText(account?.masked_account, 64) || 'Konto'} · nicht abrufbar`));
+        row.append(node('small', balanceError(account?.code, account?.diagnostic)));
+        list.append(row);
+      }
       if (!list.childElementCount) list.append(node('p', 'Der Abruf enthielt keine Kontostände.', 'fsb-notice'));
       container.append(list);
+      return readCount;
     };
 
     const readBalances = async (connection, credentialPresent, tanMethod, tanMedium, readStatus, results) => {
@@ -155,13 +213,13 @@
       try {
         job = await window.api('/api/administration/bank-balances-read', payload);
       } catch (error) {
-        if (isCurrent()) setStatus(readStatus, balanceError(error?.code), true);
+        if (isCurrent()) setStatus(readStatus, balanceError(error?.code, error?.diagnostic), true);
         setBusy(false);
         return;
       }
       if (!isCurrent()) return;
       if (!job || job.status !== 'running' || typeof job.job_id !== 'string' || !job.job_id) {
-        setStatus(readStatus, balanceError(job?.code), true);
+        setStatus(readStatus, balanceError(job?.code, job?.diagnostic), true);
         setBusy(false);
         return;
       }
@@ -173,21 +231,27 @@
         let state;
         try {
           state = await window.api('/api/administration/bank-balances-state', {job_id: job.job_id});
-        } catch (_) {
-          if (isCurrent()) setStatus(readStatus, 'Der Abrufstatus konnte nicht geladen werden.', true);
+        } catch (error) {
+          if (isCurrent()) setStatus(readStatus, error?.code
+            ? balanceError(error.code, error.diagnostic) : 'Der Abrufstatus konnte nicht geladen werden.', true);
           setBusy(false);
           return;
         }
         if (!isCurrent()) return;
         if (state?.status === 'running') continue;
         if (state?.status === 'error') {
-          setStatus(readStatus, balanceError(state.code), true);
+          setStatus(readStatus, balanceError(state.code, state.diagnostic), true);
           setBusy(false);
           return;
         }
         if (state?.status === 'complete' && state.result?.status === 'ok' && Array.isArray(state.result.accounts)) {
-          showBalances(results, state.result.accounts);
-          setStatus(readStatus, 'Kontostände wurden gelesen. Sie wurden nicht in Buchungen übernommen.');
+          const errors = Array.isArray(state.result.account_errors) ? state.result.account_errors : [];
+          const readCount = showBalances(results, state.result.accounts, errors);
+          const message = readCount === 0 ? 'Es wurden keine Kontostände gelesen.'
+            : (errors.length ? `${readCount} Kontostände gelesen, ${errors.length} nicht abrufbar.`
+              : 'Kontostände wurden gelesen.');
+          setStatus(readStatus, message + (readCount ? ' Sie wurden nicht in Buchungen übernommen.' : ''),
+            errors.length > 0 || readCount === 0);
           setBusy(false);
           return;
         }
