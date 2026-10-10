@@ -1,6 +1,9 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.32` respects explicit account balance restrictions from conclusive
+Version `0.2.33` shows a read-only bank-versus-ledger comparison when the initial
+control month has mismatching balances. The owner-bound failed preview retains
+only validated dates, amounts and counts in RAM; it cannot be committed. No
+opening balances or bookings are changed automatically. Version `0.2.32` respects explicit account balance restrictions from conclusive
 FinTS user parameters and reports initial ledger control conflicts explicitly.
 Missing or inconclusive permissions do not imply an unsupported operation.
 Financial controls remain strict. Version `0.2.31` preserves safe balance-read diagnostics and isolates unsupported

@@ -27,6 +27,7 @@ from .monthly_archive import _encode as encode_monthly_snapshot
 from .monthly_archive import archive_monthly_snapshot, monthly_source_account_key
 from .statement_model import MonthlySnapshot
 from .server_transactions_gateway import validated_diagnostic
+from .reconciliation_proof import validated_reconciliation
 
 
 _FIELDS = {'id', 'revision', 'confirmed', 'tan_method', 'tan_medium', 'action',
@@ -427,6 +428,10 @@ class ServerPostbankJobs:
         except PeriodImportError as error:
             status, value = 'error', {'code': str(error) if str(error) in _SAFE_ERRORS
                                        else 'bank_import_unavailable'}
+            if value['code'] == 'CONTROL_MONTH_BALANCE_MISMATCH':
+                proof = validated_reconciliation(vars(error).get('reconciliation'))
+                if proof is not None:
+                    value['reconciliation'] = proof
         except Exception:
             status, value = 'error', {'code': 'bank_import_unavailable'}
         with self._lock:
@@ -520,11 +525,15 @@ class ServerPostbankJobs:
             raise AdministrationError('invalid_action')
         job = self._job(actor, data['job_id'])
         with self._lock:
+            proof = (validated_reconciliation(job.get('reconciliation'))
+                     if job['status'] == 'error'
+                     and job.get('code') == 'CONTROL_MONTH_BALANCE_MISMATCH' else None)
             return {'job_id': job['job_id'], 'status': job['status'],
                     **({'result': job['result']} if job['status'] == 'complete' else {}),
                     **({'code': job['code']} if job['status'] == 'error' else {}),
                     **({'diagnostic': dict(job['diagnostic'])}
-                       if job['status'] == 'error' and 'diagnostic' in job else {})}
+                       if job['status'] == 'error' and 'diagnostic' in job else {}),
+                    **({'reconciliation': proof} if proof is not None else {})}
 
     def commit(self, actor, data):
         base_fields = {'job_id', 'review_token', 'confirmed'}

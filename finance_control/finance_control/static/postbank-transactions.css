@@ -45,6 +45,13 @@
 .pbt-imported{border-left:3px solid #167c72;padding:10px 12px;background:var(--pbt-soft)}
 .pbt-imported p{margin-top:4px!important;color:var(--pbt-muted);font-size:12px}
 .pbt-import-warning{padding:8px 10px;border-left:3px solid #b97721;background:#fff8e9;color:#704b1c!important}
+.pbt-reconciliation{display:grid;gap:10px;min-width:0;padding:12px;border:1px solid #d9b777;border-radius:9px;background:#fffaf0}
+.pbt-reconciliation h4{margin:0;font-size:14px}
+.pbt-reconciliation p{overflow-wrap:anywhere;font-size:12px}
+.pbt-reconciliation table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}
+.pbt-reconciliation caption{text-align:left;padding-bottom:10px;color:var(--pbt-muted)}
+.pbt-reconciliation th,.pbt-reconciliation td{text-align:left;vertical-align:top;padding:9px 5px;border-bottom:1px solid #e6dcc8;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.pbt-reconciliation thead th{color:var(--pbt-muted)}
 .pbt-legacy-review{display:grid;gap:12px;min-width:0;padding:12px;border:1px solid #d9b777;border-radius:9px;background:#fffaf0}
 .pbt-legacy-item{display:grid;gap:8px;min-width:0;padding:11px;border:1px solid #e6dcc8;border-radius:8px;background:#fff}
 .pbt-legacy-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
