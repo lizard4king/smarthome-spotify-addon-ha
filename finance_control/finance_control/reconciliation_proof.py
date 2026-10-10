@@ -3,7 +3,7 @@
 from calendar import monthrange
 from datetime import date
 import re
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from .core import money
 
@@ -65,7 +65,7 @@ def validated_reconciliation(value) -> ReconciliationProof | None:
             return None
     except (ValueError, TypeError, ArithmeticError):
         return None
-    return value.copy()
+    return cast(ReconciliationProof, value.copy())
 
 
 class LedgerControlBalanceMismatch(ValueError):

@@ -1,6 +1,7 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.33` shows a read-only bank-versus-ledger comparison when the initial
+Version `0.2.34` fixes the static return type of validated reconciliation evidence;
+runtime values and validation rules are unchanged. Version `0.2.33` shows a read-only bank-versus-ledger comparison when the initial
 control month has mismatching balances. The owner-bound failed preview retains
 only validated dates, amounts and counts in RAM; it cannot be committed. No
 opening balances or bookings are changed automatically. Version `0.2.32` respects explicit account balance restrictions from conclusive
