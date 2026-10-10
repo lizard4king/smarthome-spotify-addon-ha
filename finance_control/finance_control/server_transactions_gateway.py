@@ -16,6 +16,7 @@ from .connectors.ing_period_snapshot import PeriodRow, PeriodSnapshot, validate_
 from .connectors.mt940_statements import MonthlySnapshot, StatementRow
 from .connectors.server_bank_rules import valid_auth_selection, valid_product_id
 from .server_balance_gateway import ServerBalanceGateway, _BANK_READ_LOCK
+from .history_read import validated_history
 
 
 _FP = re.compile(r'[0-9a-f]{64}\Z')
@@ -211,6 +212,11 @@ def _validated_output(payload, request):
             return result
         if result.get('status') != 'ok':
             raise ValueError('status')
+        if request['action'] == 'history':
+            if set(result) != {'status', 'history'} or request['bank_id'] != 'ING':
+                raise ValueError('history')
+            return {'status': 'ok', 'history': validated_history(
+                result['history'], _date(request['month_start']), _date(request['as_of']))}
         if request['action'] == 'accounts':
             if set(result) != {'status', 'accounts'} or type(result['accounts']) is not list or len(result['accounts']) > 20:
                 raise ValueError('accounts')

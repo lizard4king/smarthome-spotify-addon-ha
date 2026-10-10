@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.35` adds a separate, owner-bound historical ING month check for
+explicitly selected savings targets. It displays bounded booked transactions
+and exact totals per currency without importing or changing balances. Empty
+results do not prove completeness; normal import and refresh limits remain.
+
 Version `0.2.34` fixes the static return type of validated reconciliation evidence;
 runtime values and validation rules are unchanged. Version `0.2.33` shows a read-only bank-versus-ledger comparison when the initial
 control month has mismatching balances. The owner-bound failed preview retains

@@ -9,6 +9,8 @@
 .pbt-status{margin:8px 0!important;min-height:18px}
 .pbt-error{color:#a53a35}
 .pbt-content{display:grid;gap:12px;min-width:0}
+.pbt-history-note{margin:12px 0!important;font-size:12px;color:var(--pbt-muted);overflow-wrap:anywhere}
+.pbt-history-button{max-width:100%;margin-top:2px}
 .pbt-primary,.pbt-secondary{min-height:40px;border:1px solid #bdd1cb;border-radius:8px;padding:8px 13px;background:white;color:var(--pbt-ink);font:inherit;font-weight:700;cursor:pointer}
 .pbt-primary{border-color:#167c72;background:#167c72;color:white}
 .pbt-primary:hover:not(:disabled){background:#11675f}

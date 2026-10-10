@@ -28,6 +28,7 @@ from .monthly_archive import archive_monthly_snapshot, monthly_source_account_ke
 from .statement_model import MonthlySnapshot
 from .server_transactions_gateway import validated_diagnostic
 from .reconciliation_proof import validated_reconciliation
+from .history_read import history_period, validated_history, iso_date
 
 
 _FIELDS = {'id', 'revision', 'confirmed', 'tan_method', 'tan_medium', 'action',
@@ -172,7 +173,7 @@ def _target(database, account_id, bank_id):
                 bank_id, row['kind'], row['currency'])):
             raise AdministrationError('invalid_target')
         return {'id': row['id'], 'name': row['display_name'] or row['id'],
-                'owner': row['owner'], 'currency': row['currency']}
+                'owner': row['owner'], 'currency': row['currency'], 'kind': row['kind']}
     finally:
         store.close()
 
@@ -332,7 +333,7 @@ class ServerPostbankJobs:
                 rows = store.db.execute(
                     'SELECT id,display_name,owner,currency,kind FROM accounts ORDER BY id')
                 targets = [{'id': row['id'], 'name': row['display_name'] or row['id'],
-                            'owner': row['owner'], 'currency': row['currency']}
+                            'owner': row['owner'], 'currency': row['currency'], 'kind': row['kind']}
                            for row in rows if bank_account_kind_supported(
                                bank_id, row['kind'], row['currency'])]
             finally:
@@ -354,7 +355,7 @@ class ServerPostbankJobs:
             if any(data[key] is not None for key in
                    ('account_fingerprint', 'account_id', 'month_start', 'as_of')):
                 raise AdministrationError('invalid_action')
-        elif data['action'] == 'period':
+        elif data['action'] in ('period', 'history'):
             if (type(data['account_fingerprint']) is not str
                     or _FP.fullmatch(data['account_fingerprint']) is None
                     or type(data['account_id']) is not str):
@@ -364,10 +365,19 @@ class ServerPostbankJobs:
             except AdministrationError:
                 raise AdministrationError('invalid_period') from None
             today = date.today()
-            if (start.day != 1 or (start.year, start.month) != (end.year, end.month)
-                    or end > today or (today - start).days > 90):
-                raise AdministrationError('invalid_period')
-            _target(self.database, data['account_id'], profile)
+            if data['action'] == 'history':
+                if profile != 'ING':
+                    raise AdministrationError('invalid_action')
+                if not history_period(start, end, today):
+                    raise AdministrationError('invalid_period')
+                target = _target(self.database, data['account_id'], profile)
+                if target['kind'] != 'SAVINGS' or target['currency'] != 'EUR':
+                    raise AdministrationError('invalid_target')
+            else:
+                if (start.day != 1 or (start.year, start.month) != (end.year, end.month)
+                        or end > today or (today - start).days > 90):
+                    raise AdministrationError('invalid_period')
+                _target(self.database, data['account_id'], profile)
         else:
             raise AdministrationError('invalid_action')
         with self._lock:
@@ -379,12 +389,15 @@ class ServerPostbankJobs:
                                   'connection_id': connection_id, 'revision': revision,
                                   'status': 'running', 'finished_at': None,
                                   'account_id': data['account_id'], 'committing': False,
-                                  'committed': False, 'bank_id': profile,
+                                  'committed': False, 'bank_id': profile, 'action': data['action'],
+                                  'history_start': data['month_start'], 'history_end': data['as_of'],
                                   'binding': {'connection_id': connection_id, 'revision': revision,
                                               'account_id': data['account_id'],
                                               'account_fingerprint': data['account_fingerprint'],
                                               'tan_method': data['tan_method'],
                                               'tan_medium': data['tan_medium'], 'bank_id': profile}}
+            if data['action'] == 'history':
+                del self._jobs[job_id]['binding']
             self._active = job_id
             request = {key: value for key, value in data.items() if key != 'account_id'}
             try:
@@ -420,6 +433,14 @@ class ServerPostbankJobs:
                 status, value = 'complete', {'result': _safe_accounts(raw)}
             elif raw.get('status') == 'ok' and request['action'] == 'period':
                 status, value = 'complete', self._preview(raw, account_id, profile, retrieved_at)
+            elif raw.get('status') == 'ok' and request['action'] == 'history':
+                target = _target(self.database, account_id, profile)
+                if (set(raw) != {'status', 'history'} or profile != 'ING'
+                        or target['kind'] != 'SAVINGS' or target['currency'] != 'EUR'):
+                    _fail()
+                history = validated_history(raw['history'], iso_date(request['month_start']),
+                                            iso_date(request['as_of']))
+                status, value = 'complete', {'result': {'status': 'history', 'history': history}}
             else:
                 _fail()
         except AdministrationError as error:
@@ -514,6 +535,8 @@ class ServerPostbankJobs:
             job = self._jobs.get(job_id)
             if job is None:
                 raise AdministrationError('unknown_job', 404)
+            if job.get('action') == 'history' and actor.get('id') != job['owner_id']:
+                raise AdministrationError('unknown_job', 404)
             owner_id, connection_id, revision = (job['owner_id'], job['connection_id'],
                                                  job['revision'])
         if self._check(actor, connection_id, revision) != owner_id:
@@ -525,11 +548,27 @@ class ServerPostbankJobs:
             raise AdministrationError('invalid_action')
         job = self._job(actor, data['job_id'])
         with self._lock:
+            if job.get('action') == 'history' and job['status'] == 'complete':
+                try:
+                    result = job['result']
+                    if type(result) is not dict:
+                        raise ValueError('history shape')
+                    if result.get('status') in ('needs_method', 'needs_medium'):
+                        job_result = _safe_option_result(result)
+                    else:
+                        if set(result) != {'status', 'history'} or result['status'] != 'history':
+                            raise ValueError('history shape')
+                        job_result = {'status': 'history', 'history': validated_history(
+                            result['history'], iso_date(job['history_start']), iso_date(job['history_end']))}
+                except (ValueError, TypeError, KeyError):
+                    _fail()
+            else:
+                job_result = job.get('result')
             proof = (validated_reconciliation(job.get('reconciliation'))
                      if job['status'] == 'error'
                      and job.get('code') == 'CONTROL_MONTH_BALANCE_MISMATCH' else None)
             return {'job_id': job['job_id'], 'status': job['status'],
-                    **({'result': job['result']} if job['status'] == 'complete' else {}),
+                    **({'result': job_result} if job['status'] == 'complete' else {}),
                     **({'code': job['code']} if job['status'] == 'error' else {}),
                     **({'diagnostic': dict(job['diagnostic'])}
                        if job['status'] == 'error' and 'diagnostic' in job else {}),
