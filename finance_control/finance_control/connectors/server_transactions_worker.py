@@ -75,13 +75,13 @@ def _valid(request):
         return False
     if request['action'] == 'accounts':
         return all(request[key] is None for key in ('account_fingerprint', 'month_start', 'as_of'))
-    if request['action'] not in ('period', 'history') or type(request['account_fingerprint']) is not str or _FP.fullmatch(request['account_fingerprint']) is None:
+    if request['action'] not in ('period', 'history', 'backfill') or type(request['account_fingerprint']) is not str or _FP.fullmatch(request['account_fingerprint']) is None:
         return False
     try:
         start, end = _date(request['month_start']), _date(request['as_of'])
     except (ValueError, TypeError):
         return False
-    if request['action'] == 'history':
+    if request['action'] in ('history', 'backfill'):
         return bank_id == 'ING' and history_period(start, end)
     return (start.day == 1 and (start.year, start.month) == (end.year, end.month)
             and end <= date.today() and (date.today() - start).days <= 90)
@@ -264,6 +264,8 @@ def run_request(request, vault_factory, reader_factory):
         if type(period_values) not in (tuple, list) or len(period_values) != 1:
             raise ValueError('snapshot count')
         period = _period(period_values[0], account, start, end, bank_id)
+        if request['action'] == 'backfill' and (_date(period['as_of']) != end or period['currency'] != 'EUR'):
+            raise ValueError('incomplete backfill')
         if (monthly['currency'] != period['currency']
                 or monthly['closing_balance'] != period['opening_balance']
                 or monthly['source_account'] != period['source_account']):

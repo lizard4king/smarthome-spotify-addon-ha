@@ -86,6 +86,7 @@
     SOURCE_BINDING_REQUIRED: 'Der vorherige Monat ist noch nicht vollständig mit der Bank abgeglichen.',
     PREVIOUS_MONTH_UNVERIFIED: 'Der vorherige Monat ist noch nicht vollständig mit der Bank abgeglichen.',
     PREVIOUS_MONTH_CHANGED: 'Der vorherige Kontrollmonat wurde geändert. Prüfe die Buchungen erneut.',
+    historical_order: 'Ein späterer Monat ist bereits geprüft. Dieser ältere Nachtrag wurde zum Schutz der Folgesalden gesperrt.',
     stale_preview: 'Der Datenbestand wurde geändert. Bitte eine neue Vorschau abrufen.',
     invalid_target: 'Bitte ein unterstütztes Giro- oder Sparkonto als Ziel wählen.',
     invalid_period: 'Bitte einen Monat der letzten 90 Tage und einen Stichtag im selben Monat bis heute wählen.',
@@ -242,11 +243,12 @@
       ui.updateCommitButton = null;
     };
     const readErrorText = (code,diagnostic,action) => {
-      if(action==='history') {
+      if(action==='history' || action==='backfill') {
+        const label=action==='backfill'?'den historischen Nachtrag':'die historische Lesediagnose';
         const message={
           invalid_period:'Wähle einen vollständig abgeschlossenen Kalendermonat mit Monatsbeginn innerhalb der letzten 366 Tage.',
-          invalid_target:'Wähle für die historische Lesediagnose ausdrücklich ein lokal als Sparkonto (SAVINGS) geführtes EUR-Ziel.',
-          invalid_action:'Die historische Lesediagnose ist für diese Bankverbindung nicht verfügbar.',
+          invalid_target:`Wähle für ${label} ausdrücklich ein lokal als Sparkonto (SAVINGS) geführtes EUR-Ziel.`,
+          invalid_action:action==='backfill'?'Der historische Nachtrag ist für diese Bankverbindung nicht verfügbar.':'Die historische Lesediagnose ist für diese Bankverbindung nicht verfügbar.',
         }[code];
         if(message) return message;
       }
@@ -364,12 +366,15 @@
       const button = node('button','Buchungen prüfen','pbt-primary pbt-period-button'); button.type='button'; button.disabled=true;
       const historyButton = record.bankId === 'ING' ? node('button','Historischen Monat prüfen','pbt-secondary pbt-history-button') : null;
       if(historyButton) {historyButton.type='button';historyButton.addEventListener('click',()=>startRead('history'));}
+      const backfillButton = record.bankId === 'ING' ? node('button','Historischen Monat nachtragen','pbt-secondary pbt-backfill-button') : null;
+      if(backfillButton) {backfillButton.type='button';backfillButton.addEventListener('click',()=>startRead('backfill'));}
       const update = () => {button.disabled=busy || !ui.source.value || !ui.target.value
         || !/^\d{4}-\d{2}$/.test(ui.month.value) || !/^\d{4}-\d{2}-\d{2}$/.test(ui.asOf.value)
         || ui.asOf.value < `${ui.month.value}-01` || ui.asOf.value > todayISO()
         || ui.asOf.value.slice(0,7) !== ui.month.value
         || (new Date(`${todayISO()}T12:00:00Z`)-new Date(`${ui.month.value}-01T12:00:00Z`))/86400000 > 90;
-        if(historyButton) historyButton.disabled=busy || !historySelectionValid();};
+        if(historyButton) historyButton.disabled=busy || !historySelectionValid();
+        if(backfillButton) backfillButton.disabled=busy || !historySelectionValid();};
       for (const control of [ui.source,ui.target,ui.month,ui.asOf]) control.addEventListener('change',()=>{
         readVersion += 1;
         clearReview();
@@ -382,6 +387,7 @@
       ui.updatePeriodButton=update;
       accountPanel.replaceChildren(grid,disclosure,button);
       if(historyButton) accountPanel.append(node('p','Historische Lesediagnose: Wähle ein lokal als Sparkonto (SAVINGS) geführtes EUR-Ziel und einen vollständig abgeschlossenen Monat der letzten 366 Tage. Die lokale Zuordnung bestätigt keinen Bankkontotyp. Auch eine leere Bankantwort beweist keine Vollständigkeit.','pbt-history-note'),historyButton);
+      if(backfillButton) accountPanel.append(node('p','Historischer Nachtrag: Nur für ausdrücklich gewählte lokale EUR-Sparkonten und vollständig abgeschlossene Monate mit Monatsbeginn innerhalb der letzten 366 Tage. Trage einzelne Monate chronologisch nach. Vormonats- und Monatskontrollen bleiben vor der Übernahme verbindlich. Der Zielmonat muss vollständig durch die Kontrollsalden belegt sein.','pbt-history-note'),backfillButton);
       accountPanel.hidden=false;
       update();
       setStatus('Wähle das maskierte Bankkonto und das passende Finance-Control-Konto ausdrücklich aus.');
@@ -427,7 +433,12 @@
       if(history.count > history.rows.length) card.append(node('p',`Es werden die ersten ${history.rows.length} von ${history.count} gelieferten Buchungen angezeigt.`,'pbt-limit'));
       results.append(card);setStatus('Historische Lesediagnose abgeschlossen. Es wurde nichts übernommen.');
     };
-    const renderPreview = preview => {
+    const renderPreview = (preview,action) => {
+      if(action==='backfill' && (!historySelectionValid() || preview?.account_id !== ui.target.value
+          || preview?.month_start !== `${ui.month.value}-01` || preview?.as_of !== ui.asOf.value
+          || preview?.currency !== 'EUR')) {
+        clearReview();setStatus('Die historische Vorschau passt nicht zur gewählten Auswahl. Prüfe die Buchungen erneut.',true);return;
+      }
       if (!preview || typeof preview !== 'object' || typeof preview.review_token !== 'string'
           || !preview.review_token || !Array.isArray(preview.rows)
           || (preview.legacy_text_differences !== undefined
@@ -446,7 +457,11 @@
       reviewToken=preview.review_token;
       results.replaceChildren();
       const card=node('section','','pbt-preview');
-      card.append(node('h4',`Vorschau der ${bankName}-Buchungen`));
+      card.append(node('h4',action==='backfill'?'Historischer ING-Nachtrag: Vorschau':`Vorschau der ${bankName}-Buchungen`));
+      if(action==='backfill') {
+        card.classList.add('pbt-backfill');card.setAttribute('aria-label','Historischer Nachtrag');
+        card.append(node('p','Prüfe den einzelnen historischen Monat und die Kontrollsalden. Vormonats- und Monatskontrollen bleiben vor der Übernahme verbindlich. Der Zielmonat muss vollständig durch die Kontrollsalden belegt sein.','pbt-history-note'));
+      }
       const summary=node('div','','pbt-summary');
       const accountName=targets.find(item=>item.id===preview.account_id)?.name || 'Zielkonto';
       fieldValue(summary,'Bankkonto',`${safeString(preview.masked_account,64)||'Konto'} · ${safeString(preview.currency,12)}`);
@@ -551,7 +566,7 @@
       if(action==='history') {renderHistory(result);return;}
       if(!result||typeof result!=='object') {setStatus('Der Abruf lieferte kein gültiges Ergebnis.',true);return;}
       if(action==='accounts'&&result.status==='ok') {renderAccounts(result.accounts);return;}
-      if(action==='period'&&result.status==='preview') {periodJobId=jobId;renderPreview(result);return;}
+      if((action==='period'||action==='backfill')&&result.status==='preview') {periodJobId=jobId;renderPreview(result,action);return;}
       setStatus('Der Abruf lieferte ein unerwartetes Ergebnis.',true);
     };
     async function poll(jobId,action,version) {
@@ -574,8 +589,8 @@
     }
     async function startRead(action) {
       if(busy||!current())return;
-      if(action==='history' && !historySelectionValid()) {
-        setStatus('Wähle für die historische Lesediagnose ein lokales EUR-Sparkonto und einen vollständig abgeschlossenen Monat der letzten 366 Tage.',true);return;
+      if((action==='history'||action==='backfill') && !historySelectionValid()) {
+        setStatus(action==='backfill'?'Wähle für den historischen Nachtrag ausdrücklich ein lokales EUR-Sparkonto und einen vollständig abgeschlossenen Monat der letzten 366 Tage.':'Wähle für die historische Lesediagnose ein lokales EUR-Sparkonto und einen vollständig abgeschlossenen Monat der letzten 366 Tage.',true);return;
       }
       if(action==='period') {
         if(!ui.source?.value||!ui.target?.value||!/^\d{4}-\d{2}$/.test(ui.month.value)
@@ -591,7 +606,7 @@
         : action==='accounts'?`${bankName}-Konten werden gelesen.`
         : `${bankName}-Buchungen werden gelesen. Falls nötig, bestätige die Freigabe in Deiner Banking-App.`);
       const selected=fields();
-      const selectedPeriod=action==='period'||action==='history';
+      const selectedPeriod=action==='period'||action==='history'||action==='backfill';
       const data={id:record.id,revision:record.revision,confirmed:true,
         tan_method:record.bankId==='ING'?null:auth.tan_method,
         tan_medium:record.bankId==='ING'?null:auth.tan_medium,action,account_fingerprint:selectedPeriod?selected.account_fingerprint:null,
@@ -611,13 +626,14 @@
       if(busy||!current()||!periodJobId||!reviewToken)return;
       if (ui.legacyConfirmation && !ui.legacyConfirmation.checked) return;
       setBusy(true);
+      const version=readVersion;
       setStatus('Geprüfte Buchungen werden übernommen.');
       const data = {
         job_id:periodJobId,review_token:reviewToken,confirmed:true,
       };
       if (ui.legacyConfirmation) data.confirmed_legacy_text_differences = true;
       const response=await request('/api/administration/postbank-commit',data);
-      if(!current())return;
+      if(!current() || readVersion !== version)return;
       if(!response.ok) {setStatus(errorText(response.code,record.bankId),true);setBusy(false);return;}
       const result=response.result;
       if(!result||result.status!=='imported') {setStatus('Die Übernahme konnte nicht bestätigt werden.',true);setBusy(false);return;}

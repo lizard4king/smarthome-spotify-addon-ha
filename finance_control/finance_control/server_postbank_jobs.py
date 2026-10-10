@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 from collections import Counter
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -54,7 +54,7 @@ _SAFE_ERRORS = frozenset({
     'PREFIX_CHANGED', 'SAME_DAY_CHANGED', 'PERIOD_CONFLICT',
     'INITIAL_ARCHIVE_MISMATCH', 'LEGACY_PREFIX_MISMATCH',
     'LEGACY_PREFIX_ALREADY_BOUND', 'CHECKPOINT_INVALID',
-    'invalid_target', 'invalid_period', 'stale_preview', 'PREVIOUS_MONTH_CHANGED',
+    'invalid_target', 'invalid_period', 'stale_preview', 'PREVIOUS_MONTH_CHANGED', 'historical_order',
     'CONTROL_MONTH_OPENING_DATE_MISMATCH', 'CONTROL_MONTH_BALANCE_MISMATCH',
     'CONTROL_MONTH_ROWS_MISMATCH', 'SOURCE_BINDING_CONFLICT',
 })
@@ -176,6 +176,23 @@ def _target(database, account_id, bank_id):
                 'owner': row['owner'], 'currency': row['currency'], 'kind': row['kind']}
     finally:
         store.close()
+
+
+def _backfill_target(database, account_id, bank_id, start):
+    target = _target(database, account_id, bank_id)
+    if bank_id != 'ING' or target['kind'] != 'SAVINGS' or target['currency'] != 'EUR':
+        raise AdministrationError('invalid_target')
+    store = Store(database, readonly=True)
+    try:
+        # An earlier insert could invalidate already verified later balances.
+        # Reject every later checkpoint, regardless of its source/provider.
+        if store.db.execute(
+                'SELECT 1 FROM ing_period_imports WHERE account_id=? AND month_start>? LIMIT 1',
+                (account_id, start.isoformat())).fetchone() is not None:
+            raise AdministrationError('historical_order', 409)
+    finally:
+        store.close()
+    return target
 
 
 def _legacy_prefix(database, account_id, period):
@@ -355,7 +372,7 @@ class ServerPostbankJobs:
             if any(data[key] is not None for key in
                    ('account_fingerprint', 'account_id', 'month_start', 'as_of')):
                 raise AdministrationError('invalid_action')
-        elif data['action'] in ('period', 'history'):
+        elif data['action'] in ('period', 'history', 'backfill'):
             if (type(data['account_fingerprint']) is not str
                     or _FP.fullmatch(data['account_fingerprint']) is None
                     or type(data['account_id']) is not str):
@@ -365,7 +382,7 @@ class ServerPostbankJobs:
             except AdministrationError:
                 raise AdministrationError('invalid_period') from None
             today = date.today()
-            if data['action'] == 'history':
+            if data['action'] in ('history', 'backfill'):
                 if profile != 'ING':
                     raise AdministrationError('invalid_action')
                 if not history_period(start, end, today):
@@ -373,6 +390,8 @@ class ServerPostbankJobs:
                 target = _target(self.database, data['account_id'], profile)
                 if target['kind'] != 'SAVINGS' or target['currency'] != 'EUR':
                     raise AdministrationError('invalid_target')
+                if data['action'] == 'backfill':
+                    _backfill_target(self.database, data['account_id'], profile, start)
             else:
                 if (start.day != 1 or (start.year, start.month) != (end.year, end.month)
                         or end > today or (today - start).days > 90):
@@ -431,7 +450,18 @@ class ServerPostbankJobs:
                 status, value = 'error', _safe_error_result(raw)
             elif raw.get('status') == 'ok' and request['action'] == 'accounts':
                 status, value = 'complete', {'result': _safe_accounts(raw)}
-            elif raw.get('status') == 'ok' and request['action'] == 'period':
+            elif raw.get('status') == 'ok' and request['action'] in ('period', 'backfill'):
+                if request['action'] == 'backfill':
+                    period, monthly = raw.get('period'), raw.get('monthly')
+                    start, end = _date(request['month_start']), _date(request['as_of'])
+                    _backfill_target(self.database, account_id, profile, start)
+                    previous_end = start - timedelta(days=1)
+                    if (type(period) is not PeriodSnapshot or type(monthly) is not MonthlySnapshot
+                            or period.month_start != start or period.as_of != end
+                            or monthly.period_start != previous_end.replace(day=1)
+                            or monthly.period_end != previous_end
+                            or monthly.closing_date != previous_end):
+                        _fail('invalid_bank_result', 409)
                 status, value = 'complete', self._preview(raw, account_id, profile, retrieved_at)
             elif raw.get('status') == 'ok' and request['action'] == 'history':
                 target = _target(self.database, account_id, profile)
@@ -595,6 +625,9 @@ class ServerPostbankJobs:
             job['committed'] = True
         try:
             self._check(actor, job['connection_id'], job['revision'])
+            if job['action'] == 'backfill':
+                _backfill_target(self.database, job['account_id'], job['bank_id'],
+                                 _date(job['history_start']))
             if _database_digest(self.database) != job['db_digest']:
                 raise AdministrationError('stale_preview', 409)
             backup_dir = self.database.parent / 'bank-backups'

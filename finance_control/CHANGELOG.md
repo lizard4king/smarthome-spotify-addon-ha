@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.36
+
+- Add a separate, manual historical backfill for explicitly selected ING EUR savings targets, one fully closed month at a time within 366 days.
+- Reuse full prior-month and target-month controls, owner/revision checks, reviewed import confirmation, server backup and atomic import; reject partial bank coverage.
+- Keep the historical read-only check separate and preserve normal 90-day import and refresh limits. No opening balance adjustments or automatic historical series.
+
 ## 0.2.35
 
 - Add an owner-bound, read-only historical ING month check for explicitly selected savings targets, without import authority or balance changes.

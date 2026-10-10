@@ -16,7 +16,7 @@ from .connectors.ing_period_snapshot import PeriodRow, PeriodSnapshot, validate_
 from .connectors.mt940_statements import MonthlySnapshot, StatementRow
 from .connectors.server_bank_rules import valid_auth_selection, valid_product_id
 from .server_balance_gateway import ServerBalanceGateway, _BANK_READ_LOCK
-from .history_read import validated_history
+from .history_read import history_period, validated_history
 
 
 _FP = re.compile(r'[0-9a-f]{64}\Z')
@@ -178,6 +178,12 @@ def _validated_output(payload, request):
                             parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
         if type(result) is not dict:
             raise ValueError('result')
+        if request['action'] not in ('accounts', 'history', 'period', 'backfill'):
+            raise ValueError('action')
+        if request['action'] == 'backfill':
+            if (request['bank_id'] != 'ING'
+                    or not history_period(_date(request['month_start']), _date(request['as_of']))):
+                raise ValueError('backfill')
         if result.get('status') == 'error':
             if (set(result) not in ({'status', 'code'}, {'status', 'code', 'diagnostic'})
                     or type(result['code']) is not str
@@ -237,6 +243,8 @@ def _validated_output(payload, request):
         bank_id = request['bank_id']
         monthly = _monthly(result['monthly'], previous, bank_id)
         period = _period(result['period'], start, end, bank_id)
+        if request['action'] == 'backfill' and (period.as_of != end or period.currency != 'EUR'):
+            raise ValueError('incomplete backfill')
         if (monthly.source_account != period.source_account
                 or monthly.currency != period.currency
                 or monthly.closing_balance != period.opening_balance):
