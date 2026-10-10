@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "9c8af61f4e3d022aef0ab346fb8ccdd3c61247ae1981300f965afc5f60147155",
-  "addon_version": "0.2.33",
+  "addon_tree_sha256": "baa3cdf1caea0af24b077804a23fd645abae721b4e64cc6ea730c3de9c4d2bd7",
+  "addon_version": "0.2.34",
   "deployment_files": {
-    "Dockerfile": "48f26a441cf9550adcf64190d558f4f6dd2fc397a1f6bcc3dc006704072ff5cc",
-    "README.md": "4737fdf1bc2fd8dbc5cb6101b3239223f947c664f13847e8a1677d15282e591d",
+    "Dockerfile": "ba62ed6b2c83d0c39eb74b201ca8d09c28b3ae01b53b4fb4c7a5141c4c64b0c6",
+    "README.md": "09e9fa1382325def50fc4e0c77ab4258141d5d51240e4ef16aec836aa3748959",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "e9b289facebbe215e8bf2ba86b46757e5c1691bcb0ebb04a48a166286e606532",
+    "config.yaml": "9bc7408b89f3009c45a1fb2e024175fe607714d1f5d8fe3e32b92778d0a3644e",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "44512edbd8899d4361fcd45b5db901954def3fdff41bced9a7509f65ced9aebd"
   },
@@ -141,7 +141,7 @@
     "purchases.py": "fe110369d2872e2bef3d3c6fe566997c58e04977f39c2a8fbddf5652d8b303fe",
     "read_api.py": "9b768baeca1987803ea64d4f2d758c9ca169ba61bebd037d7b6ea0151cc6f89e",
     "read_api_server.py": "ee9f9ba419608b9b2f3f7577414440e4a6190f65143929369a86ccb323a71250",
-    "reconciliation_proof.py": "2bbb3fe6e6019e8abc25bd873461ab7b6617202866aef8e19a14f25847f620ac",
+    "reconciliation_proof.py": "0a5de7ca2f4c423462206c57218f0d53303b9970bdef07902f411d4d71a40a6f",
     "reporting_history.py": "c4227380991bc3756fe1311504057624dd75ad3601257d81e82d845b4d52eafa",
     "safe_http.py": "2561dda83ee407de3be15de22595988a4832a2a543c047f6dbe1e50ad9dc8c98",
     "security/__init__.py": "927572fa80b59c4de1f2af7ac46c3f771f0e2a7b508bb103c9d1312895c5c90b",
@@ -445,6 +445,6 @@
     "web.py": "20d9ef34288879a900555402d79bc7b337caa595b390683ddfd288e48c906e2c"
   },
   "schema_version": 1,
-  "source_commit": "6468899367964d536f551bebd13131a8af281738",
-  "source_tree_sha256": "6952584ce7e866d4de4927ba46ac0fd0220edf2f9210f1febc297217c3f2712d"
+  "source_commit": "e18daf6e0ddb1a965b28c3bd4deca019eefa708a",
+  "source_tree_sha256": "886c898fd694ee5ce38958934d79d30224624e49270f7530a832712fc05ba461"
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.34
+
+- Correct the static return type of fully validated reconciliation evidence without changing runtime values or validation rules.
+
 ## 0.2.33
 
 - Show a strictly validated, owner-bound comparison of bank and ledger control balances inside a failed transaction preview.
