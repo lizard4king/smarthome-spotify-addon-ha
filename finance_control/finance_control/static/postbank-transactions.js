@@ -70,6 +70,8 @@
     forbidden: 'Diese Bankverbindung gehört zu einem anderen Zugang.',
     LEGACY_PREFIX_AMBIGUOUS: 'Vorhandene Buchungen sind nicht eindeutig zuordenbar. Es wurde nichts übernommen.',
     LEGACY_TEXT_MISMATCH: 'Buchungstexte im vorhandenen Bestand stimmen nicht eindeutig mit der Banklieferung überein. Es wurde nichts übernommen.',
+    LEGACY_TEXT_REVIEW_LIMIT: 'Es gibt mehr als 100 Textabweichungen. Die Übernahme benötigt eine gesonderte Prüfung.',
+    legacy_text_confirmation_required: 'Prüfe und bestätige die gegenübergestellten Alt- und Banktexte vor der Übernahme.',
     LEGACY_MONTH_OVERLAP: 'Vorhandene Buchungen passen nicht zur Banklieferung. Es wurde nichts übernommen.',
     LEGACY_PREFIX_MISMATCH: 'Vorhandene Buchungen passen nicht zur Banklieferung. Es wurde nichts übernommen.',
     LEDGER_PREFIX_CHANGED: 'Vorhandene Buchungen passen nicht zur Banklieferung. Es wurde nichts übernommen.',
@@ -157,6 +159,7 @@
       if (!value) {
         accountAction.disabled = !targets.length;
         ui.updatePeriodButton?.();
+        ui.updateCommitButton?.();
         const authSelect = authPanel.querySelector('.pbt-auth-select');
         const authContinue = authPanel.querySelector('.pbt-auth-continue');
         if (authSelect && authContinue) authContinue.disabled = !authSelect.value;
@@ -235,7 +238,17 @@
     };
     const renderPreview = preview => {
       if (!preview || typeof preview !== 'object' || typeof preview.review_token !== 'string'
-          || !preview.review_token || !Array.isArray(preview.rows)) {
+          || !preview.review_token || !Array.isArray(preview.rows)
+          || (preview.legacy_text_differences !== undefined
+            && (!Array.isArray(preview.legacy_text_differences)
+              || preview.legacy_text_differences.length > 100
+              || preview.legacy_text_differences.some(item => !item || typeof item !== 'object'
+                || typeof item.external_id !== 'string' || !item.external_id
+                || typeof item.booked_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.booked_on)
+                || typeof item.amount !== 'string' || !/^-?\d+\.\d{2}$/.test(item.amount)
+                || typeof item.currency !== 'string' || !/^[A-Z]{3}$/.test(item.currency)
+                || ['local_description','bank_description','bank_booking_text','local_counterparty','bank_counterparty']
+                  .some(key => typeof item[key] !== 'string' || item[key].length > 8192))))) {
         setStatus('Die Vorschau konnte nicht sicher angezeigt werden.',true);
         return;
       }
@@ -276,8 +289,41 @@
       });
       card.append(list);
       if(preview.rows.length>visible.length) card.append(node('p',`Es werden die ersten ${visible.length} von ${preview.rows.length} Buchungen angezeigt.`,'pbt-limit'));
+      const differences = preview.legacy_text_differences || [];
+      ui.legacyConfirmation = null;
+      if (differences.length) {
+        const review = node('section', '', 'pbt-legacy-review');
+        review.append(node('h4', `${differences.length} abweichende Alttexte prüfen`));
+        review.append(node('p', 'Datum, Betrag und Währung passen jeweils eindeutig zur Banklieferung. Prüfe anhand der Gegenparteien und Texte, ob es dieselben Buchungen sind. Vorhandene Texte, Kategorien und Beleglinks bleiben erhalten.'));
+        for (const difference of differences) {
+          const item = node('article', '', 'pbt-legacy-item');
+          item.append(node('strong', `${dateValue(difference?.booked_on)} · ${safeString(difference?.amount,80) || '—'} ${safeString(difference?.currency,12)}`));
+          const comparison = node('div', '', 'pbt-legacy-comparison');
+          for (const [label, counterparty, description, bookingText] of [
+            ['Vorhandener Bestand', difference?.local_counterparty, difference?.local_description, null],
+            ['Direkter Bankabruf', difference?.bank_counterparty, difference?.bank_description, difference?.bank_booking_text],
+          ]) {
+            const side = node('section', '', 'pbt-legacy-side');
+            side.append(node('h5', label), node('strong', safeString(counterparty,8192) || 'Ohne Gegenpartei'));
+            side.append(node('pre', safeString(description,8192) || 'Kein Verwendungszweck vorhanden'));
+            if (bookingText && bookingText !== description) side.append(node('pre', safeString(bookingText,8192)));
+            comparison.append(side);
+          }
+          item.append(comparison);
+          review.append(item);
+        }
+        const confirmation = node('label', '', 'pbt-legacy-confirmation');
+        ui.legacyConfirmation = node('input');
+        ui.legacyConfirmation.type = 'checkbox';
+        confirmation.append(ui.legacyConfirmation, node('span', 'Ich habe alle Gegenüberstellungen geprüft und bestätige, dass es dieselben Buchungen sind.'));
+        review.append(confirmation);
+        card.append(review);
+      }
       const commit=node('button','Geprüfte Buchungen übernehmen','pbt-primary pbt-commit');
       commit.type='button';
+      ui.updateCommitButton = () => {commit.disabled = busy || Boolean(ui.legacyConfirmation && !ui.legacyConfirmation.checked);};
+      ui.legacyConfirmation?.addEventListener('change',ui.updateCommitButton);
+      ui.updateCommitButton();
       commit.addEventListener('click',commitImport);
       card.append(commit);
       results.append(card);
@@ -342,6 +388,8 @@
         }
       }
       setBusy(true);
+      ui.legacyConfirmation = null;
+      ui.updateCommitButton = null;
       results.replaceChildren();
       setStatus(record.bankId==='NASPA'
         ? `${bankName}-${action==='accounts'?'Konten':'Buchungen'} werden gelesen. Falls NASPA eine Freigabe anfordert, bestätige sie in der S-pushTAN-App.`
@@ -365,11 +413,14 @@
     }
     async function commitImport() {
       if(busy||!current()||!periodJobId||!reviewToken)return;
+      if (ui.legacyConfirmation && !ui.legacyConfirmation.checked) return;
       setBusy(true);
       setStatus('Geprüfte Buchungen werden übernommen.');
-      const response=await request('/api/administration/postbank-commit',{
+      const data = {
         job_id:periodJobId,review_token:reviewToken,confirmed:true,
-      });
+      };
+      if (ui.legacyConfirmation) data.confirmed_legacy_text_differences = true;
+      const response=await request('/api/administration/postbank-commit',data);
       if(!current())return;
       if(!response.ok) {setStatus(errorText(response.code,record.bankId),true);setBusy(false);return;}
       const result=response.result;
@@ -381,6 +432,8 @@
         summary.append(node('p','Import erfolgreich; automatische Aktualisierung nicht eingerichtet. Einrichtung erneut bestätigen.','pbt-import-warning'));
       }
       results.replaceChildren(summary);
+      ui.legacyConfirmation = null;
+      ui.updateCommitButton = null;
       reviewToken=null;
       setStatus(result.refresh_configured === false
         ? 'Buchungen übernommen. Die automatische Aktualisierung ist nicht eingerichtet.'

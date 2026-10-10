@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.29
+
+- Add a controlled one-time source switch for uniquely matched legacy bookings; display text differences side by side and require an additional explicit confirmation.
+- Keep ambiguous tuples blocked, bank checkpoints strict, and legacy text, categories and links unchanged. Practical server acceptance remains pending.
+
 ## 0.2.28
 
 - Accept absent optional FinTS account fields without changing existing string-based account fingerprints; still reject invalid or duplicate identities.
