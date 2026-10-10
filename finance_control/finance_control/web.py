@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from . import monthly_review, overview, dashboard
 from .core import Plan, Store
+from .file_import import DirectBankSourceError, import_file_csv
 from .drive_api import DriveApiError
 from .household import normalize_profile, template_profile
 from .import_preview import outside_repository
@@ -612,7 +613,7 @@ class Cockpit:
                 source = data['csv']
                 if not isinstance(source, str) or len(source) > MAX_REQUEST:
                     raise ValueError('Invalid CSV')
-                return {'inserted': store.import_csv(source.removeprefix('\ufeff'))}
+                return {'inserted': import_file_csv(store, source.removeprefix('\ufeff'))}
             if route in {'/api/forecast', '/api/save', '/api/export'}:
                 if not store.accounts():
                     raise ValueError('At least one account required')
@@ -1328,6 +1329,10 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             except DriveApiError:
                 return self.reply(503, {
                     'error': 'Drive-Sicherung derzeit nicht erreichbar. Das lokale Sicherungspaket bleibt erhalten.'})
+            except DirectBankSourceError:
+                return self.reply(409, {
+                    'code': 'direct_bank_source',
+                    'error': 'Direkter Bankabruf ist führend. Diese CSV-Datei enthält ein direkt angebundenes Konto und wurde vollständig abgewiesen. Importiere nur Konten ohne direkte Bankquelle, zum Beispiel NASPA.'})
             except (ValueError, KeyError, TypeError, ArithmeticError, StopIteration) as error:
                 if (urlsplit(self.path).path == '/api/fg-commit' and
                         isinstance(error, ValueError) and str(error) == 'review_stale_or_blocked'):

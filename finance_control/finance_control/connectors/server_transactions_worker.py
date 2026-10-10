@@ -31,10 +31,25 @@ _MAX_ROWS = 10_000
 _MAX_TEXT = 8192
 _BANK_CODES = {'POSTBANK': '50010060', 'ING': '50010517',
                'NASPA': '51050015'}
+_DIAGNOSTIC_BANK_CODES = frozenset({
+    'ONLINE_LOGIN_REQUIRED', 'CREDENTIALS_REJECTED', 'AUTH_TEMPORARY',
+    'UNSUPPORTED', 'CONNECTION', 'TIMEOUT', 'TLS', 'DIALOG_INIT',
+    'NO_RESPONSE', 'BANK_REJECTED', 'UNKNOWN', 'DATA_FORMAT',
+    'IDENTIFICATION_FORMAT', 'PRODUCT_FORMAT', 'STATEMENT_INCOMPLETE',
+    'STATEMENT_FORMAT', 'STATEMENT_ID_MISSING',
+})
 
 
 def _error(code):
     return {'status': 'error', 'code': code}
+
+
+def _diagnostic_error(code, stage, bank_error=None):
+    diagnostic = {'stage': stage}
+    if (type(bank_error) is BankErrorCode
+            and bank_error.value in _DIAGNOSTIC_BANK_CODES):
+        diagnostic['bank_error_code'] = bank_error.value
+    return {'status': 'error', 'code': code, 'diagnostic': diagnostic}
 
 
 def _date(value):
@@ -167,6 +182,7 @@ def run_request(request, vault_factory, reader_factory):
     bestsign = [False]
     naspa_auth_configured = [False]
     bank_id = request['bank_id']
+    stage = 'accounts'
     try:
         def challenge(value):
             if not value.decoupled:
@@ -229,17 +245,21 @@ def run_request(request, vault_factory, reader_factory):
         start, end = _date(request['month_start']), _date(request['as_of'])
         previous_end = start - timedelta(days=1)
         previous_start = date(previous_end.year, previous_end.month, 1)
+        stage = 'control_month'
         monthly_values = reader.read(ReadOperation.MONTHLY_SNAPSHOT, account, previous_start, previous_end)
-        period_values = reader.read(ReadOperation.PERIOD_SNAPSHOT, account, start, end)
-        if (type(monthly_values) not in (tuple, list) or len(monthly_values) != 1
-                or type(period_values) not in (tuple, list) or len(period_values) != 1):
+        if type(monthly_values) not in (tuple, list) or len(monthly_values) != 1:
             raise ValueError('snapshot count')
         monthly = _monthly(monthly_values[0], account, previous_start, previous_end, bank_id)
+        stage = 'period'
+        period_values = reader.read(ReadOperation.PERIOD_SNAPSHOT, account, start, end)
+        if type(period_values) not in (tuple, list) or len(period_values) != 1:
+            raise ValueError('snapshot count')
         period = _period(period_values[0], account, start, end, bank_id)
         if (monthly['currency'] != period['currency']
                 or monthly['closing_balance'] != period['opening_balance']
                 or monthly['source_account'] != period['source_account']):
             raise ValueError('snapshot continuity')
+        stage = 'balance'
         balance = _balance(reader.read(ReadOperation.BALANCE, account))
         balance['amount'] = _cash(Decimal(balance['amount']))
         if balance['currency'] != period['currency'] or not end <= _date(balance['booked_on']) <= date.today():
@@ -256,11 +276,11 @@ def run_request(request, vault_factory, reader_factory):
                           BankErrorCode.GRAPHICAL_TAN, BankErrorCode.AUTH_SETUP_REQUIRED,
                           BankErrorCode.AUTH_SELECTION_INVALID, BankErrorCode.TAN_LIMIT}:
             return _error('authorization_required')
-        return _error('bank_failure')
+        return _diagnostic_error('bank_failure', stage, error.code)
     except (ValueError, TypeError, OverflowError):
-        return _error('invalid_bank_result')
+        return _diagnostic_error('invalid_bank_result', stage)
     except Exception:
-        return _error('bank_failure')
+        return _diagnostic_error('bank_failure', stage)
 
 
 def _real_vault():
