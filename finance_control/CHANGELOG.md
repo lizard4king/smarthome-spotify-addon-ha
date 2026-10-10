@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.33
+
+- Show a strictly validated, owner-bound comparison of bank and ledger control balances inside a failed transaction preview.
+- Retain only bounded dates, amounts and booking counts in RAM; exclude raw bank text and prevent stale comparisons after selection changes.
+- Preserve all reconciliation, revision, rollback and explicit import rules; do not adjust opening balances automatically.
+
 ## 0.2.32
 
 - Respect explicit account-level balance restrictions from conclusive FinTS user parameters before issuing a balance request; missing or inconclusive permissions keep the existing read behavior.

@@ -100,6 +100,30 @@
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   };
   const monthStartISO = () => `${todayISO().slice(0, 7)}-01`;
+  const reconciliationValid = value => {
+    const keys = ['period_start','period_end','currency','ledger_opening_date','ledger_initial_balance',
+      'ledger_opening_balance','ledger_closing_balance','bank_opening_balance','bank_closing_balance',
+      'ledger_booking_count','bank_booking_count'];
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+        || Object.keys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key))) return false;
+    const validDate = date => typeof date === 'string' && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)
+      && date.slice(0,4) !== '0000' && Number.isFinite(Date.parse(`${date}T00:00:00Z`))
+      && new Date(`${date}T00:00:00Z`).toISOString().slice(0,10) === date;
+    if (![value.period_start,value.period_end,value.ledger_opening_date].every(validDate)
+        || !value.period_start.endsWith('-01') || value.period_start.slice(0,7) !== value.period_end.slice(0,7)
+        || value.ledger_opening_date >= value.period_start || typeof value.currency !== 'string'
+        || value.currency.length !== 3 || !/^[A-Z]{3}$/.test(value.currency)) return false;
+    const nextDay = new Date(`${value.period_end}T00:00:00Z`);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    if (nextDay.getUTCDate() !== 1) return false;
+    const amountKeys = ['ledger_initial_balance','ledger_opening_balance','ledger_closing_balance',
+      'bank_opening_balance','bank_closing_balance'];
+    return amountKeys.every(key => typeof value[key] === 'string'
+      && value[key] === value[key].trim()
+      && /^-?(?:0|[1-9][0-9]{0,11})\.[0-9]{2}$/.test(value[key]) && value[key] !== '-0.00')
+      && ['ledger_booking_count','bank_booking_count'].every(key => Number.isInteger(value[key])
+        && value[key] >= 0 && value[key] <= 1000000);
+  };
 
   function bind(container, record, refresh = () => {}, onSourceAccounts = () => {}) {
     if (!container || typeof container.replaceChildren !== 'function') return;
@@ -140,6 +164,7 @@
     let periodJobId = null;
     let reviewToken = null;
     let busy = false;
+    let readVersion = 0;
     const accountAction = node('button', `${bankName}-Buchungen abrufen`, 'pbt-primary');
     accountAction.type = 'button';
     accountAction.disabled = true;
@@ -152,6 +177,42 @@
     content.append(authPanel);
     const results = node('div', '', 'pbt-results');
     content.append(results);
+    const clearReview = () => {
+      results.replaceChildren();
+      periodJobId = null;
+      reviewToken = null;
+      ui.legacyConfirmation = null;
+      ui.updateCommitButton = null;
+    };
+    const renderReadError = state => {
+      clearReview();
+      setStatus(errorText(state.code,record.bankId,state.diagnostic),true);
+      if (state.code !== 'CONTROL_MONTH_BALANCE_MISMATCH' || !reconciliationValid(state.reconciliation)) return;
+      const proof = state.reconciliation;
+      const card = node('section','','pbt-reconciliation');
+      card.setAttribute('aria-label','Saldovergleich des Kontrollmonats');
+      card.append(node('h4','Kontrollmonat: Bestand und Bank im Vergleich'),
+        node('p',`${proof.period_start} bis ${proof.period_end}`),
+        node('p',`Erfasster Startbestand: ${proof.ledger_initial_balance} ${proof.currency} am ${proof.ledger_opening_date}`));
+      const table = node('table');
+      table.append(node('caption','Kontrollwerte; ausschließlich lesend. Es wurde nichts übernommen.'));
+      const head = node('thead');
+      const headings = node('tr');
+      for (const title of ['Kontrollwert','Bestand','Bank']) {
+        const cell=node('th',title);cell.scope='col';headings.append(cell);
+      }
+      head.append(headings);table.append(head);
+      const body = node('tbody');
+      for (const [label,ledger,bank] of [
+        ['Anfangssaldo',`${proof.ledger_opening_balance} ${proof.currency}`,`${proof.bank_opening_balance} ${proof.currency}`],
+        ['Endsaldo',`${proof.ledger_closing_balance} ${proof.currency}`,`${proof.bank_closing_balance} ${proof.currency}`],
+        ['Buchungsanzahl',proof.ledger_booking_count,proof.bank_booking_count],
+      ]) {
+        const row=node('tr');const title=node('th',label);title.scope='row';
+        row.append(title,node('td',ledger),node('td',bank));body.append(row);
+      }
+      table.append(body);card.append(table);results.append(card);
+    };
 
     const fields = () => ({
       account_fingerprint: ui.source?.value || null,
@@ -234,7 +295,13 @@
         || ui.asOf.value < `${ui.month.value}-01` || ui.asOf.value > todayISO()
         || ui.asOf.value.slice(0,7) !== ui.month.value
         || (new Date(`${todayISO()}T12:00:00Z`)-new Date(`${ui.month.value}-01T12:00:00Z`))/86400000 > 90;};
-      for (const control of [ui.source,ui.target,ui.month,ui.asOf]) control.addEventListener('change',update);
+      for (const control of [ui.source,ui.target,ui.month,ui.asOf]) control.addEventListener('change',()=>{
+        readVersion += 1;
+        clearReview();
+        setBusy(false);
+        setStatus('Auswahl geändert. Prüfe die Buchungen erneut.');
+        update();
+      });
       button.addEventListener('click',()=>startRead('period'));
       ui.periodButton=button;
       ui.updatePeriodButton=update;
@@ -373,22 +440,23 @@
       if(action==='period'&&result.status==='preview') {periodJobId=jobId;renderPreview(result);return;}
       setStatus('Der Abruf lieferte ein unerwartetes Ergebnis.',true);
     };
-    async function poll(jobId,action) {
+    async function poll(jobId,action,version) {
+      const active = () => current() && readVersion === version;
       const started=Date.now();
-      while(current()&&Date.now()-started<330000) {
+      while(active()&&Date.now()-started<330000) {
         await new Promise(resolve=>window.setTimeout(resolve,1000));
-        if(!current())return;
+        if(!active())return;
         const response=await request('/api/administration/postbank-state',{job_id:jobId});
-        if(!current())return;
+        if(!active())return;
         if(!response.ok) {setStatus(errorText(response.code,record.bankId,response.diagnostic),true);return;}
         const state=response.result;
         if(!state||state.job_id!==jobId) {setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;}
         if(state.status==='running')continue;
-        if(state.status==='error') {setStatus(errorText(state.code,record.bankId,state.diagnostic),true);return;}
+        if(state.status==='error') {renderReadError(state);return;}
         if(state.status==='complete') {handleResult(action,state.result,jobId);return;}
         setStatus('Der Abrufstatus ist nicht verfügbar.',true);return;
       }
-      if(current())setStatus('Der Abruf dauert länger als erwartet. Es wurde kein neuer Abruf gestartet.',true);
+      if(active())setStatus('Der Abruf dauert länger als erwartet. Es wurde kein neuer Abruf gestartet.',true);
     }
     async function startRead(action) {
       if(busy||!current())return;
@@ -399,9 +467,8 @@
         }
       }
       setBusy(true);
-      ui.legacyConfirmation = null;
-      ui.updateCommitButton = null;
-      results.replaceChildren();
+      const version = ++readVersion;
+      clearReview();
       setStatus(record.bankId==='NASPA'
         ? `${bankName}-${action==='accounts'?'Konten':'Buchungen'} werden gelesen. Falls NASPA eine Freigabe anfordert, bestätige sie in der S-pushTAN-App.`
         : action==='accounts'?`${bankName}-Konten werden gelesen.`
@@ -413,14 +480,14 @@
         account_id:action==='period'?selected.account_id:null,month_start:action==='period'?selected.month_start:null,
         as_of:action==='period'?selected.as_of:null};
       const response=await request('/api/administration/postbank-read',data);
-      if(!current())return;
+      if(!current() || readVersion !== version)return;
       if(!response.ok) {setStatus(errorText(response.code,record.bankId,response.diagnostic),true);setBusy(false);return;}
       const job=response.result;
       if(!job||job.status!=='running'||typeof job.job_id!=='string'||!job.job_id) {
         setStatus(errorText(job?.code,record.bankId,job?.diagnostic),true);setBusy(false);return;
       }
-      await poll(job.job_id,action);
-      if(current())setBusy(false);
+      await poll(job.job_id,action,version);
+      if(current() && readVersion === version)setBusy(false);
     }
     async function commitImport() {
       if(busy||!current()||!periodJobId||!reviewToken)return;

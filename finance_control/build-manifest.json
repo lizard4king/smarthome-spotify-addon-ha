@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "2f7416f5aa056cd4d344e5b8e1d9e78bb07c8715803943a1b4c1f6c15abc1450",
-  "addon_version": "0.2.32",
+  "addon_tree_sha256": "9c8af61f4e3d022aef0ab346fb8ccdd3c61247ae1981300f965afc5f60147155",
+  "addon_version": "0.2.33",
   "deployment_files": {
-    "Dockerfile": "f42a060026242762818364941c3752c6eee1867b7a430c070571ffe50d94c0c1",
-    "README.md": "4b6c59611a77371b5bd9020f5e6f1c442e929436708afc1e8740472f934c7bd9",
+    "Dockerfile": "48f26a441cf9550adcf64190d558f4f6dd2fc397a1f6bcc3dc006704072ff5cc",
+    "README.md": "4737fdf1bc2fd8dbc5cb6101b3239223f947c664f13847e8a1677d15282e591d",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "8f55eae76181baee2e133be50a3cf71fd006929d2d977a0080e71b76a7a7aa7d",
+    "config.yaml": "e9b289facebbe215e8bf2ba86b46757e5c1691bcb0ebb04a48a166286e606532",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "44512edbd8899d4361fcd45b5db901954def3fdff41bced9a7509f65ced9aebd"
   },
@@ -31,7 +31,7 @@
     "bank_account_policy.py": "7c5366d8a6d7dc4070c0a33fe62be3334c4202a69f14b437f0c39d9ebd6b9881",
     "bank_archive.py": "c26d45d7642e21af36f1d94576c77e30437b4f5aa14f9ec393c2d6a6da9922bf",
     "bank_archive_import.py": "0dde7148b89737b9738f0ef280c35a30d5dd0e5c4a99fe3c1c333f91dae0ce2f",
-    "bank_source_policy.py": "6896975a6e80d8a14945c25c6a2cf7b0d0af668a71b881db3940b43069c6595b",
+    "bank_source_policy.py": "f99a40b1e9a7e3eb82d519911055eb27953fc0bb9568cce8b9107c45abb67953",
     "bonsy_cash.py": "faff176f83a50e73320a6f883148e137ad1e87fa83cdbeb31241e68a82d68dd8",
     "bonsy_import.py": "6e4d3db6097227bac30e5c74566b1de9e2af70707d988ec3505606dfa431a4f6",
     "bonsy_vouchers.py": "a8056f438f98cac7877edf029a186616f8e1709a198a06d713cf9e90e768119c",
@@ -64,7 +64,7 @@
     "historical_positions.py": "39ce60a69315c54f54abd0c63d82d4ca1e189392f3e7501c02d999f037641270",
     "household.py": "9a2f1a92703a96a20a19d7baebd315f10fc830d7ab64ac864ab67caaa73e531e",
     "import_preview.py": "71e3e619f79e15adaffa2cff18e93c7034ac231c7ba6f0f0ef85921218e41138",
-    "ing_period_import.py": "b9f38e3c476e24c58b3842142b24e5dcc287d589dbbaee423b7cfde4fa59aa08",
+    "ing_period_import.py": "f094c1630b0499fac22210d0de5faa1045cd87652ad23970371f641000d4ba80",
     "intake_draft.py": "bf2ecad24e167aec62c8e07360759b727dda6afdd43ed3906baf4f1457f325a7",
     "invoice_import.py": "0d046b7c28fa290c32c21cb1feda1af38e899650ea1669f01ef9ac68d07110aa",
     "local_model.py": "fa8cf7215db471d19952552c8cfc0379b8921fa71249c57b727393c38807c958",
@@ -141,6 +141,7 @@
     "purchases.py": "fe110369d2872e2bef3d3c6fe566997c58e04977f39c2a8fbddf5652d8b303fe",
     "read_api.py": "9b768baeca1987803ea64d4f2d758c9ca169ba61bebd037d7b6ea0151cc6f89e",
     "read_api_server.py": "ee9f9ba419608b9b2f3f7577414440e4a6190f65143929369a86ccb323a71250",
+    "reconciliation_proof.py": "2bbb3fe6e6019e8abc25bd873461ab7b6617202866aef8e19a14f25847f620ac",
     "reporting_history.py": "c4227380991bc3756fe1311504057624dd75ad3601257d81e82d845b4d52eafa",
     "safe_http.py": "2561dda83ee407de3be15de22595988a4832a2a543c047f6dbe1e50ad9dc8c98",
     "security/__init__.py": "927572fa80b59c4de1f2af7ac46c3f771f0e2a7b508bb103c9d1312895c5c90b",
@@ -156,7 +157,7 @@
     "server_banking.py": "6826c07c7c911eca64a889170c9f6d36f7b6f620df17303b21fc7504eb6cb8e8",
     "server_card_gateway.py": "6d5eb134050314a45f6ac2b285f7e53898f034b727c94faa40d363fe04fa0a99",
     "server_cards.py": "1863fd6611a2ed3b4bf8594b9d5f4859b6d45f0e04fe8c5154fc5781a2151c39",
-    "server_postbank_jobs.py": "e637cfa515dc613a49b6214d7a6a0afe7322be67f156114dfeac0bbfaf342019",
+    "server_postbank_jobs.py": "9929fe926a5c6e89b8841b61572b8828c754c1580cfa0406a9b3ae04afff9b20",
     "server_transactions_gateway.py": "2ebd6a6adbb1c141183c771130bd46159f1f12c8430cc7a919e705b3297cb147",
     "split_preview.py": "f49bb7a27592b1183dbb9cb6565917f495ad445d2d2134aa71ea4377d2344e61",
     "statement_archive.py": "a5f37e88e5a3d782cf246bf907d8708720d90c716536c1aff7bea5ab18ee0ca2",
@@ -428,8 +429,8 @@
     "static/plan_actual.js": "fea50161b6e7653e202d3aabf3e3bc8f75e63c89197580f075a570bfc643ddeb",
     "static/postbank-cards.css": "d88d70dfb12490f3962e8b68ca825ec9f9207f66d09821909a5fb0e4baee44b4",
     "static/postbank-cards.js": "7fc4376e7dd47cb24d0f780e21e54a3350f81f8009ca818f8b2fbd605e4ad26a",
-    "static/postbank-transactions.css": "9060ffd23d444c377c3ba099cf54294d25c87166ec57ddb6890ad34ea46b79d7",
-    "static/postbank-transactions.js": "27d0f66e074cf506feaeb4b5bd5f4e80a7abb571242df2144acb64e6613f90e9",
+    "static/postbank-transactions.css": "cb3648f7196243fd174988c6c8b911636e36e7ec7351c4e140b0ffa42e7c9e1b",
+    "static/postbank-transactions.js": "83826f3016d489358db34565abb6db4a58993e98ea811c7696aa06332245d8b9",
     "static/purchases.css": "07dd9af3e73e89e083da44941878a8a377012c0ef755e2fa308a25993b484b16",
     "static/purchases.js": "3e5753837a6bac64d2c1367217986ec05ca22e802e7ee7f77946248123348089",
     "static/server-banking.css": "a693cdd1bba6e935b046deeff8663156d718455895a674e5067bc20301dbfc0e",
@@ -444,6 +445,6 @@
     "web.py": "20d9ef34288879a900555402d79bc7b337caa595b390683ddfd288e48c906e2c"
   },
   "schema_version": 1,
-  "source_commit": "2ddb0662d064e15e42c88de2c68ecc6a9ec3abe9",
-  "source_tree_sha256": "11ff11f44b0420b495680dd246741b34b98df2d520a0f39c286ebc3accf27d79"
+  "source_commit": "6468899367964d536f551bebd13131a8af281738",
+  "source_tree_sha256": "6952584ce7e866d4de4927ba46ac0fd0220edf2f9210f1febc297217c3f2712d"
 }

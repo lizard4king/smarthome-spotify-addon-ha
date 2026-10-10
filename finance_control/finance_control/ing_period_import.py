@@ -16,10 +16,16 @@ from .connectors.ing_period_snapshot import (
 )
 from .core import Store, money, valid_identifier
 from .statement_import import _snapshot
+from .reconciliation_proof import LedgerControlBalanceMismatch, validated_reconciliation
 
 
 class PeriodImportError(ValueError):
-    """Static diagnostic; source rows and local paths never appear in errors."""
+    """Static reason; optional confidential evidence is for protected owner jobs only."""
+
+    def __init__(self, code, *, reconciliation=None):
+        super().__init__(code)
+        self.reconciliation = (validated_reconciliation(reconciliation)
+                               if code == 'CONTROL_MONTH_BALANCE_MISMATCH' else None)
 
 
 @dataclass(frozen=True)
@@ -178,7 +184,9 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
                     }.get(str(error))
                     if code is None:
                         raise
-                    raise PeriodImportError(code) from None
+                    proof = (error.reconciliation
+                             if type(error) is LedgerControlBalanceMismatch else None)
+                    raise PeriodImportError(code, reconciliation=proof) from None
         _source_guard(db, snapshot, account_id, source_key)
         _ledger_control(db, account, account_id, start, snapshot.opening_balance)
         if db.execute('SELECT 1 FROM bank_monthly_adoptions WHERE account_id=? AND period_start=?',

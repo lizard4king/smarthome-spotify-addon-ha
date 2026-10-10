@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .core import money, valid_identifier
 from .monthly_archive import monthly_source_account_key, read_monthly_archive
+from .reconciliation_proof import LedgerControlBalanceMismatch
 
 
 def bound_finanzguru_targets(store, target_accounts):
@@ -149,7 +150,16 @@ def adopt_monthly_archive(store, path, account_id, confirmed_source_account, *, 
             ledger_rows = _ledger_rows(store, account_id, start, end)
             closing = opening + sum((money(row['amount']) for row in ledger_rows), Decimal('0'))
         if opening != snapshot.opening_balance or closing != snapshot.closing_balance:
-            raise ValueError('ledger_control_balance_mismatch')
+            raise LedgerControlBalanceMismatch(reconciliation={
+                'period_start': start, 'period_end': end, 'currency': snapshot.currency,
+                'ledger_opening_date': account['opening_date'],
+                'ledger_initial_balance': format(money(account['opening']), '.2f'),
+                'ledger_opening_balance': format(opening, '.2f'),
+                'ledger_closing_balance': format(closing, '.2f'),
+                'bank_opening_balance': format(snapshot.opening_balance, '.2f'),
+                'bank_closing_balance': format(snapshot.closing_balance, '.2f'),
+                'ledger_booking_count': len(ledger_rows), 'bank_booking_count': len(snapshot.rows),
+            })
 
         expected = Counter((row.booked_on.isoformat(), money(row.amount), row.currency)
                            for row in snapshot.rows)

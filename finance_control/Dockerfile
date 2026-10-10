@@ -1,6 +1,6 @@
 FROM python:3.12-alpine3.22
 
-ARG BUILD_VERSION=0.2.32
+ARG BUILD_VERSION=0.2.33
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \
