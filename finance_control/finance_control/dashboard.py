@@ -6,6 +6,7 @@ from .account_overview import build_account_overview
 from .cash_components import explicit_cash_component
 from .classification import canonical_category_id
 from .core import money
+from .current_balances import latest_by_account
 from .person_attribution import person_label
 from .reporting_history import scope_for_month
 from .transfer_corrections import sql_transfer_predicate
@@ -15,11 +16,13 @@ class DashboardConfigurationError(ValueError):
     """The reporting configuration is invalid for the dashboard."""
 
 
-def build(store, as_of, accounts=None, *, reporting_history=None):
+def build(store, as_of, accounts=None, *, reporting_history=None,
+          current_balances=None):
     """Return account movements through ``as_of`` without household netting.
 
     ``accounts`` may be the account dictionaries already enriched with owner
     labels by the web layer. The reporting policy supplies known source gaps.
+    ``current_balances`` can reuse the bank-balance lookup of the same request.
     """
     try:
         day = as_of if type(as_of) is date else date.fromisoformat(as_of)
@@ -41,6 +44,8 @@ def build(store, as_of, accounts=None, *, reporting_history=None):
         store, month, None, {}, plan_available=False, reporting_scope=scope,
         cash_activity={}, today=day, include_cash=False)
     account_rows = overview["accounts"]
+    if current_balances is None:
+        current_balances = latest_by_account(store, account_rows)
     # This is ledger coverage metadata, not a statement that the bank was
     # queried on this date. Keep it independent of the displayed month.
     last_booking_by_account = {}
@@ -58,6 +63,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None):
             )
         }
     for row in account_rows:
+        row["current_balance"] = current_balances.get(row["id"])
         row["last_booking_date"] = last_booking_by_account.get(row["id"])
         supplied_account = account_by_id[row["id"]]
         row["institution"] = supplied_account.get("institution") or ""

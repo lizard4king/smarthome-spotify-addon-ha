@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.26` shows each account's latest recorded bank or reconciled statement
+balance, with its own date, independently of the selected booking month. Unknown
+balances remain unavailable. Successful server transaction imports retain the
+balance already returned by that bank read. The bookings page combines refresh
+status and collapsed connection settings in one row per registration.
+
 Version `0.2.25` prepares NASPA checking-account previews, controlled imports and
 refresh using the existing owner-bound server banking path. It preserves current
 refresh selections when upgrading the database. NASPA app authorization is polled

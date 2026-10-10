@@ -168,9 +168,17 @@
     const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     return match ? `${match[3]}.${match[2]}.${match[1]}` : String(value || '');
   };
+  const currentBalanceText = account => {
+    const balance = account?.current_balance;
+    if (!balance || typeof balance !== 'object' || balance.amount === null || balance.amount === undefined) {
+      return {amount:'Kontostand nicht verfügbar', stand:'Kein belegter Stand'};
+    }
+    const retrieved = balance.retrieved_at ? ` · abgerufen ${date(balance.retrieved_at)}` : '';
+    return {amount:money(balance.amount, balance.currency || account.currency),
+      stand:`Stand: ${date(balance.booked_on)}${retrieved}`};
+  };
   const accountName = account => account.display_name || account.id || 'Konto';
   const kindName = kind => ({CHECKING:'Girokonto',CURRENT:'Girokonto',SAVINGS:'Sparkonto',CASH:'Bargeld',CREDIT_CARD:'Kreditkarte',DEPOT:'Depot',INVESTMENT:'Depot'}[String(kind || '').toUpperCase()] || kind || 'Konto');
-  const reasonName = reason => ({MISSING_BALANCE:'Kein Kontostand vorhanden',INCOMPLETE_HISTORY:'Datenhistorie unvollständig',NO_HISTORY:'Kein Verlauf vorhanden',NO_MARKET_VALUE:'Kein Marktwert vorhanden',UNKNOWN:'Grund unbekannt',INCOMPLETE_SOURCE_COVERAGE:'Buchungshistorie unvollständig; Kontostand nicht belegbar',OPENING_BALANCE_UNAVAILABLE:'Anfangsbestand fehlt für diesen Monat',FUTURE_MONTH:'Monat liegt nach dem Stichtag'}[String(reason || '').toUpperCase()] || reason);
   const accountKey = account => String(account.id);
   const accounts = () => Array.isArray(snapshot?.accounts) ? snapshot.accounts : [];
   const bookings = () => Array.isArray(snapshot?.bookings) ? snapshot.bookings : [];
@@ -234,13 +242,14 @@
     name.append(document.createTextNode(accountName(account)));
     add(summary, 'small', 'fd-account-kind', `${account.owner_label || account.owner || 'Ohne Zuordnung'} · ${kindName(account.kind)} · ${count} erfasste Buchung${count === 1 ? '' : 'en'}`);
     add(summary, 'small', 'fd-account-last-booking', `Letzte Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
-    const headerAmount = isSavings ? account.change : account.end;
-    add(summary, 'strong', `fd-account-amount ${tone(headerAmount)}`,
-      `${isSavings ? 'Monatsbewegung · ' : ''}${money(headerAmount, account.currency, isSavings)}`);
+    const balance = currentBalanceText(account);
+    const balanceBox = add(summary, 'span', 'fd-account-balance');
+    add(balanceBox, 'strong', `fd-account-amount ${tone(account.current_balance?.amount)}`, balance.amount);
+    add(balanceBox, 'small', 'fd-account-balance-date', balance.stand);
     const body = add(card, 'div', 'fd-account-body');
-    add(body, 'p', 'fd-account-freshness', `Letzte erfasste Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'} · Abrufzeit nicht erfasst`);
+    add(body, 'p', 'fd-account-freshness', `Letzte erfasste Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
     body.append(metrics(account));
-    if (account.note || account.reason) add(body, 'p', 'fd-account-note', [account.note, reasonName(account.reason)].filter(Boolean).join(' · '));
+    if (account.note) add(body, 'p', 'fd-account-note', account.note);
     summary.addEventListener('click', () => pick(id));
     card.addEventListener('toggle', () => { if (card.open) expandedAccounts.add(id); else expandedAccounts.delete(id); });
     return card;
@@ -269,7 +278,7 @@
   function metrics(account) {
     const wrap = el('div', 'fd-metrics');
     for (const [label, value, signed] of [
-      ['Zugänge', account.inflow, false], ['Abgänge', account.outflow, false], ['Monatsbewegung', account.change, true]]) {
+      [`${monthLabel()} · Zugänge`, account.inflow, false], [`${monthLabel()} · Abgänge`, account.outflow, false], [`${monthLabel()} · Monatsbewegung`, account.change, true]]) {
       const card = add(wrap, 'div', 'fd-metric');
       add(card, 'span', '', label);
       add(card, 'strong', signed ? tone(value) : '', money(value, account.currency, signed));
@@ -309,6 +318,14 @@
   }
   function bookingList() {
     const section = el('section', 'fd-bookings');
+    const account = current();
+    if (account) {
+      const balance = currentBalanceText(account);
+      const currentBalance = add(section, 'div', 'fd-selected-balance');
+      add(currentBalance, 'span', '', `${accountName(account)} · Kontostand`);
+      add(currentBalance, 'strong', `fd-current-balance ${tone(account.current_balance?.amount)}`, balance.amount);
+      add(currentBalance, 'small', '', balance.stand);
+    }
     const top = add(section, 'div', 'fd-bookings-head');
     const title = add(top, 'div');
     add(title, 'p', 'fd-kicker', monthLabel());
@@ -439,7 +456,7 @@
     add(intro, 'p', 'fd-kicker', 'FINANCE CONTROL · KONTEN');
     add(intro, 'h1', '', area === 'category-outflows' ? 'Abgänge nach Kategorie' : 'Buchungen');
     add(intro, 'p', 'fd-hero-sub', `${monthLabel()} · Stichtag ${date(snapshot.as_of)}`);
-    add(intro, 'p', 'fd-data-basis', 'Berechnet aus importierten Buchungen');
+    add(intro, 'p', 'fd-data-basis', 'Buchungen: importierte Buchungen · Kontostände: letzter belegter Stand');
     const controls = add(hero, 'div', 'fd-controls');
     const cutoffForm = add(controls, 'form', 'fd-cutoff-form');
     const cutoffLabel = add(cutoffForm, 'label'); add(cutoffLabel, 'span', '', 'Stand am');

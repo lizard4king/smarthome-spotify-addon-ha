@@ -61,7 +61,7 @@
     heading.textContent = 'Bankabruf';
     const description = document.createElement('p');
     description.className = 'fbr-muted';
-    description.textContent = 'Aktualisiere die registrierten Bankverbindungen. Der Abruf startet nur mit einem eigenen, auf dem Server hinterlegten Zugang.';
+    description.textContent = 'Buchungen und Kontostände aus Deinen eingerichteten Bankverbindungen aktualisieren.';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'fbr-button';
@@ -71,8 +71,12 @@
     status.setAttribute('aria-live', 'polite');
     const setup = document.createElement('div');
     setup.className = 'fbr-setup-list';
-    panel.append(heading, description, button, status, setup);
+    const header = document.createElement('div');
+    header.className = 'fbr-header';
+    header.append(heading, button);
+    panel.append(header, description, status, setup);
     host.append(panel);
+    const views = new Map();
 
     const live = () => generation === lifecycle && host.isConnected && host.contains(panel);
     const setBusy = value => {
@@ -89,31 +93,18 @@
     };
     const renderConnections = rows => {
       status.replaceChildren();
-      if (!rows.length) {
-        message(status, 'Es sind keine eigenen Bankverbindungen registriert.');
-        return;
-      }
-      const list = document.createElement('ul');
-      list.className = 'fbr-list';
-      rows.forEach(row => {
-        const item = document.createElement('li');
-        item.className = 'fbr-row';
-        const top = document.createElement('div');
-        top.className = 'fbr-row-top';
-        const label = document.createElement('strong');
-        label.textContent = typeof row.label === 'string' && row.label.trim()
-          ? row.label.trim() : nameFor(row.bank_id);
-        const state = document.createElement('span');
-        state.className = `fbr-state fbr-${row.status}`;
-        state.textContent = stateText(row.status);
-        const date = document.createElement('span');
-        date.className = 'fbr-muted';
-        date.textContent = formatDate(row.last_success_at);
-        top.append(label, state);
-        item.append(top, date);
+      for (const row of rows) {
+        const view = views.get(row?.id);
+        if (!view) continue;
+        view.state.className = `fbr-state fbr-${row.status}`;
+        view.state.textContent = stateText(row.status);
+        view.date.textContent = formatDate(row.last_success_at);
+        view.summary.textContent = row.status === 'setup_required'
+          ? 'Bankabruf einrichten' : 'Verbindung bearbeiten';
+        view.feedback.replaceChildren();
         if (['error', 'cooldown', 'setup_required'].includes(row.status)
             && (row.status === 'error' || typeof row.code === 'string')) {
-          message(item, errorText(row.code), true);
+          message(view.feedback, errorText(row.code), true);
         }
         if (Number.isSafeInteger(row.inserted) && row.inserted >= 0
             && (row.status === 'updated' || ['error', 'setup_required', 'cooldown'].includes(row.status)
@@ -123,11 +114,9 @@
           count.textContent = row.status === 'updated'
             ? `${row.inserted} neue Buchungen`
             : `${row.inserted} Buchungen bereits übernommen; weiterer Abruf fehlgeschlagen.`;
-          item.append(count);
+          view.feedback.append(count);
         }
-        list.append(item);
-      });
-      status.append(list);
+      }
     };
 
     const loadSetup = async () => {
@@ -173,29 +162,66 @@
         const banks = missingCredentials.map(row => nameFor(row.bank_id)).join(', ');
         message(setup, `${banks}: Zugang in der Verwaltung auf dem Server hinterlegen.`);
       }
-      for (const row of connections) {
-        if (!['POSTBANK', 'ING', 'NASPA'].includes(row.bank_id)) continue;
+      const list = document.createElement('ul');
+      list.className = 'fbr-list';
+      setup.append(list);
+      const labels = connections.map(row => typeof row.label === 'string' && row.label.trim()
+        ? row.label.trim() : nameFor(row.bank_id));
+      for (const [index, row] of connections.entries()) {
+        const item = document.createElement('li');
+        item.className = 'fbr-row';
+        item.dataset.connectionId = row.id;
+        const top = document.createElement('div');
+        top.className = 'fbr-row-top';
+        const label = document.createElement('strong');
+        label.textContent = labels[index];
+        const state = document.createElement('span');
+        state.className = 'fbr-state fbr-setup_required';
+        state.textContent = stateText('setup_required');
+        top.append(label, state);
+        item.append(top);
+        if (labels.filter(value => value === labels[index]).length > 1) {
+          const duplicate = document.createElement('small');
+          duplicate.className = 'fbr-muted';
+          duplicate.textContent = `Registrierung ${labels.slice(0, index + 1).filter(value => value === labels[index]).length} · gleicher Name, separate Verbindung`;
+          item.append(duplicate);
+        }
+        const date = document.createElement('span');
+        date.className = 'fbr-muted';
+        date.textContent = formatDate(null);
+        const feedback = document.createElement('div');
+        feedback.className = 'fbr-feedback';
+        item.append(date, feedback);
         const details = document.createElement('details');
         details.className = 'fbr-import-setup';
         const summary = document.createElement('summary');
-        summary.textContent = `${nameFor(row.bank_id)}: Bankabruf einrichten`;
+        summary.textContent = 'Bankabruf einrichten';
         const content = document.createElement('div');
         content.className = 'fbr-import-content';
         const source = document.createElement('div');
         source.className = 'fbr-import-source';
         content.append(source);
         details.append(summary, content);
-        setup.append(details);
-        if (credentialsById.get(row.id)?.server_credentials_present === true
-            && window.postbankTransactions) {
-          window.postbankTransactions.bind(source, {
-            id: row.id, revision: row.revision, bankId: row.bank_id,
-          }, () => document.dispatchEvent(new CustomEvent('finance-bank-refreshed')));
-        } else if (row.bank_id === 'ING') {
-          message(content, 'ING-Anbindung per QR-Login ist noch nicht eingerichtet. Für diesen Weg wird eine separate Bankanbindung benötigt.');
-        } else {
-          message(content, 'Hinterlege den Zugang auf dem Server in der Verwaltung, um Buchungen manuell einzurichten.');
-        }
+        item.append(details);
+        list.append(item);
+        views.set(row.id, {state, date, feedback, summary});
+        // Merely displaying a connection must not create a second import UI or
+        // fetch its setup data. Load it once, when its own disclosure is opened.
+        let bound = false;
+        details.addEventListener('toggle', () => {
+          if (!details.open || bound || !live()) return;
+          bound = true;
+          if (credentialsById.get(row.id)?.server_credentials_present === true
+              && window.postbankTransactions) {
+            window.postbankTransactions.bind(source, {
+              id: row.id, revision: row.revision, bankId: row.bank_id,
+            }, () => document.dispatchEvent(new CustomEvent('finance-bank-refreshed')));
+          } else if (row.bank_id === 'ING') {
+            message(content, 'ING-Anbindung per QR-Login ist noch nicht eingerichtet. Für diesen Weg wird eine separate Bankanbindung benötigt.');
+          } else {
+            message(content, 'Hinterlege den Zugang auf dem Server in der Verwaltung, um Buchungen manuell einzurichten.');
+          }
+        });
       }
       button.disabled = refreshEligible.length === 0;
       if (!refreshEligible.length) {
