@@ -1,6 +1,9 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.31` preserves safe balance-read diagnostics and isolates unsupported
+Version `0.2.32` respects explicit account balance restrictions from conclusive
+FinTS user parameters and reports initial ledger control conflicts explicitly.
+Missing or inconclusive permissions do not imply an unsupported operation.
+Financial controls remain strict. Version `0.2.31` preserves safe balance-read diagnostics and isolates unsupported
 or invalid individual-account balances. Authentication and transport failures
 remain aborting. Missing bookings views show a recovery message rather than a
 silent blank page. Practical additional-account acceptance remains separate.

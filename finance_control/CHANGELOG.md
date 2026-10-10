@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.32
+
+- Respect explicit account-level balance restrictions from conclusive FinTS user parameters before issuing a balance request; missing or inconclusive permissions keep the existing read behavior.
+- Retain bounded, validated failure context for standalone balance reads without exposing raw bank messages.
+- Report initial savings-account ledger control conflicts explicitly instead of hiding them behind a generic import error; keep all financial validation and rollback rules.
+
 ## 0.2.31
 
 - Preserve fixed, non-sensitive error stages and categories in standalone balance reads.

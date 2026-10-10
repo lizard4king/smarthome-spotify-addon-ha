@@ -11,6 +11,7 @@ import threading
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from .connectors.fints_readonly import BankErrorOrigin
 from .administration import AdministrationError, BANKS, _id, _revision
 from .connectors.server_bank_rules import (
     BALANCE_DIAGNOSTIC_BANK_CODES, BALANCE_ISOLATED_BANK_CODES,
@@ -33,18 +34,38 @@ _ERROR_CODES = {
 _DIAGNOSTIC_STAGES = frozenset({'accounts', 'balance'})
 
 
+_CONTEXT_FIELDS = frozenset({'masked_account', 'bank_error_origin', 'bank_return_codes'})
+_ORIGINS = frozenset(origin.value for origin in BankErrorOrigin)
+
+
 def validated_diagnostic(value):
-    """Accept only fixed stage/code tokens, never bank text or account data."""
-    if (type(value) is not dict
-            or set(value) not in ({'stage'}, {'stage', 'bank_error_code'})
-            or type(value['stage']) is not str
-            or value['stage'] not in _DIAGNOSTIC_STAGES):
+    """Accept bounded tokens and a suffix, never raw bank text."""
+    if (type(value) is not dict or 'stage' not in value
+            or set(value) - {'stage', 'bank_error_code'} - _CONTEXT_FIELDS
+            or type(value['stage']) is not str or value['stage'] not in _DIAGNOSTIC_STAGES):
         raise ValueError('diagnostic')
-    if 'bank_error_code' in value and (
-            type(value['bank_error_code']) is not str
+    if 'bank_error_code' in value and (type(value['bank_error_code']) is not str
             or value['bank_error_code'] not in BALANCE_DIAGNOSTIC_BANK_CODES):
         raise ValueError('diagnostic')
-    return value.copy()
+    if set(value) & _CONTEXT_FIELDS and 'bank_error_code' not in value:
+        raise ValueError('diagnostic')
+    if 'masked_account' in value and (value['stage'] != 'balance'
+            or type(value['masked_account']) is not str
+            or re.fullmatch(r'••••[A-Za-z0-9]{4}', value['masked_account']) is None):
+        raise ValueError('diagnostic')
+    if 'bank_error_origin' in value and (type(value['bank_error_origin']) is not str
+            or value['bank_error_origin'] not in _ORIGINS):
+        raise ValueError('diagnostic')
+    if 'bank_return_codes' in value:
+        codes = value['bank_return_codes']
+        if (type(codes) is not list or not 1 <= len(codes) <= 16
+                or any(type(code) is not str or re.fullmatch(r'[0-9]{4}', code) is None for code in codes)
+                or len(set(codes)) != len(codes)):
+            raise ValueError('diagnostic')
+    result = value.copy()
+    if 'bank_return_codes' in result:
+        result['bank_return_codes'] = list(result['bank_return_codes'])
+    return result
 
 
 def _fail(code='bank_read_unavailable', status=503):
@@ -82,7 +103,7 @@ def _validated_output(payload):
                 _fail()
             if (result['code'] not in {'bank_failure', 'invalid_bank_result', 'auth_rejected',
                                        'authorization_required', 'too_many_accounts', 'duplicate_account'}
-                    or (result['code'] != 'bank_failure' and 'bank_error_code' in diagnostic)):
+                    or (result['code'] != 'bank_failure' and set(diagnostic) != {'stage'})):
                 _fail()
         return result
     if (result.get('status') != 'ok'
@@ -131,7 +152,8 @@ def _validated_output(payload):
             diagnostic = validated_diagnostic(item['diagnostic'])
         except ValueError:
             _fail()
-        if (diagnostic['stage'] != 'balance'
+        if (set(diagnostic) - {'stage', 'bank_error_code'}
+                or diagnostic['stage'] != 'balance'
                 or (item['code'] == 'bank_failure'
                     and diagnostic.get('bank_error_code') not in BALANCE_ISOLATED_BANK_CODES)
                 or (item['code'] == 'invalid_bank_result' and 'bank_error_code' in diagnostic)):

@@ -16,11 +16,22 @@
     if (!['bank_failure', 'invalid_bank_result', 'authorization_required', 'auth_rejected'].includes(code) || !diagnostic ||
         typeof diagnostic !== 'object' || Array.isArray(diagnostic) ||
         !Object.hasOwn(diagnostic, 'stage') ||
-        Object.keys(diagnostic).some(key => !['stage', 'bank_error_code'].includes(key))) return '';
+        Object.keys(diagnostic).some(key => !['stage', 'bank_error_code', 'masked_account', 'bank_error_origin', 'bank_return_codes'].includes(key))) return '';
     const stages = {accounts: 'Beim Lesen der Kontenliste.', balance: 'Beim Lesen des Kontostands.'};
     if (typeof diagnostic.stage !== 'string' || !Object.hasOwn(stages, diagnostic.stage)) return '';
-    if (!Object.hasOwn(diagnostic, 'bank_error_code')) return ` ${stages[diagnostic.stage]}`;
-    if (!['bank_failure', 'invalid_bank_result'].includes(code) || typeof diagnostic.bank_error_code !== 'string') return '';
+    const hasContext = ['masked_account', 'bank_error_origin', 'bank_return_codes'].some(key => Object.hasOwn(diagnostic, key));
+    if (!Object.hasOwn(diagnostic, 'bank_error_code')) return hasContext ? '' : ` ${stages[diagnostic.stage]}`;
+    if (code !== 'bank_failure' || typeof diagnostic.bank_error_code !== 'string') return '';
+    const origins = {SYSTEM_SYNC: 'Systemabgleich', DIALOG_INIT: 'Dialogstart', TRANSPORT: 'Transport',
+      ACCOUNTS: 'Kontenliste', ADAPTER: 'Adapter', OTHER: 'Sonstige Teilphase'};
+    if (Object.hasOwn(diagnostic, 'masked_account') && (diagnostic.stage !== 'balance'
+        || typeof diagnostic.masked_account !== 'string' || !/^••••[A-Za-z0-9]{4}$/.test(diagnostic.masked_account))) return '';
+    if (Object.hasOwn(diagnostic, 'bank_error_origin') && (typeof diagnostic.bank_error_origin !== 'string'
+        || !Object.hasOwn(origins, diagnostic.bank_error_origin))) return '';
+    if (Object.hasOwn(diagnostic, 'bank_return_codes') && (!Array.isArray(diagnostic.bank_return_codes)
+        || diagnostic.bank_return_codes.length < 1 || diagnostic.bank_return_codes.length > 16
+        || diagnostic.bank_return_codes.some(value => typeof value !== 'string' || !/^[0-9]{4}$/.test(value))
+        || new Set(diagnostic.bank_return_codes).size !== diagnostic.bank_return_codes.length)) return '';
     const details = {
       ONLINE_LOGIN_REQUIRED: 'Die Bank verlangt eine erneute Online-Anmeldung.',
       CREDENTIALS_REJECTED: 'Die Bank hat die Zugangsdaten abgelehnt.',
@@ -41,7 +52,10 @@
       STATEMENT_ID_MISSING: 'Im Kontoauszug fehlt eine Buchungskennung.',
     };
     if (!Object.hasOwn(details, diagnostic.bank_error_code)) return '';
-    return ` ${stages[diagnostic.stage]} ${details[diagnostic.bank_error_code]}`;
+    const account = Object.hasOwn(diagnostic, 'masked_account') ? ` Konto ${diagnostic.masked_account}.` : '';
+    const origin = Object.hasOwn(diagnostic, 'bank_error_origin') ? ` Teilphase: ${origins[diagnostic.bank_error_origin]}.` : '';
+    const codes = Object.hasOwn(diagnostic, 'bank_return_codes') ? ` Bankcodes: ${diagnostic.bank_return_codes.join(', ')}.` : '';
+    return ` ${stages[diagnostic.stage]} ${details[diagnostic.bank_error_code]}${account}${origin}${codes}`;
   };
   const balanceError = (code, diagnostic) => {
     const messages = {

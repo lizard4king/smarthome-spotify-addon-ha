@@ -412,6 +412,47 @@ def _selected_index(chooser, options, *, force=False):
     return selected
 
 
+def _balance_explicitly_unsupported(client, account):
+    """Use only conclusive UPD permissions for one unambiguously matching account."""
+    from fints.client import FinTSOperations
+    from fints.formals import UPDUsage
+
+    if getattr(getattr(client, 'upa', None), 'upd_usage', None) is not UPDUsage.UPD_CONCLUSIVE:
+        return False
+    information = getattr(client, 'get_information', None)
+    if not callable(information):
+        return False
+    information = information()
+    if type(information) is not dict or type(information.get('accounts')) is not list:
+        return False
+    # The full domestic identity is required; IBAN, when supplied on both
+    # sides, must agree as well. Never guess through padding or account aliases.
+    if (type(account.accountnumber) is not str or not account.accountnumber
+            or type(account.blz) is not str or not account.blz
+            or (account.subaccount is not None and type(account.subaccount) is not str)):
+        return False
+    matches = []
+    for item in information['accounts']:
+        if (type(item) is not dict
+                or not {'account_number', 'subaccount_number', 'bank_identifier'} <= item.keys()):
+            continue
+        bank = item['bank_identifier']
+        subaccount = item['subaccount_number']
+        if (item['account_number'] != account.accountnumber
+                or getattr(bank, 'bank_code', None) != account.blz
+                or getattr(bank, 'country_identifier', None) != '280'
+                or (subaccount is not None and type(subaccount) is not str)
+                or (subaccount or '') != (account.subaccount or '')
+                or (account.iban and item.get('iban') and item['iban'] != account.iban)):
+            continue
+        matches.append(item)
+    if len(matches) != 1:
+        return False
+    operations = matches[0].get('supported_operations')
+    return (type(operations) is dict
+            and operations.get(FinTSOperations.GET_BALANCE) is False)
+
+
 class ReadOnlyFinTS:
     def __init__(self, client, respond, preferred_tan_method=None, *, allow_ing_single_step=False):
         self._client = client
@@ -587,6 +628,9 @@ class ReadOnlyFinTS:
                         values = self._resolve(self._client.get_sepa_accounts())
                         return tuple(AccountRef(*value) for value in values)
                     if operation is ReadOperation.BALANCE:
+                        if _balance_explicitly_unsupported(self._client, account):
+                            raise BankReadError(code=BankErrorCode.UNSUPPORTED,
+                                                origin=BankErrorOrigin.ADAPTER)
                         value = self._resolve(self._client.get_balance(native))
                         return Balance(money(value.amount.amount), value.amount.currency, value.date)
                     if operation in (ReadOperation.STATEMENTS, ReadOperation.MONTHLY_SNAPSHOT, ReadOperation.PERIOD_SNAPSHOT):

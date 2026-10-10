@@ -55,6 +55,10 @@
     vault_unavailable: 'Der sichere Serverspeicher ist derzeit nicht verfügbar.',
     bank_product_unavailable: 'Die Bankverbindung ist auf dem Server noch nicht vollständig eingerichtet.',
     PREVIOUS_MONTH_CHANGED: 'Der vorherige Kontrollmonat wurde geändert. Prüfe die Buchungen erneut.',
+    CONTROL_MONTH_OPENING_DATE_MISMATCH: 'Das in Finance Control erfasste Eröffnungsdatum liegt nicht vor dem Kontrollmonat. Prüfe das Eröffnungsdatum und den gewählten Zeitraum. Es wurde nichts übernommen.',
+    CONTROL_MONTH_BALANCE_MISMATCH: 'Die Anfangs- oder Endsalden des Kontrollmonats stimmen nicht mit dem vorhandenen Bestand überein. Prüfe den Anfangsbestand und die vorhandenen Buchungen. Es wurde nichts übernommen.',
+    CONTROL_MONTH_ROWS_MISMATCH: 'Die Buchungen des Kontrollmonats stimmen nicht vollständig mit dem vorhandenen Bestand überein. Prüfe den Vormonat. Es wurde nichts übernommen.',
+    SOURCE_BINDING_CONFLICT: 'Das Bankkonto oder das Zielkonto in Finance Control ist bereits anders zugeordnet. Prüfe die Kontenauswahl und die bestehende Zuordnung. Es wurde nichts übernommen.',
     legacy_text_confirmation_required: 'Vorhandene Buchungstexte müssen geprüft werden. Öffne „Verbindung bearbeiten“ für die Gegenüberstellung.',
     LEGACY_TEXT_REVIEW_LIMIT: 'Mehr als 100 Textabweichungen benötigen eine gesonderte Prüfung.',
   }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Prüfe die Einrichtung und den Serverstatus.')
