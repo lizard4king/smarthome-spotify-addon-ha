@@ -83,7 +83,7 @@
     PREVIOUS_MONTH_UNVERIFIED: 'Der vorherige Monat ist noch nicht vollständig mit der Bank abgeglichen.',
     PREVIOUS_MONTH_CHANGED: 'Der vorherige Kontrollmonat wurde geändert. Prüfe die Buchungen erneut.',
     stale_preview: 'Der Datenbestand wurde geändert. Bitte eine neue Vorschau abrufen.',
-    invalid_target: 'Bitte das zugehörige Girokonto als Ziel wählen.',
+    invalid_target: 'Bitte ein unterstütztes Giro- oder Sparkonto als Ziel wählen.',
     invalid_period: 'Bitte einen Monat der letzten 90 Tage und einen Stichtag im selben Monat bis heute wählen.',
     }[code] || 'Der Bankabruf konnte nicht abgeschlossen werden. Bitte prüfe den Serverstatus.');
     const detail = diagnosticText(code, diagnostic);
@@ -97,7 +97,7 @@
   };
   const monthStartISO = () => `${todayISO().slice(0, 7)}-01`;
 
-  function bind(container, record, refresh = () => {}) {
+  function bind(container, record, refresh = () => {}, onSourceAccounts = () => {}) {
     if (!container || typeof container.replaceChildren !== 'function') return;
     const generation = (generations.get(container) || 0) + 1;
     generations.set(container, generation);
@@ -107,7 +107,9 @@
     const bankName = record?.bankId === 'ING' ? 'ING'
       : record?.bankId === 'NASPA' ? 'Nassauische Sparkasse' : 'Postbank';
     const heading = node('h3', `${bankName}-Buchungen`, 'pbt-title');
-    const intro = node('p', 'Lies gebuchte Giro-Umsätze für einen Zeitraum ein und prüfe sie vor der Übernahme.', 'pbt-intro');
+    const intro = node('p', record?.bankId === 'NASPA'
+      ? 'Lies gebuchte Giro-Umsätze für einen Zeitraum ein und prüfe sie vor der Übernahme.'
+      : 'Lies gebuchte Giro- oder Spar-Umsätze für einen Zeitraum ein und prüfe sie vor der Übernahme. Weitere Konten behalten eine eigene Zuordnung unter diesem Bankzugang.', 'pbt-intro');
     const status = node('p', 'Zielkonten werden geladen.', 'pbt-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
@@ -199,6 +201,11 @@
       }
       bankAccounts = accounts.filter(item => item && typeof item.fingerprint === 'string'
         && /^[0-9a-f]{64}$/.test(item.fingerprint) && typeof item.masked_account === 'string');
+      if (record.bankId === 'POSTBANK' && current() && typeof onSourceAccounts === 'function') {
+        onSourceAccounts(bankAccounts.map(item => ({
+          fingerprint: item.fingerprint, masked_account: item.masked_account,
+        })));
+      }
       if (!bankAccounts.length) {
         setStatus('Die Bank hat keine auswählbaren Konten gemeldet.');
         return;
@@ -206,7 +213,7 @@
       const targetOptions = targets.map(item => ({id:item.id,
         label:`${safeString(item.name,160)} · ${safeString(item.owner,100) || 'Ohne Zuordnung'} · ${safeString(item.currency,12)}`}));
       const targetField = selectField('Finance-Control-Zielkonto', 'pbt-target-select', targetOptions, 'id', 'label');
-      const sourceField = selectField(`${bankName}-Girokonto`, 'pbt-source-select', bankAccounts.map(item => ({
+      const sourceField = selectField(`${bankName}-Konto`, 'pbt-source-select', bankAccounts.map(item => ({
         fingerprint:item.fingerprint, label:item.masked_account,
       })), 'fingerprint', 'label');
       ui.target = targetField.select;

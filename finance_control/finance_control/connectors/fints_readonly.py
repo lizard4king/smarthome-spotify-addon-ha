@@ -155,8 +155,9 @@ def _error_origin(error):
         '_continue_get_sepa_accounts': BankErrorOrigin.ACCOUNTS,
     }
     adapter_codes = {
-        ReadOnlyFinTS.read.__code__, ReadOnlyFinTS._resolve.__code__,
-        ReadOnlyFinTS.configure_auth.__code__, create_reader.__code__,
+        ReadOnlyFinTS.read.__code__, ReadOnlyFinTS._read_locked.__code__,
+        ReadOnlyFinTS._resolve.__code__, ReadOnlyFinTS.configure_auth.__code__,
+        ReadOnlyFinTS._configure_auth_locked.__code__, create_reader.__code__,
     }
     origin = BankErrorOrigin.OTHER
     traceback_node = error.__traceback__
@@ -178,6 +179,7 @@ def _error_origin(error):
 
 def _classified_error(error, bank_return_codes=()):
     """Return a safe diagnostic code without retaining third-party error text."""
+    from .credit_card import CreditCardReadError, CreditCardUnsupportedError
     from fints.exceptions import (
         FinTSClientError, FinTSClientPINError, FinTSClientTemporaryAuthError,
         FinTSConnectionError, FinTSDialogInitError, FinTSNoResponseError,
@@ -203,7 +205,11 @@ def _classified_error(error, bank_return_codes=()):
             return BankReadError(_SAFE_ERROR_MESSAGES[code], code, error_kind=kind,
                                  origin=origin, bank_return_codes=codes)
         return BankReadError(code=code, error_kind=kind, origin=origin, bank_return_codes=codes)
-    if isinstance(error, FinTSClientPINError):
+    if isinstance(error, CreditCardUnsupportedError):
+        code = BankErrorCode.UNSUPPORTED
+    elif isinstance(error, CreditCardReadError):
+        code = BankErrorCode.DATA_FORMAT
+    elif isinstance(error, FinTSClientPINError):
         code = BankErrorCode.AUTH_REJECTED
     elif isinstance(error, FinTSClientTemporaryAuthError):
         code = BankErrorCode.AUTH_TEMPORARY
@@ -234,6 +240,8 @@ def _classified_error(error, bank_return_codes=()):
 
 class ReadOperation(Enum):
     ACCOUNTS = 'accounts'
+    CREDIT_CARD_TRANSACTIONS = 'credit_card_transactions'
+    CREDIT_CARD_BALANCE = 'credit_card_balance'
     BALANCE = 'balance'
     TRANSACTIONS = 'transactions'
     CAMT_TRANSACTIONS = 'camt_transactions'
@@ -411,9 +419,15 @@ class ReadOnlyFinTS:
         self._preferred_tan_method = preferred_tan_method
         self._allow_ing_single_step = allow_ing_single_step
         self._auth_configured = not getattr(type(client), '_requires_auth_configuration', False)
+        self._operation_lock = threading.RLock()
 
     def configure_auth(self, choose_method, choose_medium, *, force_selection=False):
         """Explicitly select supported local FinTS authentication options."""
+        with self._operation_lock:
+            return self._configure_auth_locked(
+                choose_method, choose_medium, force_selection=force_selection)
+
+    def _configure_auth_locked(self, choose_method, choose_medium, *, force_selection=False):
         if self._allow_ing_single_step:
             # ING checks the second factor via its recent online login. The factory
             # enables this path only for its exact profile and bank identifier.
@@ -518,13 +532,29 @@ class ReadOnlyFinTS:
         raise BankReadError(code=BankErrorCode.TAN_LIMIT)
 
     def read(self, operation, account=None, start=None, end=None):
+        with self._operation_lock:
+            return self._read_locked(operation, account, start, end)
+
+    def _read_locked(self, operation, account=None, start=None, end=None):
         if getattr(type(self._client), '_captures_finance_response_codes', False):
             self._client._finance_response_codes = ()
         if not isinstance(operation, ReadOperation):
             raise BankReadError('Nur definierte Leseoperationen sind erlaubt.')
-        if operation is not ReadOperation.ACCOUNTS and not isinstance(account, AccountRef):
+        card_operations = (ReadOperation.CREDIT_CARD_TRANSACTIONS,
+                           ReadOperation.CREDIT_CARD_BALANCE)
+        if operation in card_operations and getattr(self._client, '_finance_source_profile', None) != 'POSTBANK':
+            raise BankReadError(code=BankErrorCode.UNSUPPORTED)
+        if operation in card_operations:
+            from .credit_card import CreditCardMetadata, _check_metadata
+            if not isinstance(account, CreditCardMetadata):
+                raise BankReadError(code=BankErrorCode.DATA_FORMAT)
+            try:
+                _check_metadata(account)
+            except Exception:
+                raise BankReadError(code=BankErrorCode.DATA_FORMAT) from None
+        elif operation is not ReadOperation.ACCOUNTS and not isinstance(account, AccountRef):
             raise BankReadError('Geprüfte Kontoreferenz erforderlich.')
-        if operation in (ReadOperation.TRANSACTIONS, ReadOperation.CAMT_TRANSACTIONS, ReadOperation.STATEMENTS, ReadOperation.MONTHLY_SNAPSHOT, ReadOperation.PERIOD_SNAPSHOT):
+        if operation in (ReadOperation.TRANSACTIONS, ReadOperation.CAMT_TRANSACTIONS, ReadOperation.STATEMENTS, ReadOperation.MONTHLY_SNAPSHOT, ReadOperation.PERIOD_SNAPSHOT, ReadOperation.CREDIT_CARD_TRANSACTIONS):
             if type(start) is not date or type(end) is not date or start > end:
                 raise BankReadError('Gültiger Buchungszeitraum erforderlich.')
         if operation is ReadOperation.MONTHLY_SNAPSHOT:
@@ -538,7 +568,7 @@ class ReadOnlyFinTS:
             if getattr(self._client, '_finance_source_profile', None) not in ('ING', 'POSTBANK', 'NASPA'):
                 raise BankReadError(code=BankErrorCode.UNSUPPORTED)
         from fints.models import SEPAAccount
-        native = None if account is None else SEPAAccount(
+        native = None if account is None or operation in card_operations else SEPAAccount(
             account.iban, account.bic, account.accountnumber, account.subaccount, account.blz)
         if not self._auth_configured:
             raise BankReadError(code=BankErrorCode.AUTH_SETUP_REQUIRED)
@@ -546,6 +576,13 @@ class ReadOnlyFinTS:
             try:
                 with self._client:
                     self._resolve(self._client.init_tan_response)
+                    if operation is ReadOperation.CREDIT_CARD_TRANSACTIONS:
+                        from .credit_card import read_credit_card_transactions
+                        return self._resolve(read_credit_card_transactions(
+                            self._client, account, start_date=start, end_date=end))
+                    if operation is ReadOperation.CREDIT_CARD_BALANCE:
+                        from .credit_card import read_credit_card_balance
+                        return self._resolve(read_credit_card_balance(self._client, account))
                     if operation is ReadOperation.ACCOUNTS:
                         values = self._resolve(self._client.get_sepa_accounts())
                         return tuple(AccountRef(*value) for value in values)

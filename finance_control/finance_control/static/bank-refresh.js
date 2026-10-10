@@ -135,28 +135,55 @@
     };
     const renderConnections = rows => {
       status.replaceChildren();
+      const grouped = new Map();
       for (const row of rows) {
-        const view = views.get(row?.id);
+        if (!row || typeof row.id !== 'string') continue;
+        if (!grouped.has(row.id)) grouped.set(row.id, []);
+        grouped.get(row.id).push(row);
+      }
+      for (const [id, accounts] of grouped) {
+        const view = views.get(id);
         if (!view) continue;
+        const priority = ['running', 'error', 'setup_required', 'cooldown', 'updated'];
+        const rank = value => priority.includes(value) ? priority.indexOf(value) : priority.length;
+        const row = accounts.reduce((first, next) =>
+          rank(next.status) < rank(first.status) ? next : first);
         view.state.className = `fbr-state fbr-${row.status}`;
         view.state.textContent = stateText(row.status);
-        view.date.textContent = formatDate(row.last_success_at);
+        const dates = accounts.map(account => account.last_success_at)
+          .filter(value => typeof value === 'string' && Number.isFinite(Date.parse(value))).sort();
+        view.date.textContent = formatDate(dates.at(-1));
         view.summary.textContent = row.status === 'setup_required'
           ? 'Bankabruf einrichten' : 'Verbindung bearbeiten';
         view.feedback.replaceChildren();
-        if (['error', 'cooldown', 'setup_required'].includes(row.status)
-            && (row.status === 'error' || typeof row.code === 'string')) {
-          message(view.feedback, errorText(row.code, row.diagnostic), true);
-        }
-        if (Number.isSafeInteger(row.inserted) && row.inserted >= 0
-            && (row.status === 'updated' || ['error', 'setup_required', 'cooldown'].includes(row.status)
-                && row.inserted > 0)) {
-          const count = document.createElement('span');
-          count.className = 'fbr-muted';
-          count.textContent = row.status === 'updated'
-            ? `${row.inserted} neue Buchungen`
-            : `${row.inserted} Buchungen bereits übernommen; weiterer Abruf fehlgeschlagen.`;
-          view.feedback.append(count);
+        for (const account of accounts) {
+          const feedback = document.createElement('div');
+          feedback.className = 'fbr-account-status';
+          if (account.account_id) {
+            const name = document.createElement('strong');
+            name.textContent = typeof account.account_name === 'string' && account.account_name
+              ? account.account_name : account.account_id;
+            feedback.append(name);
+            const outcome = document.createElement('span');
+            outcome.className = 'fbr-muted';
+            outcome.textContent = `${stateText(account.status)} · ${formatDate(account.last_success_at)}`;
+            feedback.append(outcome);
+          }
+          if (['error', 'cooldown', 'setup_required'].includes(account.status)
+              && (account.status === 'error' || typeof account.code === 'string')) {
+            message(feedback, errorText(account.code, account.diagnostic), true);
+          }
+          if (Number.isSafeInteger(account.inserted) && account.inserted >= 0
+              && (account.status === 'updated' || ['error', 'setup_required', 'cooldown'].includes(account.status)
+                  && account.inserted > 0)) {
+            const count = document.createElement('span');
+            count.className = 'fbr-muted';
+            count.textContent = account.status === 'updated'
+              ? `${account.inserted} neue Buchungen`
+              : `${account.inserted} Buchungen bereits übernommen; weiterer Abruf fehlgeschlagen.`;
+            feedback.append(count);
+          }
+          view.feedback.append(feedback);
         }
       }
     };
@@ -255,9 +282,20 @@
           bound = true;
           if (credentialsById.get(row.id)?.server_credentials_present === true
               && window.postbankTransactions) {
-            window.postbankTransactions.bind(source, {
-              id: row.id, revision: row.revision, bankId: row.bank_id,
-            }, () => document.dispatchEvent(new CustomEvent('finance-bank-refreshed')));
+            const record = {id: row.id, revision: row.revision, bankId: row.bank_id};
+            let cards = null;
+            if (row.bank_id === 'POSTBANK' && window.postbankCards) {
+              cards = document.createElement('div');
+              content.append(cards);
+              window.postbankCards.bind(cards, record,
+                () => document.dispatchEvent(new CustomEvent('finance-bank-refreshed')));
+            }
+            window.postbankTransactions.bind(source, record,
+              () => document.dispatchEvent(new CustomEvent('finance-bank-refreshed')),
+              accounts => {
+                if (cards && window.postbankCards?.setSourceAccounts)
+                  window.postbankCards.setSourceAccounts(cards, record, accounts);
+              });
           } else if (row.bank_id === 'ING') {
             message(content, 'ING-Anbindung per QR-Login ist noch nicht eingerichtet. Für diesen Weg wird eine separate Bankanbindung benötigt.');
           } else {

@@ -34,6 +34,8 @@ from .server_balance_jobs import ServerBalanceJobs
 from .server_transactions_gateway import ServerTransactionsGateway
 from .server_postbank_jobs import ServerPostbankJobs
 from .server_bank_refresh import ServerBankRefresh
+from .server_card_gateway import ServerCardGateway
+from .server_cards import ServerCards
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -727,6 +729,13 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     if administration is not None else None)
     bank_refresh = (ServerBankRefresh(postbank_jobs, administration, app.database)
                     if administration is not None else None)
+    server_cards = (ServerCards(administration, ServerCardGateway(administration, bank_product_id))
+                    if administration is not None else None)
+    if administration is not None:
+        def cleanup_bank_connections(connections):
+            server_cards.cleanup_connections(connections)
+            server_banking.cleanup_connections(connections)
+        administration.before_bank_revoke = cleanup_bank_connections
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -981,6 +990,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/server-banking.css': ('server-banking.css', 'text/css; charset=utf-8'),
                       '/postbank-transactions.js': ('postbank-transactions.js', 'text/javascript; charset=utf-8'),
                       '/postbank-transactions.css': ('postbank-transactions.css', 'text/css; charset=utf-8'),
+                      '/postbank-cards.js': ('postbank-cards.js', 'text/javascript; charset=utf-8'),
+                      '/postbank-cards.css': ('postbank-cards.css', 'text/css; charset=utf-8'),
                       '/bank-refresh.js': ('bank-refresh.js', 'text/javascript; charset=utf-8'),
                       '/bank-refresh.css': ('bank-refresh.css', 'text/css; charset=utf-8'),
                       '/brand-adobe.ico': ('brand-adobe.ico', 'image/x-icon'),
@@ -1376,6 +1387,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     return self.reply(200, bank_refresh.start(self.management_user, data))
                 if action == 'bank-refresh-state':
                     return self.reply(200, bank_refresh.state(self.management_user, data))
+                if action in {'card-state', 'card-save', 'card-delete', 'card-read', 'card-read-state'}:
+                    return self.reply(200, server_cards.dispatch(self.management_user, action, data))
                 result = administration.change(self.management_user, action, data)
                 return self.reply(200, result if result.get('removed') else {'enabled': True, **result})
             return self.reply(200, app.action(urlsplit(self.path).path, data))

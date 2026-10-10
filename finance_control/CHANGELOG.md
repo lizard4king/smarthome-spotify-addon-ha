@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.30
+
+- Add direct period refresh for Postbank and ING checking and savings accounts; NASPA remains checking-only. Multiple explicit account bindings can share one login, with status and cooldown shown per account.
+- Add owner-bound Mastercard C.12 setup and asynchronous read-only transaction retrieval with encrypted card credentials and masked card numbers.
+- Keep card retrieval separate from ledger imports and persistent balance overview until direct delivery is reconciled against existing card transactions and billing controls. Practical acceptance for additional accounts remains pending.
+
 ## 0.2.29
 
 - Add a controlled one-time source switch for uniquely matched legacy bookings; display text differences side by side and require an additional explicit confirmation.
