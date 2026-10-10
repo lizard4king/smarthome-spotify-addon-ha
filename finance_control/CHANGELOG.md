@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.31
+
+- Preserve fixed, non-sensitive error stages and categories in standalone balance reads.
+- Keep successful balances when an individual account does not support balance reads or returns invalid balance data; authentication and transport failures still stop the request.
+- Show an explicit recovery message when the bookings renderer or its data is unavailable, instead of silently leaving the workspace blank.
+- Run the standalone server-banking UI regression contract in the standard CI suite.
+
 ## 0.2.30
 
 - Add direct period refresh for Postbank and ING checking and savings accounts; NASPA remains checking-only. Multiple explicit account bindings can share one login, with status and cooldown shown per account.

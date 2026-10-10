@@ -5,9 +5,36 @@ let cockpitDataGeneration = 0;
 let cockpitFeaturesReady = document.readyState === 'complete';
 const cockpitAreaLoaded = new Map();
 const cockpitAreaLoading = new Map();
+const cockpitDashboardErrors = new Map();
 
 function cockpitAreaKey(id) {
   return ['planning', 'scenarios'].includes(id) ? 'planning' : id;
+}
+
+function cockpitDashboardFailure(id, error) {
+  const text = `Dieser Bereich konnte nicht angezeigt werden: ${error.message} Bitte lade die Seite erneut.`;
+  cockpitDashboardErrors.set(id, text);
+  const root = $(id === 'category-outflows' ? 'category-outflows-root' : 'dashboard-root') || $(id);
+  if (root) {
+    const notice = document.createElement('p');
+    notice.className = 'fd-note';
+    notice.setAttribute('role', 'alert');
+    notice.textContent = text;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = 'Seite erneut laden';
+    retry.addEventListener('click', () => window.location.reload());
+    root.replaceChildren(notice, retry);
+  }
+  if ($('message') && cockpitAreaKey(location.hash.slice(1)) === id) message(text, true);
+}
+
+function cockpitRenderDashboard(id) {
+  if (typeof window.financeDashboardRender !== 'function')
+    throw new Error('Die Buchungsansicht ist nicht verfügbar.');
+  window.financeDashboardRender(state.dashboard, id);
+  if ($('message')?.textContent === cockpitDashboardErrors.get(id)) message('');
+  cockpitDashboardErrors.delete(id);
 }
 
 async function cockpitLoadArea(id, {force = false} = {}) {
@@ -17,10 +44,10 @@ async function cockpitLoadArea(id, {force = false} = {}) {
   if (!force && cockpitAreaLoaded.get(key) === cockpitDataGeneration) return true;
   const loaders = {
     dashboard: async () => {
-      if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard);
+      cockpitRenderDashboard('dashboard');
       if (typeof window.financeBankRefresh?.activate === 'function') void window.financeBankRefresh.activate();
     },
-    'category-outflows': async () => { if (typeof window.financeDashboardRender === 'function') window.financeDashboardRender(state.dashboard, 'category-outflows'); },
+    'category-outflows': async () => { cockpitRenderDashboard('category-outflows'); },
     purchases: async () => { if (typeof window.financePurchasesLoad === 'function') await window.financePurchasesLoad(); },
     administration: async () => { if (typeof window.administrationLoad === 'function') await window.administrationLoad(); },
     'plan-actual': async reload => {
@@ -67,7 +94,10 @@ async function cockpitLoadArea(id, {force = false} = {}) {
     } while (state?.csrf);
     return false;
   }).catch(error => {
-    if (cockpitAreaKey(location.hash.slice(1)) === key)
+    if (['dashboard', 'category-outflows'].includes(key)) {
+      cockpitAreaLoaded.delete(key);
+      cockpitDashboardFailure(key, error);
+    } else if (cockpitAreaKey(location.hash.slice(1)) === key)
       message(`Dieser Bereich konnte nicht geladen werden: ${error.message}`, true);
     return false;
   }).finally(() => cockpitAreaLoading.delete(key));

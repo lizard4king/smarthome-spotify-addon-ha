@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.31` preserves safe balance-read diagnostics and isolates unsupported
+or invalid individual-account balances. Authentication and transport failures
+remain aborting. Missing bookings views show a recovery message rather than a
+silent blank page. Practical additional-account acceptance remains separate.
+
 Version `0.2.30` adds direct period refresh for Postbank and ING checking and
 savings accounts and a separate owner-bound Mastercard C.12 setup with
 asynchronous read-only transaction retrieval. Additional-account and card
