@@ -380,13 +380,29 @@ class ServerBankRefresh:
                     token = result.get('review_token')
                     if result.get('status') != 'preview' or type(token) is not str:
                         raise _RefreshError('invalid_bank_result')
+                    covered_until = result.get('as_of')
+                    try:
+                        covered_date = date.fromisoformat(covered_until)
+                    except (TypeError, ValueError):
+                        raise _RefreshError('invalid_bank_result') from None
+                    if (type(covered_until) is not str
+                            or covered_date.isoformat() != covered_until
+                            or result.get('month_start') != month_start
+                            or not month_start <= covered_until <= as_of):
+                        raise _RefreshError('invalid_bank_result')
                     committed = self.jobs.commit(actor, {'job_id': started['job_id'],
                                                          'review_token': token, 'confirmed': True})
                     if (type(committed) is not dict or committed.get('status') != 'imported'
                             or type(committed.get('inserted')) is not int
-                            or committed['inserted'] < 0):
+                            or committed['inserted'] < 0
+                            or committed.get('as_of') != covered_until):
                         raise _RefreshError('invalid_bank_result')
                     inserted += committed['inserted']
+                    break
+                # A bank can close the returned statement before the requested
+                # date. Keep that actual checkpoint and retry the same month;
+                # never treat it as a completed month or skip into the next one.
+                if covered_until < as_of:
                     break
             if self.jobs._check(actor, row['id'], row['connection_revision']) != owner:
                 raise _RefreshError('stale_revision')

@@ -106,7 +106,8 @@ def _source_matches(source, account):
         return False
     parts = source.split('/')
     return (source in (account.iban, account.accountnumber)
-            or (len(parts) == 2 and parts[0] == account.blz
+            or (len(parts) == 2 and type(account.accountnumber) is str
+                and bool(account.accountnumber) and parts[0] == account.blz
                 and parts[1].lstrip('0') == account.accountnumber.lstrip('0')))
 
 
@@ -142,11 +143,11 @@ def _monthly(snapshot, account, start, end, bank_id):
 def _period(snapshot, account, start, end, bank_id):
     validate_period(snapshot)
     if (snapshot.source_profile != bank_id or not _source_matches(snapshot.source_account, account)
-            or snapshot.month_start != start or snapshot.as_of != end
+            or snapshot.month_start != start or not start <= snapshot.as_of <= end
             or len(snapshot.rows) > _MAX_ROWS):
         raise ValueError('period')
     return {'source_profile': bank_id, 'source_account': snapshot.source_account,
-            'month_start': start.isoformat(), 'as_of': end.isoformat(),
+            'month_start': start.isoformat(), 'as_of': snapshot.as_of.isoformat(),
             'opening_date': snapshot.opening_date.isoformat(),
             'closing_date': snapshot.closing_date.isoformat(),
             'opening_balance': _cash(snapshot.opening_balance),
@@ -262,7 +263,8 @@ def run_request(request, vault_factory, reader_factory):
         stage = 'balance'
         balance = _balance(reader.read(ReadOperation.BALANCE, account))
         balance['amount'] = _cash(Decimal(balance['amount']))
-        if balance['currency'] != period['currency'] or not end <= _date(balance['booked_on']) <= date.today():
+        if (balance['currency'] != period['currency']
+                or not _date(period['as_of']) <= _date(balance['booked_on']) <= date.today()):
             raise ValueError('balance')
         return {'status': 'ok', 'monthly': monthly, 'period': period, 'balance': balance}
     except BankReadError as error:

@@ -204,7 +204,8 @@ def parse_bank_period(raw: bytes, *, source_profile: str, start: date, end: date
         _fail()
     (source_account, _number), pages = groups[0]
     first, last = pages[0], pages[-1]
-    if first[3] > start or last[4] != end:
+    actual_end = last[4]
+    if first[3] > start or not start <= actual_end <= end:
         _fail()
 
     normalized_pages = _normalize(raw)
@@ -236,7 +237,7 @@ def parse_bank_period(raw: bytes, *, source_profile: str, start: date, end: date
             _fail()
         if (type(amount) is not Decimal or booked_on != validated.booked_on
                 or amount != validated.amount or row_currency != validated.currency
-                or not start <= booked_on <= end):
+                or not start <= booked_on <= actual_end):
             _fail()
 
         applicant = _optional_text(data, 'applicant_name')
@@ -252,7 +253,7 @@ def parse_bank_period(raw: bytes, *, source_profile: str, start: date, end: date
         rows.append(PeriodRow(booked_on, value_on, amount, row_currency,
                               applicant or recipient, description, booking_text))
 
-    snapshot = PeriodSnapshot(source_profile, source_account, start, end, first[3], last[4],
+    snapshot = PeriodSnapshot(source_profile, source_account, start, actual_end, first[3], actual_end,
                               first[5], last[6], first[7], tuple(rows))
     return validate_period(snapshot)
 
