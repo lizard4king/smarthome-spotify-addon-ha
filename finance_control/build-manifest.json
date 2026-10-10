@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "8d910830d616998aae89c0d0b4c59298430984f031074d53b3ea6b6644458cdd",
-  "addon_version": "0.2.35",
+  "addon_tree_sha256": "aa4a302a7eac6520fef5612c6c791e69dc4e0ded483fafaefaaecacf5090d860",
+  "addon_version": "0.2.36",
   "deployment_files": {
-    "Dockerfile": "3c475dd7aecb498e1e9c789a4f964ee72b9a3b4195513c2e753c8e4d516010a7",
-    "README.md": "46975bc11eaa5c9ac95d68abd7ea4e57b8bd4feb6e6c0e8b8d853d928458b8e9",
+    "Dockerfile": "a287ea5ac5fa5bd72bf4fccc91cbab53194654e65448f1afc55a2e4caded77ec",
+    "README.md": "71f1f52d5dae2a2942828d64266db8773625d7d1cc5c45ac6843c5a90d9cd69e",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "38ee711b8fa45df35cb4f3e8cb2af7a05455d1b224fc861d6aa0170fec638c63",
+    "config.yaml": "8e0f73e5f1b8f8087b7ac9489c6b4d35e9c980461292bea9f714ec6f27c470b2",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "44512edbd8899d4361fcd45b5db901954def3fdff41bced9a7509f65ced9aebd"
   },
@@ -51,7 +51,7 @@
     "connectors/server_balance_worker.py": "5dbfb6f8358237889aa51e444b4367a5eb3fc8a534a8d083511c171d2eba89aa",
     "connectors/server_bank_rules.py": "e71536afc3aaf0faa8ec81deebff8442de1d5b56a920a486de8ad7d558579f73",
     "connectors/server_card_worker.py": "4582b6bd5676c9e3802cd72ac2001b7610f75a84881a63d86bc22da769cc941c",
-    "connectors/server_transactions_worker.py": "95f4345b87897db79d9cf8b37dcaa642a1a9691394a2a554cf075bdd0d759911",
+    "connectors/server_transactions_worker.py": "26e38b1f5a2e1ae057529faba7f38a6dfe15250fe9740db6253b861a3efc5071",
     "connectors/synthetic.py": "15350c66e7749544ccc7e454f7c562495645968d3b89560e67d88db2e6b20edd",
     "core.py": "1dcbae4cb29da8f32dd0a93be67396b9341c5c43ec698b4c8da8089bc6538037",
     "current_balances.py": "f3ea8cba399ef1cd1e0ecb3598253a41a25c85a368d97543e4049863ae143c3f",
@@ -158,8 +158,8 @@
     "server_banking.py": "6826c07c7c911eca64a889170c9f6d36f7b6f620df17303b21fc7504eb6cb8e8",
     "server_card_gateway.py": "6d5eb134050314a45f6ac2b285f7e53898f034b727c94faa40d363fe04fa0a99",
     "server_cards.py": "1863fd6611a2ed3b4bf8594b9d5f4859b6d45f0e04fe8c5154fc5781a2151c39",
-    "server_postbank_jobs.py": "c232b8e945316fc246c129d08accf592a94bea1b2bd40467e780a0db8bb92c05",
-    "server_transactions_gateway.py": "552e3ecfcaeb0c06481babc079c8cfd78c3ac7dcdb5778e60a07a30becb56857",
+    "server_postbank_jobs.py": "52cd8f39e3273c7827c01fac9d49827ac6b689c23b380b7c03f60db9173752bd",
+    "server_transactions_gateway.py": "07f46f49ea0f01afd6025602878f62b66a43ffe8aed9cf511b4423bc8a8f59bc",
     "split_preview.py": "f49bb7a27592b1183dbb9cb6565917f495ad445d2d2134aa71ea4377d2344e61",
     "statement_archive.py": "a5f37e88e5a3d782cf246bf907d8708720d90c716536c1aff7bea5ab18ee0ca2",
     "statement_import.py": "36dadc2d0fda02471933483b8f18237af7a0ad35ee391acbcda43ec09a2d05f9",
@@ -430,8 +430,8 @@
     "static/plan_actual.js": "fea50161b6e7653e202d3aabf3e3bc8f75e63c89197580f075a570bfc643ddeb",
     "static/postbank-cards.css": "d88d70dfb12490f3962e8b68ca825ec9f9207f66d09821909a5fb0e4baee44b4",
     "static/postbank-cards.js": "7fc4376e7dd47cb24d0f780e21e54a3350f81f8009ca818f8b2fbd605e4ad26a",
-    "static/postbank-transactions.css": "1283028dd65d10136b62461e9d6e236816352040449671f748358abc5ec8fb4c",
-    "static/postbank-transactions.js": "f3e40e072e1c8b6bd6c92195744b8d3e2167afe3476cf6d65cd7f62b7ee73b37",
+    "static/postbank-transactions.css": "4cf8b6ef9faadd6ac2d257605d3396699ec97f436b00f7554bc0bab85a308ade",
+    "static/postbank-transactions.js": "257b7e131315f5b55d68907b6829740c0fb0559431fad3f8320b76b1cfdce2b6",
     "static/purchases.css": "07dd9af3e73e89e083da44941878a8a377012c0ef755e2fa308a25993b484b16",
     "static/purchases.js": "3e5753837a6bac64d2c1367217986ec05ca22e802e7ee7f77946248123348089",
     "static/server-banking.css": "a693cdd1bba6e935b046deeff8663156d718455895a674e5067bc20301dbfc0e",
@@ -446,6 +446,6 @@
     "web.py": "20d9ef34288879a900555402d79bc7b337caa595b390683ddfd288e48c906e2c"
   },
   "schema_version": 1,
-  "source_commit": "9503ad5e7e2562dbfa1668a8b932a327203b971d",
-  "source_tree_sha256": "3ff623ac59103bcda0f5bc12816b8cd7a6f9a8eab88fcf60f284a15b526ea26e"
+  "source_commit": "93deaa6fc8dfdc647359c324c2e96d08b6a14785",
+  "source_tree_sha256": "227dc1d3649c5ee4fcd34a6517141501ab332d435ada0f8ea49f8e1f66232cfb"
 }

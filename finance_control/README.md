@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.36` adds a separate manual backfill for one fully closed historical
+ING EUR savings month within 366 days. Full prior-month and target-month controls,
+explicit import review, owner/revision checks, server backup and atomic import
+remain mandatory. Partial bank coverage is rejected. The read-only check stays
+separate; normal 90-day import and refresh limits remain unchanged. Historical
+months are selected and confirmed individually, without opening balance changes.
+
 Version `0.2.35` adds a separate, owner-bound historical ING month check for
 explicitly selected savings targets. It displays bounded booked transactions
 and exact totals per currency without importing or changing balances. Empty
