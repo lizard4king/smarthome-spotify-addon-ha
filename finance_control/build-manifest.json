@@ -428,7 +428,7 @@
     "static/budget.js": "8b6d6cb28791534fe6ae66f72ac71eff22bec2f9a14c44eb2f536fcebb79b37c",
     "static/classification.js": "a72e82bef70bf2e343b0fcfab7eb9b7c6cb9eb530bb4dc0f83234f5edb0af19b",
     "static/classification_mobile.css": "b5aa35f4a1cbfa496ea24b0651f4a19fad35c3b780151c466ce3b33708477e6f",
-    "static/cockpit.css": "b2b585b39f2c61246de9e4ff4d3f60bb421b2e6919c8a4842ab3e59bdc4ec7c3",
+    "static/cockpit.css": "ae8ece496130ac8d5924395b1f376c6aa0ce7873aeb99889d95d55c0ae62cb7f",
     "static/contracts.css": "0e01060c00c878e4dd981ae1b0d6cc8b2aa9eed9126ea2b97edb5decd4d32b87",
     "static/contracts.js": "b016315125424aa5b33d218ccc59b907bb000ac45c9f410979dbc3548d657f58",
     "static/counterparties.css": "cd0ac1661fbe4c0d6583314444931af7df2f4174be4f254e003f6f00a1b60502",
@@ -467,6 +467,6 @@
     "web.py": "25f024bf0ff69cc692b78a1985039334f397219aa44a969a4a5e94029c5f802a"
   },
   "schema_version": 1,
-  "source_commit": "384b084271814e0050101e870531c7c1674ab89b",
-  "source_tree_sha256": "b4541ba5247f52590054e095362c803d18fad8d5e8daefa393cb1c29232d12fe"
+  "source_commit": "935317cb4107126f92810c198cb32286fff5e53f",
+  "source_tree_sha256": "491685b37cb91dcc3c039d3fa16e60cbe9d707ee0db9b35520edae7e6863a67c"
 }

@@ -80,4 +80,5 @@ dialog{max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);overflow:auto
 .fd-selected-balance>*{min-width:0;overflow-wrap:anywhere}
 .fd-booking-table caption{overflow-wrap:anywhere}
 .fd-root .fd-hero{color:var(--fc-text)}
+.fd-root .fd-hero-sub{color:var(--fc-muted)}
 .fc-bank-tools{background:var(--fc-surface);border:1px solid var(--fc-border);border-radius:16px;padding:12px 16px;margin:16px 0}
