@@ -271,7 +271,7 @@
       row.append(node('strong', `${String(amount)} ${currency}`));
       const types = {CLBD: 'Gebucht', ITBD: 'Gebucht', CLAV: 'Verfügbar', ITAV: 'Verfügbar'};
       const typeLabel = Object.hasOwn(types, type) ? `${types[type]} · ${type}`
-        : safe(balance?.name, 80) || (type ? `Saldoart ${type}` : 'Saldoart nicht ausgewiesen');
+        : [safe(balance?.name, 80), type ? `Saldoart ${type}` : 'Saldoart nicht ausgewiesen'].filter(Boolean).join(' · ');
       row.append(node('small', typeLabel));
       const referenceDate = safe(balance?.reference_date, 32);
       if (referenceDate) row.append(node('small', `Stichtag: ${referenceDate}`));
@@ -284,8 +284,10 @@
     for (const tx of (Array.isArray(result.transactions) ? result.transactions : [])) {
       const row = node('article', '', 'pb-row');
       row.append(node('strong', transactionLabel(tx)));
-      const date = safe(tx?.booking_date, 32) || safe(tx?.booking_date_time, 40) || safe(tx?.value_date, 32);
-      if (date) row.append(node('small', date));
+      const bookingDate = safe(tx?.booking_date, 32) || safe(tx?.booking_date_time, 40) || safe(tx?.value_date, 32);
+      const transactionDate = safe(tx?.transaction_date, 32);
+      if (bookingDate) row.append(node('small', bookingDate));
+      else if (transactionDate) row.append(node('small', `Transaktionsdatum: ${transactionDate}`));
       const amount = tx?.transaction_amount;
       const signed = signedAmount(amount?.amount, tx?.credit_debit_indicator);
       if (signed && safe(amount?.currency, 12)) {
