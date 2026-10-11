@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.42` adds a separate personal Klarna setup and owner-bound consent
+through Enable Banking. Application keys and session metadata remain in the
+excluded encrypted server vault. Balances and transactions can be previewed on
+the bookings page without ledger writes. Consumer invoices and installment plans
+are not established by this AIS path. Actual provider coverage requires the
+owner's account linking and consent. See [Klarna setup](../../docs/klarna-banking.md).
+
 Version `0.2.41` lets finite startup request bursts wait for a free HTTP worker
 instead of immediately dropping frontend assets. It retains eight active workers,
 uses a fixed listen backlog of 64, and bounds an accepted request's wait to five

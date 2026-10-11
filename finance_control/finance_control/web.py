@@ -37,6 +37,9 @@ from .server_bank_refresh import ServerBankRefresh
 from .server_card_gateway import ServerCardGateway
 from .server_cards import ServerCards
 from .paypal_banking import PayPalBanking
+from .klarna_banking import KlarnaBanking
+from .security.personal_vault_cleanup import PersonalVaultCleanup
+from .security.server_vault import ServerVaultError
 from .paypal_credit import PayPalCredit
 
 MAX_REQUEST = 2 * 1024 * 1024
@@ -738,13 +741,17 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
     server_cards = (ServerCards(administration, ServerCardGateway(administration, bank_product_id))
                     if administration is not None else None)
     paypal_banking = PayPalBanking(administration) if administration is not None else None
+    klarna_banking = KlarnaBanking(administration) if administration is not None else None
     paypal_credit = PayPalCredit(administration) if administration is not None else None
     if administration is not None:
+        personal_cleanup = PersonalVaultCleanup(administration)
+        personal_cleanup.recover()
         def cleanup_bank_connections(connections):
             server_cards.cleanup_connections(connections)
             server_banking.cleanup_connections(connections)
         administration.before_bank_revoke = cleanup_bank_connections
-        administration.before_user_revoke = paypal_banking.cleanup_owner
+        administration.user_revoke_context = personal_cleanup.revoke
+        administration.before_user_restore = personal_cleanup.before_restore
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -867,6 +874,24 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 'paypal_invalid_return': 'Die Rückkehr von Enable Banking ist ungültig. Bitte die Freigabe neu starten.',
                 'paypal_return_expired': 'Diese PayPal-Rückkehr ist abgelaufen oder wurde bereits verarbeitet. Bitte den Status in der Verwaltung prüfen.',
                 'paypal_consent_failed': 'Die PayPal-Freigabe wurde nicht abgeschlossen. Bitte erneut starten.',
+                'klarna_https_required': 'Klarna wird über die geschützte HTTPS-Adresse des Cockpits eingerichtet.',
+                'klarna_unsupported': 'Klarna wird nur auf der Linux-Serverinstallation unterstützt.',
+                'klarna_setup_required': 'Bitte zuerst das eigene Klarna-Zertifikat und Deine Enable-Banking-App-ID einrichten.',
+                'klarna_application_not_ready': 'Enable Banking meldet die Klarna-Anwendung noch nicht als bereit. Prüfe PRODUCTION, AIS, die Rückkehradresse und die Verknüpfung Deiner eigenen Konten.',
+                'klarna_country_unavailable': 'Klarna Deutschland ist im aktuellen persönlichen Anbieterverzeichnis nicht eindeutig verfügbar.',
+                'klarna_invalid_country': 'Diese Einrichtung unterstützt Klarna Deutschland.',
+                'klarna_invalid_id': 'Die App-ID oder Konto-ID hat nicht das erwartete Format.',
+                'klarna_disconnect_required': 'Bitte zuerst die bestehende Klarna-Einrichtung entfernen.',
+                'klarna_origin_changed': 'Die gespeicherte Klarna-Rückkehradresse gehört zu einer anderen Cockpit-Adresse. Bitte den Zugang unter der bisherigen Adresse entfernen.',
+                'klarna_access_expired': 'Die Klarna-Freigabe fehlt, ist abgelaufen oder wurde geändert. Bitte erneut freigeben.',
+                'klarna_provider_failed': 'Enable Banking konnte den Klarna-Abruf nicht abschließen. Es wurden keine Buchungen importiert.',
+                'klarna_invalid_response': 'Die Klarna-Antwort entspricht nicht dem erwarteten Format. Es wurden keine Buchungen importiert.',
+                'klarna_personal_only': 'Diese Klarna-Einrichtung unterstützt ausschließlich persönliche Konten.',
+                'klarna_unavailable': 'Die sichere Klarna-Einrichtung ist derzeit nicht verfügbar.',
+                'klarna_invalid_return': 'Die Klarna-Rückkehr ist ungültig. Bitte die Freigabe neu starten.',
+                'klarna_return_expired': 'Diese Klarna-Rückkehr ist abgelaufen oder wurde bereits verarbeitet. Bitte den Status in der Verwaltung prüfen.',
+                'klarna_consent_failed': 'Die Klarna-Freigabe wurde nicht abgeschlossen. Bitte erneut starten.',
+                'personal_cleanup_recovery_required': 'Die sichere Zugangsbereinigung benötigt eine Wiederherstellung. Der Benutzerstatus wurde nicht geändert. Bitte den Serverzustand prüfen.',
                 'paypal_credit_invalid': 'Kreditstand prüfen: Stichtag, Beträge, Zinsen und vollständiger Ratenplan müssen zusammenpassen. Unbekannte Kreditsumme leer lassen.',
                 'paypal_credit_stale': 'Dieser Kreditstand wurde inzwischen aktualisiert. Bitte neu laden.',
                 'invalid_period': 'Bitte einen gültigen Zeitraum von höchstens 90 Tagen bis heute wählen.',
@@ -1008,11 +1033,15 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             if not self.require_identity():
                 return
             url = urlsplit(self.path)
-            if url.path == '/paypal-return':
-                if paypal_banking is None:
+            if url.path in ('/paypal-return', '/klarna-return'):
+                personal_banking = paypal_banking if url.path == '/paypal-return' else klarna_banking
+                if personal_banking is None:
                     return self.management_error(AdministrationError('administration_disabled', 403))
                 try:
-                    paypal_banking.complete(self.management_user, url.query)
+                    personal_cleanup.recover()
+                    personal_banking.complete(self.management_user, url.query)
+                except ServerVaultError:
+                    return self.management_error(AdministrationError('personal_cleanup_recovery_required', 503))
                 except AdministrationError as error:
                     return self.management_error(error)
                 self.send_response(303)
@@ -1024,6 +1053,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 self.end_headers()
                 return
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
+                      '/klarna-banking.js': ('klarna-banking.js', 'text/javascript; charset=utf-8'),
+                      '/klarna-banking.css': ('klarna-banking.css', 'text/css; charset=utf-8'),
                       '/paypal-banking.js': ('paypal-banking.js', 'text/javascript; charset=utf-8'),
                       '/paypal-banking.css': ('paypal-banking.css', 'text/css; charset=utf-8'),
                       '/paypal-credit.js': ('paypal-credit.js', 'text/javascript; charset=utf-8'),
@@ -1376,8 +1407,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 data = json.loads(self.rfile.read(size))
                 if not isinstance(data, dict):
                     raise TypeError('Invalid request')
-                if urlsplit(self.path).path.startswith('/api/administration/paypal-'):
-                    # PayPal owns its consent/vault lock and never mutates the
+                if urlsplit(self.path).path.startswith(('/api/administration/paypal-',
+                                                       '/api/administration/klarna-')):
+                    # Personal AIS owns its consent/vault lock and never mutates the
                     # ledger. Provider I/O must not block unrelated cockpit writes.
                     if not self.require_identity(recheck=True):
                         return
@@ -1386,6 +1418,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     if not self.require_identity(recheck=True):
                         return
                     return self.dispatch_action(data)
+            except ServerVaultError:
+                return self.management_error(AdministrationError('personal_cleanup_recovery_required', 503))
             except AdministrationError as error:
                 return self.management_error(error)
             except sqlite3.IntegrityError:
@@ -1424,7 +1458,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 if action.startswith('paypal-credit-'):
                     return self.reply(200, paypal_credit.dispatch(self.management_user, action, data))
                 if action.startswith('paypal-'):
+                    personal_cleanup.recover()
                     return self.reply(200, paypal_banking.dispatch(
+                        self.management_user, action, data, self.headers.get('Origin', '')))
+                if action.startswith('klarna-'):
+                    personal_cleanup.recover()
+                    return self.reply(200, klarna_banking.dispatch(
                         self.management_user, action, data, self.headers.get('Origin', '')))
                 if action in {'bank-credentials-state', 'bank-credentials-save', 'bank-credentials-delete'}:
                     return self.reply(200, server_banking.dispatch(self.management_user, action, data))

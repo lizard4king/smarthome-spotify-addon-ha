@@ -1,20 +1,20 @@
 {
-  "addon_tree_sha256": "a55ab7672fb73d9c0a35260112d6d3bddeae33389bb9ed20b01ebe10a047d59e",
-  "addon_version": "0.2.41",
+  "addon_tree_sha256": "fb1f3bf547b01fd595d95cfd3531518159ea474c4fbe2cb59fd7bff5a16f4013",
+  "addon_version": "0.2.42",
   "deployment_files": {
-    "Dockerfile": "7a6b5b47107b3d5e2ec4d0dc1047cc98e05e7a3cb8e1af9aba302d004b63e4ee",
-    "README.md": "47fc5fc20714c2269f28f1887ddcf4086b864d3a5340442b5537e3724f6f3de9",
+    "Dockerfile": "138ca5854899e8ab0177f19202d80201a647234cc51601aa4459c39598150c67",
+    "README.md": "3337c9b09653344abc0c4f92433224d13a36f5b6c59fa3dadbb2ceaa0d190a46",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "5f289f1d73f0baace1359d6020d2434f025ee0ef5b38c18da3ebefeb8e43d01d",
+    "config.yaml": "ebd931d133c14d07d69ba82ea3cbcc6e2ef124a6940e6db1b1abb55145ca46b5",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
-    "vault_selftest.py": "e6d1373436e7a64b5b8502923bab7b826e01e52bc43ca86b8b0291eae45ec7cd"
+    "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
   "files": {
     "__init__.py": "bb141465318f7d08dfe0a6b2ae303e3663cd58561e602104264bd605bcedf884",
     "__main__.py": "e28accd3eb8f1f412412776af868df625e217b12d5a0a940d1b6f5cf6263a78d",
     "access_identity.py": "6c5b51c645b4bc53892f7105217c389ba80c1f2304aa45f6e43aaa3be0dd4aab",
     "account_overview.py": "13c9278a599f11f6083a22147d9b1ccb38ec23560c964688c6a4868121401dcb",
-    "administration.py": "55c1c9abf1e3a5ecd06e09a7667ca418ceca794a72945c6ea2862ecd4d6feae3",
+    "administration.py": "46553243550ead4574f20104191f049608f0321d43ed5ff24df89be7e7512fdd",
     "amazon_mail_import.py": "253dd5d276480bd158514b8c96b243ab36fa47add6fe1795c320766a9c660696",
     "amazon_portability_api.py": "f6e56f34e19e1296a859084e8b3580a46df876482f52497b764c9b2bff699d29",
     "amazon_portability_import.py": "f9580abd479a619b45e80b785926ae61b6d1d14cd8b10bb44bf06d8e51540a5a",
@@ -69,6 +69,7 @@
     "ing_period_import.py": "f094c1630b0499fac22210d0de5faa1045cd87652ad23970371f641000d4ba80",
     "intake_draft.py": "bf2ecad24e167aec62c8e07360759b727dda6afdd43ed3906baf4f1457f325a7",
     "invoice_import.py": "0d046b7c28fa290c32c21cb1feda1af38e899650ea1669f01ef9ac68d07110aa",
+    "klarna_banking.py": "766664619a937df9946d61d73f8830cc722e3f16311591ac01c4d7d6b2996f27",
     "local_model.py": "fa8cf7215db471d19952552c8cfc0379b8921fa71249c57b727393c38807c958",
     "mail_booking_filter.py": "78efd89e3d2d2e656edebe91e9ae0bb70e7be7f222a34878fae400b8242a774e",
     "mail_inventory.py": "da9ebc25c59415e6a89c732b95e7e054d8ff49b83d9509e494b4eec78a9898b4",
@@ -154,9 +155,11 @@
     "security/api_token.py": "d3fe650de9362ff5a153baed1b8efa41360981a0905f04b1596db1e89440ce25",
     "security/credentials.py": "7fc19326d7931e6f51e5f06dac3adf657463ac2f9f61a161ed35975d00c1af2e",
     "security/interactive.py": "d45303cca74e46a98d147a6e7613b91fd1f1f6b3cc329461e18d28743ce819eb",
+    "security/personal_vault_cleanup.py": "3367a8b3bb837ea2ef9273ce74565683f71a2c9a46f61c4b2c57e3909f5b630b",
     "security/server_card_store.py": "fb9a4e46edfaacfd2e0399bcd707c08447f0d13246dcd9febafe4162b539e771",
-    "security/server_paypal_store.py": "8e9f15fb10fe6dc991b87ff61a746ef33680b61ca67267a3cc6644dfdc1a075e",
-    "security/server_vault.py": "21b150771a34751be2aef2a753858eb50a8092f8aa607f0ceb35e6136e309af8",
+    "security/server_klarna_store.py": "ebce7218491bd496a75c04d51c9dd93ce8528e37a9d5bcecc638ef8481591f93",
+    "security/server_paypal_store.py": "997926de031db7f82b281ea532990ecdc634a0d7ea8e843b021f73015198f75d",
+    "security/server_vault.py": "1b9c18e80f41fbbc83fd136b76c603a3bf626a501525cdb643433aa02c9cfa7c",
     "server_balance_gateway.py": "4640478f40563b3ab45270e4f22bcab4b2fa1099029fa90ad61bf06a124fc784",
     "server_balance_jobs.py": "3da5a7490a76d8bb21c4156d844521fed66f3c54b4e0368d9ed82d83694fd2f3",
     "server_bank_refresh.py": "6a9c674c5ed17b2d8a4b2310e0da9fcde34b2aa4811dd853000887dc41056251",
@@ -170,7 +173,7 @@
     "statement_import.py": "36dadc2d0fda02471933483b8f18237af7a0ad35ee391acbcda43ec09a2d05f9",
     "statement_model.py": "1ae3cbbd3b54acc473522d823e52bac72304b7b181375513743e61fe1da83931",
     "static/administration.css": "4f0df018f6a774ecc62dcf3320cb449bc1c419502db2597d89df012410c277e5",
-    "static/administration.js": "f51970bb35ad9f9565ba70b341eaae8f7f8510db0b0080db611dcd6197077ae5",
+    "static/administration.js": "f4d3e04806c9d4284e54707d859ce099dce48b4c2190c92eb42d3f8ca32645f6",
     "static/analytics.js": "c5f2309bba6f3d2c26d9bb4ab28a5776c120cd26f4f5c5a0eb0045473d3de2af",
     "static/app.js": "8d8671c5578490553f844b0d69c67881069c692e4361c9430a27d84a8f9075a7",
     "static/approvals.js": "b2ae174b568681202a90312f91a0509771052044b4164ae213ad37609dee8029",
@@ -427,8 +430,10 @@
     "static/dashboard.css": "4fbf2e37185bb3931341721cee6f54fb32c75f1a58c512258d47d9fe85f0c11b",
     "static/dashboard.js": "c7031cb2fc10cb33e774c36554e9e824ab26a749828aebf1617d24965db4b131",
     "static/finanzguru.js": "6fc8e893cda929179408883fc4a44ce66fea07138a55d63cae12371629ede1a3",
-    "static/index.html": "23ada82b7b612170c1b4151042b838b4f7608a54dcc6825e3e7eb202cfba6cec",
+    "static/index.html": "769a8dc455adf074335d7cadd4ce5c6e9b02dd21311616d5e9cc38f1f13b1b65",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
+    "static/klarna-banking.css": "fcc4a31614dda44f905ab0f5b9b654ce3a0e77b5969011e9eb5f058db3a85665",
+    "static/klarna-banking.js": "b36af5b19a1b9c63b20be09807c5024445b23bac7db115f13b8697bfd0676cf9",
     "static/login.css": "e663c739cd6a54eab95e8e74336538ba65fd31fa3e6b432874f403ced09cfbd9",
     "static/lucide-LICENSE.txt": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
@@ -452,9 +457,9 @@
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "1eb55db0d79e7cdbf2d069a204cdd784c097cec7e4c1f76b072ded7b32dc51c9",
     "wealth.py": "4a1ec1dfe05229f64c5b566901962e0fc3932a05b6adc6fcfb9b0960a0e70caf",
-    "web.py": "8f417f5626da3ea4d49cdb81b7e08576ccc98e9c1e687a1c522872e5970fed7a"
+    "web.py": "a02730bbe3bc3877a25638fa1f924e42b0af4c56b62f062bbe6c3aca20c04759"
   },
   "schema_version": 1,
-  "source_commit": "41b6b300546c9d96d7ef251a34e31568ec4bf120",
-  "source_tree_sha256": "68fcea5d48b8a3b62aaea42574388f8ff5a5f4dc8247932a7739ad0f91a79eeb"
+  "source_commit": "2f3674f194b28cd98e11bed34e6476ee396972b5",
+  "source_tree_sha256": "820d407adfda86d8d9f45e55fcd06db039b8441d9a1a8fecf3ada2f87ee97d80"
 }

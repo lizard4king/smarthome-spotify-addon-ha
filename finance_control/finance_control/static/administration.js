@@ -23,6 +23,7 @@
     credentialsRenderSequence += 1;
     byId('adm-server-credentials').replaceChildren();
     byId('adm-paypal-banking')?.replaceChildren();
+    byId('adm-klarna-banking')?.replaceChildren();
   };
   const roleName = role => role === 'admin' ? 'Administrator' : 'Mitglied';
   const bankName = id => administrationState?.banks?.find(bank => bank.id === id)?.name || id;
@@ -111,6 +112,9 @@
     const paypalHost = byId('adm-paypal-banking');
     if (data.enabled && paypalHost && window.PayPalBanking)
       void window.PayPalBanking.renderAdministration(paypalHost);
+    const klarnaHost = byId('adm-klarna-banking');
+    if (data.enabled && klarnaHost && window.KlarnaBanking)
+      void window.KlarnaBanking.renderAdministration(klarnaHost);
     lockMutations();
   }
   async function load() {

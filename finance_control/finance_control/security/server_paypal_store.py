@@ -114,6 +114,7 @@ class ServerPayPalStore:
 
     def load(self, owner):
         with self._vault._locked_directory() as fd:
+            server_vault._check_personal_recovery(fd, owner)
             sealed = server_vault._read_file(fd, self._name(owner))
             if sealed is None:
                 anchor = server_vault._read_file(fd, _ANCHOR_NAME)
@@ -134,6 +135,7 @@ class ServerPayPalStore:
     def save(self, owner, record):
         _payload(record)
         with self._vault._locked_directory() as fd:
+            server_vault._check_personal_recovery(fd, owner)
             key = _checked_key(self._vault, fd, create=True)
             name = self._name(owner)
             previous = server_vault._read_file(fd, name)
@@ -143,6 +145,7 @@ class ServerPayPalStore:
 
     def delete(self, owner):
         with self._vault._locked_directory() as fd:
+            server_vault._check_personal_recovery(fd, owner)
             name = self._name(owner)
             sealed = server_vault._read_file(fd, name)
             if sealed is None:

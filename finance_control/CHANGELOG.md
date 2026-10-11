@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.42
+
+- Add a separate personal Klarna connection through Enable Banking with its own encrypted application keys, owner-bound consent and single-use return state.
+- Show bounded balance and transaction previews on the bookings page; keep account setup in administration and leave the ledger unchanged.
+- State explicitly that account AIS does not provide a verified consumer invoice or installment-plan overview; include isolated Linux vault checks in the image build.
+
 ## 0.2.41
 
 - Queue finite startup request bursts instead of immediately dropping essential frontend assets when all eight HTTP workers are occupied.
