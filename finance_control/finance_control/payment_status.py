@@ -44,6 +44,44 @@ _STATUS_PATTERNS = (
         r'\b(autorisiert|authori[sz]ed|zahlung genehmigt|payment approved|genehmigte zahlung)\b',
         re.IGNORECASE)),
 )
+# These are explicit non-final payment statements, not new event states. A mail
+# can contain a positive subject and a contradictory body, and this bridge has
+# no invoice/rate identity with which to safely separate those statements.
+_NON_FINAL_PAID = re.compile(
+    r'\b(?:nicht|nie|niemals|not|never|teilweise|unvollständig|unvollstaendig|'
+    r'partially|zum\s+teil|in\s+part)\s+'
+    r'(?:(?:vollständig|vollstaendig|komplett|ganz|erfolgreich|fully|completely|'
+    r'successfully|yet|been)\s+){0,3}(?:bezahlt|beglichen|paid)\b|'
+    r'\b(?:zahlung|payment)\s+'
+    r'(?:(?:wurde|wird|ist|war|noch|nur|has|have|been|is|was)\s+){0,4}'
+    r'(?:nicht|nie|niemals|not|never|teilweise|partially|zum\s+teil|in\s+part)\s+'
+    r'(?:(?:vollständig|vollstaendig|komplett|ganz|erfolgreich|fully|completely|'
+    r'successfully|yet|been)\s+){0,3}'
+    r'(?:erfolgreich|abgeschlossen|gesendet|erhalten|completed|successful|sent|received)\b|'
+    r'\b(?:nicht|keine|keinerlei|not|no)\s+(?:zahlung|payment)\s+'
+    r'(?:erfolgreich|abgeschlossen|gesendet|erhalten|completed|successful|sent|received)\b|'
+    r'\bnicht\s+der\s+(?:volle|vollständige|vollstaendige|komplette)\s+'
+    r'(?:betrag|rechnungsbetrag)\s+(?:bezahlt|beglichen)\b|'
+    r'\b(?:nur|lediglich)\s+ein\s+teilbetrag\s+'
+    r'(?:(?:wurde|ist)\s+)?(?:bezahlt|beglichen)\b|'
+    r'\b(?:wurde\s+bezahlt|zahlung\s+(?:erhalten|erfolgreich|abgeschlossen|gesendet))'
+    r'\s*,\s*(?:allerdings|jedoch|aber)\s+nicht\s+'
+    r'(?:vollständig|vollstaendig|der\s+(?:volle|komplette)\s+(?:betrag|rechnungsbetrag))\b|'
+    r'\bpayment\s+(?:completed|successful)\s*,\s*but\s+not\s+in\s+full\b',
+    re.IGNORECASE,
+)
+
+
+# Recognize these failure phrases only with an explicit payment subject. Keep
+# them separate from partial-payment wording; delivery failures are unrelated.
+_FAILED_PAYMENT = re.compile(
+    r'\bzahlung\s+(?:ist\s+)?fehlgeschlagen\b|'
+    r'\bzahlung\s+konnte\s+nicht\s+(?:erfolgreich\s+)?abgeschlossen\s+werden\b|'
+    r'\bnicht\s+erfolgreiche\s+zahlung\b|'
+    r'\bpayment\s+(?:has\s+)?failed\b|'
+    r'\bpayment\s+could\s+not\s+be\s+(?:successfully\s+)?completed\b',
+    re.IGNORECASE,
+)
 
 
 class PaymentStatusError(ValueError):
@@ -110,7 +148,15 @@ def _provider(sender, subject):
 
 
 def _event_statuses(text):
-    return [status for status, pattern in _STATUS_PATTERNS if pattern.search(text)]
+    """Known non-final/failure phrases veto paid for the whole mail.
+
+    Unknown/negated payment text does not create an invented unpaid event. Other
+    independently recognized events (such as payment_plan) are preserved.
+    This is a bounded phrase recognizer, not a general language classifier.
+    """
+    non_final = any(pattern.search(text) for pattern in (_NON_FINAL_PAID, _FAILED_PAYMENT))
+    return [status for status, pattern in _STATUS_PATTERNS
+            if pattern.search(text) and not (status == 'paid' and non_final)]
 
 
 def _events_from_row(row):

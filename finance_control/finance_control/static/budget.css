@@ -143,7 +143,7 @@
 @media(max-width:900px){.plan-actual-due ol,.plan-actual-account-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-actual-tree-row,.plan-actual-tree-row:has(.plan-actual-tree-toggle){grid-template-columns:auto minmax(120px,1fr) repeat(2,minmax(95px,auto))}.plan-actual-tree-group-values{grid-column:2/-1}.plan-actual-tree-row>.plan-actual-state,.plan-actual-tree-row>button.secondary{grid-column:2/-1}}
 @media(max-width:600px){.plan-actual-free-card{grid-template-columns:1fr;padding:18px}.plan-actual-free-card>strong{grid-column:1;grid-row:auto;text-align:left}.plan-actual-free-split{grid-column:1}.plan-actual-surplus-bridge .section-head{display:block}.plan-actual-surplus-steps{grid-template-columns:1fr 1fr}.plan-actual-due ol,.plan-actual-account-grid{grid-template-columns:1fr}.plan-actual-tree-row,.plan-actual-tree-row:has(.plan-actual-tree-toggle){grid-template-columns:auto minmax(0,1fr);gap:6px}.plan-actual-tree-row>*:not(.plan-actual-tree-toggle){grid-column:2}.plan-actual-tree-group-values{grid-column:2}}
 #plan-actual>.section-head h2{margin:0}#plan-actual>.section-head{gap:8px}.plan-actual-controls{display:grid;grid-template-columns:minmax(160px,1fr) minmax(220px,1fr) auto;gap:10px;align-items:end;margin:12px 0}.plan-actual-controls label{margin:0}.plan-actual-controls select{min-width:0;max-width:100%}#plan-actual-status{margin:6px 0;font-size:.8rem;color:#607581}#plan-actual-status.error{color:#a2352a}#plan-actual-data-quality{margin:8px 0;padding:8px 10px;font-size:.82rem}#plan-actual-data-quality details{display:inline-block;margin-left:10px;font-weight:400}#plan-actual-data-quality details[open]{display:block;margin:6px 0 0}#plan-actual-data-quality summary{cursor:pointer}#plan-actual-methods{margin:10px 0}.plan-actual-view-switch{margin:10px 0}.plan-actual-view-help summary{cursor:pointer}.plan-actual-view-switch .check{margin:0}#plan-actual-total-summary{margin:8px 0;padding:10px}#plan-actual-total-summary h3{font-size:1rem}#plan-actual-total-summary summary{font-size:.82rem;cursor:pointer}
-@media(max-width:650px){.plan-actual-controls{grid-template-columns:minmax(0,1fr) auto;gap:8px}.plan-actual-controls>label{grid-column:1/-1}.plan-actual-controls label{font-size:.8rem}.plan-actual-controls select{padding:8px}.plan-actual-controls #plan-actual-load{font-size:.78rem;padding:10px;min-height:44px}.plan-actual-month-navigation button{min-width:44px;min-height:44px;padding:6px}.plan-actual-month-navigation input{font-size:.82rem;padding:8px 4px}#plan-actual-total-summary{padding:8px}.plan-actual-view-switch button{font-size:.82rem}.plan-actual-view-switch .check{font-size:.8rem}}
+@media(max-width:650px){.plan-actual-controls{grid-template-columns:minmax(0,1fr) auto;gap:8px}.plan-actual-controls>label{grid-column:1/-1}.plan-actual-controls label{font-size:.875rem}.plan-actual-controls select{padding:8px;font-size:1rem}.plan-actual-controls #plan-actual-load{font-size:1rem;padding:10px;min-height:44px}.plan-actual-month-navigation button{min-width:44px;min-height:44px;padding:6px}.plan-actual-month-navigation input{font-size:1rem;padding:8px 4px}#plan-actual-total-summary{padding:8px}.plan-actual-view-switch button{font-size:1rem}.plan-actual-view-switch .check{font-size:.875rem}}
 @media(max-width:650px){.plan-actual-month-control,.plan-actual-controls #plan-actual-load{grid-column:1/-1}}
 
 #plan-actual-total-metrics .plan-actual-person-metric-group{margin:0}
@@ -181,3 +181,24 @@
 @media(max-width:1100px){.plan-actual-account-columns{grid-template-columns:1fr}}
 .plan-actual-account-card thead th,.plan-actual-account-card thead th:not(:first-child){white-space:nowrap;font-size:12px;overflow-wrap:normal}
 .plan-actual-account-variance.positive{color:#287050;font-weight:700}.plan-actual-account-variance.negative{color:#a2352a;font-weight:700}.plan-actual-account-variance.zero{color:#607581}
+
+/* Keep the account comparison readable without squeezing four columns onto a phone. */
+@media(max-width:650px){
+  .plan-actual-account-card h5{font-size:1rem}
+  .plan-actual-account-card>p{font-size:.875rem}
+  .plan-actual-account-card>table,.plan-actual-account-card>table tbody{display:block;width:100%;min-width:0}
+  .plan-actual-account-card>table thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .plan-actual-account-card>table tr{display:grid;grid-template-columns:minmax(0,1fr);gap:.4rem;padding:.75rem 0;border-bottom:1px solid #dbe5e9}
+  .plan-actual-account-card>table tbody th{padding:0;border:0;font-size:.875rem;text-align:left}
+  .plan-actual-account-card>table tbody td{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:.25rem .75rem;min-width:0;padding:0;border:0;font-size:1rem;white-space:nowrap;overflow-wrap:normal}
+  .plan-actual-account-card>table tbody td::before{color:#526b79;font-size:.875rem;white-space:normal}
+  .plan-actual-account-card:not(.plan-actual-cash-account)>table tbody td:nth-child(2)::before{content:"Plan"}
+  .plan-actual-account-card:not(.plan-actual-cash-account)>table tbody td:nth-child(3)::before{content:"Ist"}
+  .plan-actual-account-card:not(.plan-actual-cash-account)>table tbody td:nth-child(4)::before{content:"Abweichung"}
+  .plan-actual-cash-account>table tbody td::before{content:"Ist"}
+  .plan-actual-account-card details{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:auto;scrollbar-color:#6e8b99 #e8eff2}
+  .plan-actual-account-card summary{min-height:44px;font-size:.875rem}
+  .plan-actual-account-card details table{width:max-content;min-width:100%;font-size:1rem}
+  .plan-actual-account-card details th,.plan-actual-account-card details thead th{font-size:.875rem}
+  .plan-actual-account-card details[open]::after{content:"\2194 Weitere Spalten seitlich ansehen";position:sticky;left:0;display:block;width:fit-content;max-width:100%;padding:.5rem 0;font-size:.875rem;color:#315767}
+}
