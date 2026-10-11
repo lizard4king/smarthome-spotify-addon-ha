@@ -128,6 +128,8 @@
 :is(#dashboard,#category-outflows) .fd-icon{display:inline-block;width:17px;height:17px;min-width:0;max-width:none;flex:none;margin:0;border:0;border-radius:0;background:transparent;color:var(--fd-accent)}
 :is(#dashboard,#category-outflows) .fd-account-name,
 :is(#dashboard,#category-outflows) .fd-category-name{display:inline-flex;align-items:center;gap:7px;min-width:0;overflow-wrap:anywhere}
+:is(#dashboard,#category-outflows) .fd-booking-category[data-category-status="proposal"] .fd-category-name{font-weight:650}
+:is(#dashboard,#category-outflows) .fd-booking-category[data-category-status="open"] .fd-category-name{font-style:italic}
 :is(#dashboard,#category-outflows) .fd-account-name .fd-icon{width:16px;height:16px}
 :is(#dashboard,#category-outflows) .fd-blick .fd-account-list{padding:0 8px 12px}
 

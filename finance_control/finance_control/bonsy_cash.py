@@ -11,6 +11,7 @@ from .classification import (
     _audit,
     _cash_withdrawal_evidence,
     _document_link_rejected,
+    _invoice_transaction_allocations,
     document_match_suggestions,
 )
 from .core import money
@@ -112,10 +113,8 @@ def _has_broad_exact_payment_candidate(
                 or _cash_withdrawal_evidence(
                     store, row['account_id'], row['external_id'])):
             continue
-        allocated = sum((money(link[0]) for link in store.db.execute(
-            'SELECT allocated_amount FROM classification_document_links '
-            'WHERE account_id=? AND external_id=?',
-            (row['account_id'], row['external_id']))), Decimal(0))
+        allocated = _invoice_transaction_allocations(
+            store, row['account_id'], row['external_id'])
         if abs(money(row['amount'])) - allocated == amount:
             return True
     return False

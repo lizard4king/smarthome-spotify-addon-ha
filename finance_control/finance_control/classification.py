@@ -1126,9 +1126,7 @@ def match_suggestions(store, data):
     if effective_transfer_id(store, transaction) or money(transaction['amount']) >= 0 or transaction['currency'] != 'EUR':
         return {'suggestions': [], 'suggestion_groups': []}
     payment = date.fromisoformat(transaction['date'])
-    used_transaction = sum((money(link['allocated_amount']) for link in store.db.execute(
-        'SELECT allocated_amount FROM classification_document_links WHERE account_id=? AND external_id=?',
-        (account_id, external_id))), Decimal(0))
+    used_transaction = _invoice_transaction_allocations(store, account_id, external_id)
     transaction_remaining = abs(money(transaction['amount'])) - used_transaction
     if transaction_remaining <= 0:
         return {'suggestions': [], 'suggestion_groups': []}
@@ -1282,9 +1280,8 @@ def document_match_suggestions(store, data):
             continue
         if _document_link_rejected(store, row['account_id'], row['external_id'], document['id']):
             continue
-        used_transaction = sum((money(link['allocated_amount']) for link in store.db.execute(
-            'SELECT allocated_amount FROM classification_document_links WHERE account_id=? AND external_id=?',
-            (row['account_id'], row['external_id']))), Decimal(0))
+        used_transaction = _invoice_transaction_allocations(
+            store, row['account_id'], row['external_id'])
         transaction_remaining = abs(amount) - used_transaction
         if transaction_remaining <= 0:
             continue
@@ -1900,6 +1897,21 @@ def _bonsy_cash_allocated(store, document_id):
         'WHERE r.document_id=?', (document_id,)).fetchone() is not None
 
 
+def _invoice_transaction_allocations(store, account_id, external_id):
+    """Sum only actual invoice payment/refund allocations on one transaction.
+
+    Older contract annotations may carry allocation_type='payment'. Their
+    amounts remain intact for display and audit, but do not consume invoice
+    payment capacity.
+    """
+    return sum((money(row['allocated_amount']) for row in store.db.execute(
+        "SELECT l.allocated_amount FROM classification_document_links l "
+        "JOIN classification_documents d ON d.id=l.document_id "
+        "WHERE l.account_id=? AND l.external_id=? AND d.kind='invoice' "
+        "AND l.allocation_type IN ('payment','refund')",
+        (account_id, external_id))), Decimal(0))
+
+
 def _require_not_duplicate_document(document):
     if 'duplicate_source_document' in json.loads(document['warnings']):
         raise ValueError('duplicate_document_cannot_be_linked')
@@ -1999,9 +2011,7 @@ def allocate_document(store, data):
                 'WHERE account_id=? AND external_id=? AND document_id=?',
                 (account_id, external_id, document['id'])).fetchone():
             raise ValueError('document_allocation_already_exists')
-        used_transaction = sum((money(row['allocated_amount']) for row in store.db.execute(
-            'SELECT allocated_amount FROM classification_document_links WHERE account_id=? AND external_id=?',
-            (account_id, external_id))), Decimal(0))
+        used_transaction = _invoice_transaction_allocations(store, account_id, external_id)
         if used_transaction + money(allocated_amount) > abs(amount):
             raise ValueError('transaction_allocation_exceeds_amount')
         used_document = sum((money(row['allocated_amount']) for row in store.db.execute(
@@ -2056,7 +2066,7 @@ def link_document(store, data):
         allocated_amount = format(abs(money(transaction['amount'])), '.2f')
         # A confirmed contract may explain a wallet funding transfer without
         # turning that transfer into a second household expense.
-        allocation_type = 'evidence' if is_transfer else 'payment'
+        allocation_type = 'evidence' if is_transfer or document['kind'] == 'contract' else 'payment'
         store.db.execute('INSERT OR IGNORE INTO classification_document_links(account_id,external_id,document_id,allocated_amount,allocation_type) VALUES (?,?,?,?,?)',
                          (account_id, external_id, document['id'], allocated_amount, allocation_type))
         result = {'account_id': account_id, 'external_id': external_id, 'document_id': document['id'],

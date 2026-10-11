@@ -236,13 +236,18 @@ def document_link_items(store):
     items = []
     rows = store.db.execute(
         """WITH transaction_allocations AS (
-               SELECT account_id,external_id,
-                      SUM(CAST(REPLACE(allocated_amount,'.','') AS INTEGER)) AS allocated_cents
-               FROM classification_document_links GROUP BY account_id,external_id
+           SELECT l.account_id,l.external_id,
+                   SUM(CAST(REPLACE(l.allocated_amount,'.','') AS INTEGER)) AS allocated_cents
+               FROM classification_document_links l
+               JOIN classification_documents d ON d.id=l.document_id
+               WHERE d.kind='invoice' AND l.allocation_type IN ('payment','refund')
+               GROUP BY l.account_id,l.external_id
            ), document_allocations AS (
-               SELECT document_id,
-                      SUM(CAST(REPLACE(allocated_amount,'.','') AS INTEGER)) AS allocated_cents
-               FROM classification_document_links WHERE allocation_type='payment' GROUP BY document_id
+               SELECT l.document_id,
+                       SUM(CAST(REPLACE(l.allocated_amount,'.','') AS INTEGER)) AS allocated_cents
+               FROM classification_document_links l
+               JOIN classification_documents d ON d.id=l.document_id
+               WHERE d.kind='invoice' AND l.allocation_type='payment' GROUP BY l.document_id
            )
            SELECT t.account_id,t.external_id,t.date AS transaction_date,t.amount AS transaction_amount,
                   COALESCE(c.counterparty,'') AS counterparty,COALESCE(c.description,'') AS description,

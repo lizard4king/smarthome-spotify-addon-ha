@@ -285,6 +285,11 @@
     }
     return wrap;
   }
+  const categoryLabel = item => {
+    const label = item.category_status === 'open' ? 'Kategorie offen' : (item.category || 'Kategorie offen');
+    return item.category_status === 'proposal' ? `${label} · Vorschlag` : label;
+  };
+  const categoryStatusLabel = status => ({confirmed:'Bestätigt',proposal:'Vorschlag · noch nicht bestätigt',imported:'Importiert',open:'Offen'})[status];
   function categories() {
     const section = el('section', 'fd-categories');
     add(section, 'p', 'fd-kicker', monthLabel());
@@ -297,8 +302,8 @@
     for (const item of bookings().filter(entry => String(entry.account_id) === selected)) {
       const components = componentRows(item,account.currency);
       const amounts = components.length
-        ? components.map(({component,value}) => ({category:component.category || 'Ohne Kategorie',currency:component.currency || item.currency || account.currency || 'EUR',value}))
-        : [{category:item.category || 'Ohne Kategorie',currency:item.currency || account.currency || 'EUR',value:cents(item.amount)}];
+        ? components.map(({component,value}) => ({category:categoryLabel({...component,category_status:component.category_status || item.category_status}),currency:component.currency || item.currency || account.currency || 'EUR',value}))
+        : [{category:categoryLabel(item),currency:item.currency || account.currency || 'EUR',value:cents(item.amount)}];
       for (const entry of amounts) {
         if (entry.value === null || entry.value >= 0n) continue;
         const key = `${entry.currency}\u0000${entry.category}`;
@@ -361,7 +366,8 @@
       add(description, 'span', 'fd-booking-cash-review', 'Bargeldanteil prüfen');
     }
     const category = add(row, 'td', 'fd-booking-category');
-    iconLabel(category, 'fd-category-name', categoryIcon(item.category), item.category || 'Ohne Kategorie');
+    category.dataset.categoryStatus = item.category_status || '';
+    iconLabel(category, 'fd-category-name', categoryIcon(item.category), categoryLabel(item));
     add(row, 'td', `fd-booking-amount ${tone(item.amount)}`, money(item.amount, item.currency || account.currency, true));
     const action = add(row, 'td', 'fd-booking-action');
     const button = add(action, 'button', 'fd-booking-toggle', 'Details');
@@ -378,7 +384,12 @@
       detailRow.hidden = !detailRow.hidden;
       button.setAttribute('aria-expanded', String(!detailRow.hidden));
     });
-    for (const [label, value] of [['Gegenpartei', item.counterparty], ['Verwendungszweck', item.description], ['Kategorie', item.category], ['Datum', date(item.date)]]) {
+    const detailFields = [['Gegenpartei', item.counterparty], ['Verwendungszweck', item.description], ['Kategorie', categoryLabel(item)]];
+    const status = categoryStatusLabel(item.category_status);
+    if (status) detailFields.push(['Kategoriestatus', status]);
+    if (item.source_category && item.source_category !== item.category) detailFields.push(['Quellangabe', item.source_category]);
+    detailFields.push(['Datum', date(item.date)]);
+    for (const [label, value] of detailFields) {
       const row = add(body, 'div'); add(row, 'span', '', label); add(row, 'p', '', value || '—');
     }
     const originalAmount = add(body, 'div', 'fd-booking-original-amount');
@@ -390,7 +401,7 @@
       const list = add(breakdown, 'div', 'fd-booking-components');
       for (const {component,value} of components) {
         const line = add(list, 'p', 'fd-booking-component');
-        add(line, 'span', '', `${componentName(component)} · ${component.category || 'Ohne Kategorie'}`);
+        add(line, 'span', '', `${componentName(component)} · ${categoryLabel({...component,category_status:component.category_status || item.category_status})}`);
         add(line, 'strong', '', money(component.amount,component.currency || item.currency || account.currency,true));
       }
       add(breakdown, 'p', 'fd-booking-cash-note', 'Die Bargeldauszahlung verschiebt Vermögen vom Girokonto in das Barvermögen; sie ist keine zusätzliche Ausgabe.');
