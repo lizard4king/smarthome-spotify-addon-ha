@@ -19,8 +19,19 @@
 .pb-results h4 { margin: 10px 0 0; color: #173143; }
 .pb-row { display: grid; gap: 3px; min-width: 0; padding: 10px 12px; border-radius: 7px; background: #f4f7f8; overflow-wrap: anywhere; }
 .pb-row small { color: #526b79; }
+.pb-credit-info { min-width: 0; padding: 12px 14px; border: 1px solid #dbe5e9; border-radius: 8px; background: #fff; }
+.pb-credit-info summary { cursor: pointer; color: #173143; font-weight: 650; }
+.pb-credit-info p { margin: 8px 0; }
+.pb-credit-info dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 12px; margin: 8px 0; }
+.pb-credit-info dt { min-width: 0; color: #526b79; overflow-wrap: anywhere; }
+.pb-credit-info dd { margin: 0; text-align: right; }
+.pb-credit-info a { display: inline-block; margin-top: 4px; }
+.pb-credit-hint { color: #72520d; font-weight: 650; }
 @media (max-width: 600px) {
   .pb-card { padding: 14px; }
+  .pb-credit-info { padding: 11px 12px; }
+  .pb-credit-info dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .pb-credit-info dd { text-align: left; margin-bottom: 5px; }
   .pb-form { grid-template-columns: minmax(0, 1fr); }
   .pb-check { grid-column: 1; }
   .pb-form button, .pb-card > button { width: 100%; overflow-wrap: anywhere; }

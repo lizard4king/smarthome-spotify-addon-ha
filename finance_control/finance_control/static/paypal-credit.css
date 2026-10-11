@@ -1,0 +1,35 @@
+.pb-credit-host,.pc-credit-section,.pc-plan-list,.pc-plan-card,.pc-form,.pc-repeating-rows{min-width:0}
+.pc-credit-section{display:grid;gap:12px}
+.pc-plan-list{display:grid;gap:10px}
+.pc-plan-card h4{margin:0;color:#173143;overflow-wrap:anywhere}
+.pc-plan-card .pc-remaining{display:block;color:#173143;font-size:1.15rem;line-height:1.35;overflow-wrap:anywhere}
+.pc-plan-card dl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;margin:4px 0}
+.pc-plan-card dt{color:#526b79;overflow-wrap:anywhere}
+.pc-plan-card dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.pc-plan-card details{margin-top:8px}
+.pc-plan-card details summary{cursor:pointer;font-weight:650;color:#173143}
+.pc-plan-card details h5{margin:14px 0 6px}
+.pc-plan-card details>dl{margin:8px 0}
+.pc-payment-row,.pc-schedule-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;padding:8px 0;border-top:1px solid #e7edef}
+.pc-payment-row strong,.pc-payment-row small{grid-column:1/-1}
+.pc-payment-row span,.pc-schedule-row strong{text-align:right;font-variant-numeric:tabular-nums}
+.pc-form{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.pc-form[hidden]{display:none}
+.pc-form>label{display:grid;gap:5px;min-width:0;color:#173143;font-size:13px;font-weight:650}
+.pc-form input:not([type=checkbox]){box-sizing:border-box;width:100%;min-width:0;min-height:42px;padding:9px 10px;border:1px solid #91a9b5;border-radius:7px;background:#fff;color:#173143;font:inherit;font-weight:400}
+.pc-form h3,.pc-form h4,.pc-form>.pb-note,.pc-form>.pb-check,.pc-form>.pb-action-status,.pc-form>button{grid-column:1/-1}
+.pc-row-group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;min-width:0;margin:0;padding:10px;border:1px solid #dbe5e9;border-radius:7px}
+.pc-row-group legend{padding:0 5px;color:#526b79;font-size:13px}
+.pc-row-group label{display:grid;gap:4px;min-width:0;font-size:12px}
+.pc-row-group .pc-remove{grid-column:1/-1;justify-self:start}
+.pc-form>.pc-repeating-rows{display:grid;gap:8px;grid-column:1/-1}
+.pc-form>.pb-secondary{width:auto;justify-self:start}
+@media(max-width:600px){
+  .pc-plan-card dl{grid-template-columns:minmax(0,1fr)}
+  .pc-plan-card dd{text-align:left;margin-bottom:5px}
+  .pc-form{grid-template-columns:minmax(0,1fr)}
+  .pc-form h3,.pc-form h4,.pc-form>.pb-note,.pc-form>.pb-check,.pc-form>.pb-action-status,.pc-form>button,.pc-form>.pb-secondary{grid-column:1}
+  .pc-row-group{grid-template-columns:minmax(0,1fr)}
+  .pc-row-group .pc-remove{grid-column:1}
+  .pc-form>.pb-secondary{width:100%}
+}

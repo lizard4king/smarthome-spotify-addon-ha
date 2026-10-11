@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.40` adds owner-bound dated manual PayPal credit plans for complete
+unchanged regular schedules. It separates scheduled remaining payments including
+future interest from outstanding principal, and never creates ledger transactions.
+The AIS preview explains the credit-data limitation and exposes supplied bank
+codes and unconfirmed text hints. This is not an automatic consumer loan API.
+
 Version `0.2.39` restores green favorable and red unfavorable plan deviations in
 the account overview and its expandable planned positions. Expense deviations
 use the opposite color direction to income, without changing displayed values.
