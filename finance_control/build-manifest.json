@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "8d3cde542ee3a17fa919c75e667004fe879e7c7cca00ea96bd122e2d18d54722",
-  "addon_version": "0.2.44",
+  "addon_tree_sha256": "7bd83aafdd63d7756a9444fa3c1854659abedd9b1f947a597c177904e74b8459",
+  "addon_version": "0.2.45",
   "deployment_files": {
-    "Dockerfile": "f1779f03bb1408a949ecfe7fb1ef7347a134bcf046f390457e88e74361d745c9",
-    "README.md": "90f12ef5f0e0b647876ebe3eb2722eb980f2f8371a3ee5dbc0ded27622345115",
+    "Dockerfile": "d95c60560a4ac1261aadfea4cfba5a9c96f920e177ab6fd7874fc64932ad8103",
+    "README.md": "9ad934ca3007419bd5de6921d994ea11a6379ea6c59134f6e6cf5c712993c8b2",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "6894f82a6e5a343ebdd8ab5b7c0098f8f3d98a5e0a8acc1e87c838132a776baf",
+    "config.yaml": "7c75cbc257a253b012764e8683798d9cc4c419cbd11b07651cc1800406ee4d95",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -451,7 +451,7 @@
     "static/server-banking.css": "a693cdd1bba6e935b046deeff8663156d718455895a674e5067bc20301dbfc0e",
     "static/server-banking.js": "34c60977a37b2eceeb5d95235c9e5e6e6a68de75e06ea6c1778f58365ff4d42d",
     "static/simple-icons-LICENSE.txt": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
-    "static/style.css": "e311a207d2bc0277c5e83842204e0a07e44287734f913cb67cc0bde6daf2e549",
+    "static/style.css": "01f023bd437e7cc0ece29a405f1f191c9e6c61b18cc095ddbce083c12907ec4f",
     "static/tabs.js": "15dc3c2a7cbe22389a9017f248e68a80208bb0b9f4fd799caad65c937f12d90e",
     "static/wealth.js": "1cde9495ca1e03fdbcd81f91007cbd297a3f8fdf870887da21ec8cad678301f7",
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
@@ -460,6 +460,6 @@
     "web.py": "a02730bbe3bc3877a25638fa1f924e42b0af4c56b62f062bbe6c3aca20c04759"
   },
   "schema_version": 1,
-  "source_commit": "357d626b523278b1a703a98bbb00f999d5b09028",
-  "source_tree_sha256": "9f02bc7638c576ad143c04e551febfe81567383e41893c47a0957f71d980cb49"
+  "source_commit": "d50c650cd78a7c1f313ad256533e377c16f1f8fe",
+  "source_tree_sha256": "ee4702af4b9d70f919d3012b3aee26a4b1052573cb67dec9501e1eb22696dcaf"
 }

@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.45` removes a late compact toolbar override that squeezed primary
+mobile tools into narrow buttons with smaller text. The mobile toolbar retains
+two columns, scalable primary text and touch targets of at least 44 CSS pixels.
+The synthetic browser test now checks the effective toolbar layout, text growth
+and the complete "Belege bearbeiten" label. Physical Samsung verification remains
+separate; see [mobile verification and limits](https://github.com/lizard4king/finance-control/blob/main/docs/mobile-ui.md).
+
 Version `0.2.44` improves mobile readability across Plan & Ist, Buchungen,
 Abgänge nach Kategorie, Einkäufe & Belege and Verwaltung. Primary controls have
 at least 44 CSS pixels of touch area; full amounts and favorable green/unfavorable
