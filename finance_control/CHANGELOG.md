@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.37
+
+- Add owner-bound Enable Banking setup for a personal PayPal read-only connection, with a server-generated public certificate and official consent return.
+- Encrypt application keys and consent metadata in the excluded server vault; require verified cockpit identity and one-use, short-lived consent state.
+- Provide bounded balances and transaction previews on the bookings page. No ledger import or source cutover until real account coverage, references and reconciliation have been verified.
+- Extend the offline Linux build self-test to cover the PayPal vault and its authenticated key check.
+
 ## 0.2.36
 
 - Add a separate, manual historical backfill for explicitly selected ING EUR savings targets, one fully closed month at a time within 366 days.

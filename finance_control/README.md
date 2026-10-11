@@ -1,5 +1,13 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.37` prepares a personal PayPal connection through Enable Banking.
+The owner registers their own application and links their own accounts. Server
+keys and consent metadata stay encrypted in the excluded bank vault. Verified
+cockpit identity and short-lived single-use state protect the consent return.
+Balances and transactions can be previewed on the bookings page, without ledger
+imports. Actual PayPal coverage and source reconciliation still require a real
+owner-authorized test. See [PayPal setup](../../docs/paypal-banking.md).
+
 Version `0.2.36` adds a separate manual backfill for one fully closed historical
 ING EUR savings month within 366 days. Full prior-month and target-month controls,
 explicit import review, owner/revision checks, server backup and atomic import

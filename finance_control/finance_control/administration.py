@@ -63,6 +63,7 @@ class Administration:
     def __init__(self, database, before_bank_revoke=None):
         self.database = Path(database).expanduser().resolve()
         self.before_bank_revoke = before_bank_revoke
+        self.before_user_revoke = None
         with closing(Store(self.database)):
             pass
 
@@ -198,6 +199,8 @@ class Administration:
                     "WHERE user_id=? AND status!='REVOKED' ORDER BY rowid", (target['id'],))]
                 if self.before_bank_revoke is not None:
                     self.before_bank_revoke(connections)
+                if self.before_user_revoke is not None:
+                    self.before_user_revoke(target['id'])
                 db.execute('UPDATE app_users SET active=0,revision=revision+1 WHERE id=?', (target['id'],))
                 db.execute("UPDATE app_bank_connections SET status='REVOKED',revision=revision+1 "
                            "WHERE user_id=? AND status!='REVOKED'", (target['id'],))

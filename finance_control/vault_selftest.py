@@ -11,6 +11,7 @@ from pathlib import Path
 from finance_control.security import server_vault
 from finance_control.security.credentials import Credentials
 from finance_control.security.server_card_store import CardSecret, ServerCardStore
+from finance_control.security.server_paypal_store import ServerPayPalStore
 
 
 _CONNECTION = 'a' * 32
@@ -99,6 +100,58 @@ def _check() -> None:
                 raise RuntimeError('card_cleanup_failed')
             if cards.has(_CONNECTION, _OWNER, card_id):
                 raise RuntimeError('card_delete_failed')
+
+            paypal = ServerPayPalStore()
+            paypal_record = {'version': 1, 'private_key': 'SYNTHETIC-ONLY',
+                             'application_id': None, 'session': None}
+            paypal.save(_OWNER, paypal_record)
+            paypal_path = directory / paypal._name(_OWNER)
+            anchor = directory / '.paypal-key-check'
+            if (paypal.load(_OWNER) != paypal_record or paypal.load(_OTHER_OWNER) is not None
+                    or stat.S_IMODE(paypal_path.stat().st_mode) != 0o600
+                    or stat.S_IMODE(anchor.stat().st_mode) != 0o600
+                    or b'SYNTHETIC-ONLY' in paypal_path.read_bytes()
+                    or 'SYNTHETIC' in paypal_path.name):
+                raise RuntimeError('paypal_store_failed')
+            sealed_paypal = paypal_path.read_bytes()
+            paypal_path.write_bytes(sealed_paypal[:-1] + bytes([sealed_paypal[-1] ^ 1]))
+            try:
+                paypal.load(_OWNER)
+            except server_vault.ServerVaultError as error:
+                if str(error) != 'paypal_integrity_failed':
+                    raise RuntimeError('paypal_tamper_check_failed') from None
+            else:
+                raise RuntimeError('paypal_tamper_accepted')
+            paypal_path.write_bytes(sealed_paypal)
+
+            master = directory / 'master.key'
+            original_key = master.read_bytes()
+            master.write_bytes(bytes(reversed(original_key)))
+            try:
+                paypal.save(_OTHER_OWNER, paypal_record)
+            except server_vault.ServerVaultError as error:
+                if str(error) != 'paypal_key_check_invalid':
+                    raise RuntimeError('paypal_key_check_failed') from None
+            else:
+                raise RuntimeError('paypal_replacement_key_accepted')
+            if (directory / paypal._name(_OTHER_OWNER)).exists():
+                raise RuntimeError('paypal_replacement_key_wrote_record')
+            master.write_bytes(original_key)
+
+            sealed_anchor = anchor.read_bytes()
+            anchor.unlink()
+            try:
+                paypal.load(_OWNER)
+            except server_vault.ServerVaultError as error:
+                if str(error) != 'paypal_key_check_missing':
+                    raise RuntimeError('paypal_missing_anchor_check_failed') from None
+            else:
+                raise RuntimeError('paypal_missing_anchor_accepted')
+            anchor.write_bytes(sealed_anchor)
+            anchor.chmod(0o600)
+            paypal.delete(_OWNER)
+            if paypal.load(_OWNER) is not None or paypal_path.exists():
+                raise RuntimeError('paypal_delete_failed')
         finally:
             server_vault.APPROVED_DIRECTORY = original_directory
 

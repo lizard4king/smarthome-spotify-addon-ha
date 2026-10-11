@@ -36,6 +36,7 @@ from .server_postbank_jobs import ServerPostbankJobs
 from .server_bank_refresh import ServerBankRefresh
 from .server_card_gateway import ServerCardGateway
 from .server_cards import ServerCards
+from .paypal_banking import PayPalBanking
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -731,11 +732,13 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     if administration is not None else None)
     server_cards = (ServerCards(administration, ServerCardGateway(administration, bank_product_id))
                     if administration is not None else None)
+    paypal_banking = PayPalBanking(administration) if administration is not None else None
     if administration is not None:
         def cleanup_bank_connections(connections):
             server_cards.cleanup_connections(connections)
             server_banking.cleanup_connections(connections)
         administration.before_bank_revoke = cleanup_bank_connections
+        administration.before_user_revoke = paypal_banking.cleanup_owner
     trusted_hosts = {f'127.0.0.1:{port}'}
     auto_port_hosts = set(trusted_hosts)
     for allowed_host in allowed_hosts or []:
@@ -842,6 +845,23 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 'bank_read_busy': 'Ein Bankabruf läuft bereits. Bitte dessen Ergebnis abwarten.',
                 'bank_product_unavailable': 'Die FinTS-Produktkennung fehlt in der Servereinrichtung.',
                 'unknown_bank_job': 'Dieser Bankabruf ist nicht mehr verfügbar.',
+                'paypal_https_required': 'PayPal wird über die geschützte HTTPS-Adresse des Cockpits eingerichtet.',
+                'paypal_unsupported': 'PayPal wird nur auf der Linux-Serverinstallation unterstützt.',
+                'paypal_setup_required': 'Bitte zuerst das öffentliche Zertifikat und Deine Enable-Banking-App-ID einrichten.',
+                'paypal_application_not_ready': 'Enable Banking meldet die Anwendung noch nicht als aktiv. Prüfe PRODUCTION, AIS, die Rückkehradresse und die Verknüpfung Deiner eigenen Konten.',
+                'paypal_country_unavailable': 'PayPal ist für dieses Land im aktuellen Anbieterverzeichnis nicht verfügbar. Prüfe die PayPal-EU-Verknüpfung bei Enable Banking.',
+                'paypal_invalid_id': 'Die App-ID oder Konto-ID hat nicht das erwartete Format.',
+                'paypal_disconnect_required': 'Bitte zuerst die bestehende PayPal-Einrichtung entfernen.',
+                'paypal_origin_changed': 'Die gespeicherte Rückkehradresse gehört zu einer anderen Cockpit-Adresse. Bitte den Zugang unter der bisherigen Adresse entfernen.',
+                'paypal_access_expired': 'Die PayPal-Freigabe fehlt, ist abgelaufen oder wurde geändert. Bitte erneut freigeben.',
+                'paypal_provider_failed': 'Enable Banking konnte den Abruf nicht abschließen. Es wurden keine Buchungen importiert.',
+                'paypal_invalid_response': 'Die PayPal-Antwort entspricht nicht dem erwarteten Format. Es wurden keine Buchungen importiert.',
+                'paypal_personal_only': 'Diese Einrichtung unterstützt ausschließlich persönliche Konten.',
+                'paypal_unavailable': 'Die sichere PayPal-Einrichtung ist derzeit nicht verfügbar.',
+                'paypal_invalid_return': 'Die Rückkehr von Enable Banking ist ungültig. Bitte die Freigabe neu starten.',
+                'paypal_return_expired': 'Diese PayPal-Rückkehr ist abgelaufen oder wurde bereits verarbeitet. Bitte den Status in der Verwaltung prüfen.',
+                'paypal_consent_failed': 'Die PayPal-Freigabe wurde nicht abgeschlossen. Bitte erneut starten.',
+                'invalid_period': 'Bitte einen gültigen Zeitraum von höchstens 90 Tagen bis heute wählen.',
             }
             return self.reply(error.status, {'error': messages.get(error.code, 'Eingaben prüfen und erneut bestätigen.'),
                                               'code': error.code})
@@ -980,7 +1000,24 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             if not self.require_identity():
                 return
             url = urlsplit(self.path)
+            if url.path == '/paypal-return':
+                if paypal_banking is None:
+                    return self.management_error(AdministrationError('administration_disabled', 403))
+                try:
+                    paypal_banking.complete(self.management_user, url.query)
+                except AdministrationError as error:
+                    return self.management_error(error)
+                self.send_response(303)
+                self.send_header('Location', '/#administration')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Referrer-Policy', 'no-referrer')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
+                      '/paypal-banking.js': ('paypal-banking.js', 'text/javascript; charset=utf-8'),
+                      '/paypal-banking.css': ('paypal-banking.css', 'text/css; charset=utf-8'),
                       '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
@@ -1329,6 +1366,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 data = json.loads(self.rfile.read(size))
                 if not isinstance(data, dict):
                     raise TypeError('Invalid request')
+                if urlsplit(self.path).path.startswith('/api/administration/paypal-'):
+                    # PayPal owns its consent/vault lock and never mutates the
+                    # ledger. Provider I/O must not block unrelated cockpit writes.
+                    if not self.require_identity(recheck=True):
+                        return
+                    return self.dispatch_action(data)
                 with dispatch_lock:
                     if not self.require_identity(recheck=True):
                         return
@@ -1368,6 +1411,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 if administration is None:
                     return self.management_error(AdministrationError('administration_disabled', 403))
                 action = urlsplit(self.path).path.removeprefix('/api/administration/')
+                if action.startswith('paypal-'):
+                    return self.reply(200, paypal_banking.dispatch(
+                        self.management_user, action, data, self.headers.get('Origin', '')))
                 if action in {'bank-credentials-state', 'bank-credentials-save', 'bank-credentials-delete'}:
                     return self.reply(200, server_banking.dispatch(self.management_user, action, data))
                 if action == 'bank-balances-read':

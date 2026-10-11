@@ -22,6 +22,7 @@
   const invalidateCredentialsUi = () => {
     credentialsRenderSequence += 1;
     byId('adm-server-credentials').replaceChildren();
+    byId('adm-paypal-banking')?.replaceChildren();
   };
   const roleName = role => role === 'admin' ? 'Administrator' : 'Mitglied';
   const bankName = id => administrationState?.banks?.find(bank => bank.id === id)?.name || id;
@@ -107,6 +108,9 @@
         return load();
       });
     }
+    const paypalHost = byId('adm-paypal-banking');
+    if (data.enabled && paypalHost && window.PayPalBanking)
+      void window.PayPalBanking.renderAdministration(paypalHost);
     lockMutations();
   }
   async function load() {
@@ -200,5 +204,6 @@
     confirmAction(`Bank ${bankName(bankId)} als „${label}“ registrieren? Zugangsdaten können danach separat auf dem Server eingerichtet und Kontostände einmalig lesend abgerufen werden.`,
       'bank-add', {bank_id:bankId, label, confirmed:true});
   });
+  document.querySelector('form.logout')?.addEventListener('submit', invalidateCredentialsUi, {once: true});
   window.administrationLoad = load;
 })();
