@@ -1,0 +1,27 @@
+.pb-host, .pb-root { min-width: 0; }
+.pb-root { display: grid; gap: 12px; }
+.pb-status, .pb-note, .pb-action-status { margin: 0; color: #526b79; overflow-wrap: anywhere; }
+.pb-card { display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid #dbe5e9; border-radius: 10px; background: #fff; }
+.pb-heading { margin: 0; color: #173143; }
+.pb-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pb-form[hidden] { display: none; }
+.pb-form > label { display: grid; gap: 5px; min-width: 0; color: #173143; font-size: 13px; font-weight: 650; }
+.pb-form input:not([type="checkbox"]), .pb-form select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 42px; padding: 9px 10px; border: 1px solid #91a9b5; border-radius: 7px; background: #fff; color: #173143; font: inherit; font-weight: 400; }
+.pb-form button, .pb-card > button { min-height: 42px; padding: 9px 13px; border: 1px solid #17617b; border-radius: 7px; background: #17617b; color: #fff; font: inherit; font-weight: 650; cursor: pointer; }
+.pb-secondary { border-color: #91a9b5 !important; background: #fff !important; color: #173143 !important; }
+.pb-form button:disabled, .pb-card > button:disabled { opacity: .55; cursor: wait; }
+.pb-check { display: flex; grid-column: 1 / -1; align-items: flex-start; gap: 9px; min-width: 0; color: #344e5b; font-size: 13px; line-height: 1.45; }
+.pb-check input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; }
+.pb-action-status.pb-error, .pb-error { color: #792c21; }
+.pb-danger { border-color: #8b3529 !important; background: #8b3529 !important; }
+.pb-card a { color: #075b79; overflow-wrap: anywhere; }
+.pb-results { display: grid; gap: 8px; min-width: 0; }
+.pb-results h4 { margin: 10px 0 0; color: #173143; }
+.pb-row { display: grid; gap: 3px; min-width: 0; padding: 10px 12px; border-radius: 7px; background: #f4f7f8; overflow-wrap: anywhere; }
+.pb-row small { color: #526b79; }
+@media (max-width: 600px) {
+  .pb-card { padding: 14px; }
+  .pb-form { grid-template-columns: minmax(0, 1fr); }
+  .pb-check { grid-column: 1; }
+  .pb-form button, .pb-card > button { width: 100%; overflow-wrap: anywhere; }
+}
