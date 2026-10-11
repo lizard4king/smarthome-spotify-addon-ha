@@ -1,5 +1,19 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.44` improves mobile readability across Plan & Ist, Buchungen,
+Abgänge nach Kategorie, Einkäufe & Belege and Verwaltung. Primary controls have
+at least 44 CSS pixels of touch area; full amounts and favorable green/unfavorable
+red deviations remain visible. Account comparisons use mobile label/value rows,
+and detailed tables scroll within their own regions. Thirty synthetic browser
+combinations cover widths of 360, 384 and 412 CSS pixels with 100% and 125% root
+text size. This does not establish physical Samsung behavior. See
+[mobile verification and limits](https://github.com/lizard4king/finance-control/blob/main/docs/mobile-ui.md).
+
+Version `0.2.43` treats recognized negated or partial payment wording in Klarna
+and PayPal emails as non-final, while retaining other recognized events. Older
+paid events are not removed automatically. This rule-based status is not a
+complete view of outstanding consumer invoices or installment plans.
+
 Version `0.2.42` adds a separate personal Klarna setup and owner-bound consent
 through Enable Banking. Application keys and session metadata remain in the
 excluded encrypted server vault. Balances and transactions can be previewed on

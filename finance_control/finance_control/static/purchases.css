@@ -36,12 +36,19 @@
   #purchases .fp-table { display: none; }
   #purchases .fp-cards { display: grid; gap: .8rem; }
   #purchases .fp-card { min-width: 0; padding: 1rem; border: 1px solid #d8e0e5; border-radius: .65rem; background: #fff; overflow-wrap: anywhere; }
-  #purchases .fp-card-head { display: flex; justify-content: space-between; gap: .75rem; align-items: start; }
-  #purchases .fp-card-head .fp-heading { min-width: 0; }
-  #purchases .fp-amount { flex: none; text-align: right; }
-  #purchases .fp-card-meta { margin: .45rem 0; color: #596a74; }
+  #purchases .fp-card-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: .65rem; align-items: start; }
+  #purchases .fp-card-head .fp-heading { width: 100%; min-width: 0; }
+  #purchases .fp-merchant { align-items: flex-start; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.4; }
+  #purchases .fp-title { font-size: .95rem; }
+  #purchases .fp-amount { justify-self: end; min-width: max-content; text-align: right; white-space: nowrap; font-size: 1rem; font-variant-numeric: tabular-nums; }
+  #purchases .fp-card-meta { margin: .55rem 0; color: #465963; font-size: .95rem; line-height: 1.4; }
+  #purchases .fp-status { gap: .35rem; font-size: .95rem; line-height: 1.4; overflow-wrap: anywhere; }
   #purchases .fp-card .fp-details { margin-top: .65rem; }
+  #purchases .fp-details summary { min-height: 44px; display: flex; align-items: center; }
   #purchases .fp-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  #purchases .fp-filter { min-width: 0; }
   #purchases .fp-filter:first-child { grid-column: 1 / -1; }
-  #purchases .fp-filters button { grid-column: 1 / -1; }
+  #purchases .fp-filters button { grid-column: 1 / -1; min-height: 44px; }
+  #purchases .fp-filters input, #purchases .fp-filters select { min-height: 44px; }
+  #purchases .fp-pagination button { min-height: 44px; }
 }

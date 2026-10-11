@@ -213,14 +213,14 @@
   :is(#dashboard,#category-outflows) .fd-booking-table thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
   :is(#dashboard,#category-outflows) .fd-booking-table tbody,
   :is(#dashboard,#category-outflows) .fd-booking-table tr{display:block;width:100%}
-  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 9px;padding:12px 14px;border-bottom:1px solid var(--fd-border)}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;padding:12px 14px;border-bottom:1px solid var(--fd-border)}
   :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking td{display:block;padding:0;border:0;min-width:0}
-  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-date{grid-column:1/-1;font-size:11px;color:var(--fd-muted)}
-  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-counterparty{grid-column:1;grid-row:2;font-size:15px}
-  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-amount{grid-column:2;grid-row:2;text-align:right;font-size:13px;white-space:nowrap}
-  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-description{grid-column:1/-1;grid-row:3;white-space:pre-wrap;overflow-wrap:anywhere}
-  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-category{grid-column:1;grid-row:4}
-  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-action{grid-column:2;grid-row:4;text-align:right}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-date{grid-column:1/-1;font-size:.75rem;color:var(--fd-muted)}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-counterparty{grid-column:1;grid-row:2;font-size:1rem;line-height:1.35;min-width:0}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-amount{grid-column:1;grid-row:3;text-align:right;font-size:1rem;line-height:1.4;white-space:nowrap;font-variant-numeric:tabular-nums}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-description{grid-column:1;grid-row:4;white-space:pre-wrap;overflow-wrap:anywhere}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-category{grid-column:1;grid-row:5;min-width:0;font-size:.875rem;line-height:1.35}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-action{grid-column:1;grid-row:6;text-align:right}
   :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-expanded>td{display:block;width:100%;padding:0 12px 12px}
   :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-day th{display:block;width:100%}
 }
@@ -234,7 +234,7 @@
 :is(#dashboard,#category-outflows) .fd-guru .fd-category{background:#1c3a43;border-color:#385157;color:#edf8f8}
 :is(#dashboard,#category-outflows) .fd-guru .fd-category .fd-icon{background:#25515a;color:#71e2d6}
 :is(#dashboard,#category-outflows) .fd-guru .fd-category strong{color:#edf8f8}
-@media(max-width:600px){:is(#dashboard,#category-outflows) .fd-category{gap:8px;padding:9px 10px}:is(#dashboard,#category-outflows) .fd-category strong{font-size:12px}}
+@media(max-width:600px){:is(#dashboard,#category-outflows) .fd-category{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:8px;padding:10px}:is(#dashboard,#category-outflows) .fd-category-name{font-size:.875rem;line-height:1.35}:is(#dashboard,#category-outflows) .fd-category strong{justify-self:end;font-size:1rem;line-height:1.35;white-space:nowrap}}
 /* Backend-provided cash split stays a single bank row while exposing its economic parts. */
 :is(#dashboard,#category-outflows) .fd-booking-cash-split,
 :is(#dashboard,#category-outflows) .fd-booking-cash-review{display:block;margin-top:4px;font-size:12px;line-height:1.4;white-space:normal}
@@ -259,6 +259,20 @@
 :is(#dashboard,#category-outflows) .fd-selected-balance>span{font-size:12px;color:var(--fd-muted)}
 :is(#dashboard,#category-outflows) .fd-current-balance{font-size:25px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 :is(#dashboard,#category-outflows) .fd-selected-balance>small{font-size:11px;color:var(--fd-muted)}
-@media(max-width:700px){:is(#dashboard,#category-outflows) .fd-selected-balance{padding:12px 14px}:is(#dashboard,#category-outflows) .fd-current-balance{font-size:22px}}
+@media(max-width:700px){:is(#dashboard,#category-outflows) .fd-selected-balance{padding:12px 14px}:is(#dashboard,#category-outflows) .fd-current-balance{font-size:1.375rem}}
 :is(#dashboard,#category-outflows) .fd-guru .fd-selected-balance{background:#21454a;color:var(--fd-ink);border-color:var(--fd-border)}
 :is(#dashboard,#category-outflows) .fd-guru .fd-selected-balance>span,:is(#dashboard,#category-outflows) .fd-guru .fd-selected-balance>small{color:var(--fd-muted)}
+@media(max-width:700px){
+  :is(#dashboard,#category-outflows) .fd-account-summary{min-height:44px}
+  :is(#dashboard,#category-outflows) .fd-account-summary .fd-account-name{font-size:1rem;line-height:1.35}
+  :is(#dashboard,#category-outflows) .fd-account-summary .fd-account-kind{font-size:.75rem;line-height:1.35;overflow-wrap:anywhere}
+  :is(#dashboard,#category-outflows) .fd-account-summary .fd-account-last-booking{font-size:.75rem;line-height:1.35}
+  :is(#dashboard,#category-outflows) .fd-account-summary .fd-account-amount{font-size:1rem;line-height:1.35;font-variant-numeric:tabular-nums}
+  :is(#dashboard,#category-outflows) .fd-account-summary .fd-account-balance-date{font-size:.75rem;line-height:1.35}
+  :is(#dashboard,#category-outflows) .fd-booking-edit,:is(#dashboard,#category-outflows) .fd-booking-toggle{min-height:44px}
+  :is(#dashboard,#category-outflows) .fd-booking-toggle{font-size:1rem;padding:8px 10px}
+  :is(#dashboard,#category-outflows) .fd-booking-group-title{min-height:44px;line-height:1.35}
+  :is(#dashboard,#category-outflows) .fd-cutoff-form button{min-height:44px}
+  :is(#dashboard,#category-outflows) .fd-booking-detail p{font-size:.875rem}
+  :is(#dashboard,#category-outflows) .fd-booking-table .fd-booking-description{font-size:.875rem}
+}

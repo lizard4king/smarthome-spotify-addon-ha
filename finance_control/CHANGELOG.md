@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.44
+
+- Keep the five main workspaces readable on narrow screens, with scalable text and primary touch targets of at least 44 CSS pixels.
+- Present account comparisons as mobile label/value rows, retain complete amounts and favorable green/unfavorable red deviations, and contain detailed table scrolling.
+- Verify 30 synthetic browser combinations: five workspaces at 360, 384 and 412 CSS pixels with 100% and 125% root text size. Physical Samsung behavior remains unverified.
+
+## 0.2.43
+
+- Treat recognized explicitly negated or partial Klarna/PayPal payment statements as non-final for `paid`.
+- Preserve independently recognized events and do not invent an `unpaid` state from unknown or negated wording.
+- Keep historical `paid` events; this release does not delete them automatically and does not add a full invoice or installment balance view.
+
 ## 0.2.42
 
 - Add a separate personal Klarna connection through Enable Banking with its own encrypted application keys, owner-bound consent and single-use return state.
