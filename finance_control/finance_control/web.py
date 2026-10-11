@@ -42,6 +42,7 @@ from .paypal_credit import PayPalCredit
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
 MAX_REQUEST_WORKERS = 8
+MAX_PENDING_REQUESTS = 64
 REQUEST_SOCKET_TIMEOUT = 5
 MIN_ACCESS_TOKEN = 16
 ACCESS_COOKIE = 'fc_session'
@@ -187,10 +188,10 @@ class FailureThrottle:
 
 
 class BoundedHTTPServer(ThreadingMixIn, HTTPServer):
-    """Limit concurrent requests and release idle connections after a timeout."""
+    """Bound active and queued requests, applying backpressure at worker capacity."""
 
     daemon_threads = True
-    request_queue_size = MAX_REQUEST_WORKERS
+    request_queue_size = MAX_PENDING_REQUESTS
 
     def __init__(self, server_address, handler_class):
         self._request_slots = threading.BoundedSemaphore(MAX_REQUEST_WORKERS)
@@ -202,7 +203,10 @@ class BoundedHTTPServer(ThreadingMixIn, HTTPServer):
         return request, address
 
     def process_request(self, request, client_address):
-        if not self._request_slots.acquire(blocking=False):
+        # The serving thread waits here without creating a worker. The listen
+        # backlog absorbs a bounded burst while active handlers release slots.
+        # Requests that remain over capacity are closed after the socket timeout.
+        if not self._request_slots.acquire(timeout=REQUEST_SOCKET_TIMEOUT):
             self.shutdown_request(request)
             return
         try:

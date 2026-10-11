@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "0c6bc856533125ace36f12f4c636fc94540e6b106d2e16092298b70526b0bf9e",
-  "addon_version": "0.2.40",
+  "addon_tree_sha256": "a55ab7672fb73d9c0a35260112d6d3bddeae33389bb9ed20b01ebe10a047d59e",
+  "addon_version": "0.2.41",
   "deployment_files": {
-    "Dockerfile": "daa0d64bd294cf226745753570b46270da2567d9dc7ccb7e49e67d1f0df8817d",
-    "README.md": "578153189a3479f1845844738a9143783a1fb42405c5f7a8c903527b741a1718",
+    "Dockerfile": "7a6b5b47107b3d5e2ec4d0dc1047cc98e05e7a3cb8e1af9aba302d004b63e4ee",
+    "README.md": "47fc5fc20714c2269f28f1887ddcf4086b864d3a5340442b5537e3724f6f3de9",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "d2e6979302ffbe845933a35b5c0b710d35cc54c865e9a36f2e913da54925382b",
+    "config.yaml": "5f289f1d73f0baace1359d6020d2434f025ee0ef5b38c18da3ebefeb8e43d01d",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e6d1373436e7a64b5b8502923bab7b826e01e52bc43ca86b8b0291eae45ec7cd"
   },
@@ -452,9 +452,9 @@
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "1eb55db0d79e7cdbf2d069a204cdd784c097cec7e4c1f76b072ded7b32dc51c9",
     "wealth.py": "4a1ec1dfe05229f64c5b566901962e0fc3932a05b6adc6fcfb9b0960a0e70caf",
-    "web.py": "118b6cd9039770f0005371c61c981276e3a5de2f455df1278f5015569071b02f"
+    "web.py": "8f417f5626da3ea4d49cdb81b7e08576ccc98e9c1e687a1c522872e5970fed7a"
   },
   "schema_version": 1,
-  "source_commit": "44861da1fa17d1c10913ab9d0632d5f8f67ae89b",
-  "source_tree_sha256": "46461ddea13a52cc7d2ff743af151fa66abeab1d944bf7db4a56ba7bf3965f01"
+  "source_commit": "41b6b300546c9d96d7ef251a34e31568ec4bf120",
+  "source_tree_sha256": "68fcea5d48b8a3b62aaea42574388f8ff5a5f4dc8247932a7739ad0f91a79eeb"
 }

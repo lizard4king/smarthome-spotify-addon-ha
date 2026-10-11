@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.41
+
+- Queue finite startup request bursts instead of immediately dropping essential frontend assets when all eight HTTP workers are occupied.
+- Retain eight active workers and existing socket timeouts; limit the listen backlog to 64 and the accepted request's wait to five seconds.
+- Keep authentication, financial calculations, bank operations and business-operation serialization unchanged.
+
 ## 0.2.40
 
 - Record owner-bound, dated manual PayPal credit plans with immutable revisions and cent-exact checks for complete unchanged regular plans.

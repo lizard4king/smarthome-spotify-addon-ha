@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.41` lets finite startup request bursts wait for a free HTTP worker
+instead of immediately dropping frontend assets. It retains eight active workers,
+uses a fixed listen backlog of 64, and bounds an accepted request's wait to five
+seconds. Authentication, bank operations and financial behavior are unchanged.
+
 Version `0.2.40` adds owner-bound dated manual PayPal credit plans for complete
 unchanged regular schedules. It separates scheduled remaining payments including
 future interest from outstanding principal, and never creates ledger transactions.
