@@ -42,6 +42,14 @@ def _identity(connection_id: object, owner_user_id: object) -> tuple[str, str]:
     return connection_id, owner_user_id
 
 
+def _check_personal_recovery(directory_fd: int, owner: str) -> None:
+    """Called under the vault lock; pending cleanup must never look absent."""
+    owner = _identity(owner, owner)[0]
+    for provider in ('paypal', 'klarna'):
+        if _read_file(directory_fd, f'.personal-revoke-{owner}.{provider}.vault') is not None:
+            _fail('personal_cleanup_recovery_required')
+
+
 def _aad(connection_id: str, owner_user_id: str) -> bytes:
     return b'finance-control/banking/v1\0' + owner_user_id.encode('ascii') + b'\0' + connection_id.encode('ascii')
 

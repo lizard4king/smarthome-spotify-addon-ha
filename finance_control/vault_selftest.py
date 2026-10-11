@@ -6,11 +6,15 @@ import os
 import stat
 import sys
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 
+from finance_control.administration import Administration
 from finance_control.security import server_vault
 from finance_control.security.credentials import Credentials
+from finance_control.security.personal_vault_cleanup import PersonalVaultCleanup
 from finance_control.security.server_card_store import CardSecret, ServerCardStore
+from finance_control.security.server_klarna_store import ServerKlarnaStore
 from finance_control.security.server_paypal_store import ServerPayPalStore
 
 
@@ -18,6 +22,16 @@ _CONNECTION = 'a' * 32
 _OWNER = 'b' * 32
 _OTHER_OWNER = 'c' * 32
 _CREDS = Credentials('synthetic-user', 'synthetic-pin')
+
+
+def _expect_vault_error(code, operation):
+    try:
+        operation()
+    except server_vault.ServerVaultError as error:
+        if str(error) != code:
+            raise RuntimeError('klarna_unexpected_vault_error') from None
+    else:
+        raise RuntimeError('klarna_expected_vault_error_missing')
 
 
 def _check() -> None:
@@ -149,9 +163,112 @@ def _check() -> None:
                 raise RuntimeError('paypal_missing_anchor_accepted')
             anchor.write_bytes(sealed_anchor)
             anchor.chmod(0o600)
+
+            klarna = ServerKlarnaStore()
+            klarna_record = {'version': 1, 'private_key': 'SYNTHETIC-KLARNA-ONLY',
+                             'application_id': None, 'session': None}
+            klarna.save(_OWNER, klarna_record)
+            klarna_path = directory / klarna._name(_OWNER)
+            klarna_anchor = directory / '.klarna-key-check'
+            if (ServerKlarnaStore().load(_OWNER) != klarna_record
+                    or klarna.load(_OTHER_OWNER) is not None
+                    or paypal.load(_OWNER) != paypal_record
+                    or klarna_path == paypal_path
+                    or stat.S_IMODE(klarna_path.stat().st_mode) != 0o600
+                    or stat.S_IMODE(klarna_anchor.stat().st_mode) != 0o600
+                    or b'SYNTHETIC-KLARNA-ONLY' in klarna_path.read_bytes()):
+                raise RuntimeError('klarna_store_failed')
+            sealed_klarna = klarna_path.read_bytes()
+            other_klarna_path = directory / klarna._name(_OTHER_OWNER)
+            other_klarna_path.write_bytes(sealed_klarna)
+            other_klarna_path.chmod(0o600)
+            _expect_vault_error('klarna_integrity_failed', lambda: klarna.load(_OTHER_OWNER))
+            other_klarna_path.unlink()
+
+            # A provider record cannot be interpreted through the other's store.
+            klarna_path.write_bytes(sealed_paypal)
+            _expect_vault_error('klarna_integrity_failed', lambda: klarna.load(_OWNER))
+            klarna_path.write_bytes(sealed_klarna)
+            paypal_path.write_bytes(sealed_klarna)
+            _expect_vault_error('paypal_integrity_failed', lambda: paypal.load(_OWNER))
+            paypal_path.write_bytes(sealed_paypal)
+
+            klarna_path.write_bytes(sealed_klarna[:-1] + bytes([sealed_klarna[-1] ^ 1]))
+            _expect_vault_error('klarna_integrity_failed', lambda: klarna.load(_OWNER))
+            klarna_path.write_bytes(sealed_klarna)
+            master.write_bytes(bytes([original_key[0] ^ 1]) + original_key[1:])
+            try:
+                _expect_vault_error('klarna_key_anchor_invalid',
+                                    lambda: klarna.save(_OTHER_OWNER, klarna_record))
+                if other_klarna_path.exists():
+                    raise RuntimeError('klarna_replacement_key_wrote_record')
+            finally:
+                master.write_bytes(original_key)
+            klarna.delete(_OWNER)
+            if (klarna.load(_OWNER) is not None or klarna_path.exists()
+                    or paypal.load(_OWNER) != paypal_record):
+                raise RuntimeError('klarna_delete_failed')
             paypal.delete(_OWNER)
             if paypal.load(_OWNER) is not None or paypal_path.exists():
                 raise RuntimeError('paypal_delete_failed')
+
+            # All database and vault paths still belong to the temporary tree.
+            administration = Administration(parent / 'synthetic-admin.sqlite')
+            with administration._connection(write=True) as db:
+                db.execute('INSERT INTO app_users(id,email,display_name,role) VALUES (?,?,?,?)',
+                           (_OWNER, 'synthetic@example.org', 'Synthetic', 'member'))
+            cleanup = PersonalVaultCleanup(administration)
+            paypal.save(_OWNER, paypal_record)
+            klarna.save(_OWNER, klarna_record)
+            try:
+                with ExitStack() as exits:
+                    with administration._connection(write=True) as db:
+                        exits.enter_context(cleanup.revoke(_OWNER))
+                        # Existing bank cleanup opens its own descriptor. This
+                        # must work while personal revocation is staged.
+                        with server_vault.ServerCredentialStore(directory)._locked_directory():
+                            pass
+                        db.execute('UPDATE app_users SET active=0 WHERE id=?', (_OWNER,))
+                        raise ValueError('synthetic_sql_rollback')
+            except ValueError:
+                pass
+            if paypal.load(_OWNER) != paypal_record or klarna.load(_OWNER) != klarna_record:
+                raise RuntimeError('personal_cleanup_rollback_failed')
+            paypal_recovery = directory / f'.personal-revoke-{_OWNER}.paypal.vault'
+            paypal_path.rename(paypal_recovery)
+            cleanup.recover()
+            if paypal.load(_OWNER) != paypal_record or paypal_recovery.exists():
+                raise RuntimeError('personal_cleanup_crash_restore_failed')
+            with ExitStack() as exits:
+                with administration._connection(write=True) as db:
+                    exits.enter_context(cleanup.revoke(_OWNER))
+                    db.execute('UPDATE app_users SET active=0 WHERE id=?', (_OWNER,))
+            if paypal.load(_OWNER) is not None or klarna.load(_OWNER) is not None:
+                raise RuntimeError('personal_cleanup_commit_failed')
+            # A post-commit process crash leaves staged encrypted files. Startup
+            # must purge them for the inactive owner, never resurrect the grant.
+            paypal.save(_OWNER, paypal_record)
+            klarna.save(_OWNER, klarna_record)
+            paypal_path.rename(paypal_recovery)
+            klarna_recovery = directory / f'.personal-revoke-{_OWNER}.klarna.vault'
+            klarna_path.rename(klarna_recovery)
+            cleanup.recover()
+            if paypal_recovery.exists() or klarna_recovery.exists():
+                raise RuntimeError('personal_cleanup_crash_purge_failed')
+            with administration._connection(write=True) as db:
+                db.execute('UPDATE app_users SET active=1 WHERE id=?', (_OWNER,))
+            paypal.save(_OWNER, paypal_record)
+            klarna.save(_OWNER, klarna_record)
+            try:
+                with ExitStack() as exits:
+                    with administration._connection(write=True) as db:
+                        exits.enter_context(cleanup.revoke(_OWNER))
+                        db.execute('UPDATE app_users SET active=0 WHERE id=?', (_OWNER,))
+                    raise ValueError('synthetic_postcommit_failure')
+            except ValueError:
+                pass
+            if paypal_path.exists() or klarna_path.exists():
+                raise RuntimeError('personal_cleanup_postcommit_restored_grant')
         finally:
             server_vault.APPROVED_DIRECTORY = original_directory
 

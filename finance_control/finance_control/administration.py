@@ -6,7 +6,7 @@ stores no banking credentials and never contacts a bank.
 
 import re
 import sqlite3
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -64,6 +64,8 @@ class Administration:
         self.database = Path(database).expanduser().resolve()
         self.before_bank_revoke = before_bank_revoke
         self.before_user_revoke = None
+        self.user_revoke_context = None
+        self.before_user_restore = None
         with closing(Store(self.database)):
             pass
 
@@ -164,7 +166,8 @@ class Administration:
             raise AdministrationError('invalid_action')
         if data['confirmed'] is not True:
             raise AdministrationError('confirmation_required')
-        with self._connection(write=True) as db:
+        # File cleanup must leave its context after the SQL commit/rollback.
+        with ExitStack() as cleanup, self._connection(write=True) as db:
             actor = self._actor(db, user_id)
             if action == 'profile-save':
                 if actor['revision'] != _revision(data['revision']):
@@ -197,10 +200,12 @@ class Administration:
                 connections = [dict(row) for row in db.execute(
                     "SELECT id,user_id FROM app_bank_connections "
                     "WHERE user_id=? AND status!='REVOKED' ORDER BY rowid", (target['id'],))]
+                if self.user_revoke_context is not None:
+                    cleanup.enter_context(self.user_revoke_context(target['id']))
+                elif self.before_user_revoke is not None:
+                    self.before_user_revoke(target['id'])
                 if self.before_bank_revoke is not None:
                     self.before_bank_revoke(connections)
-                if self.before_user_revoke is not None:
-                    self.before_user_revoke(target['id'])
                 db.execute('UPDATE app_users SET active=0,revision=revision+1 WHERE id=?', (target['id'],))
                 db.execute("UPDATE app_bank_connections SET status='REVOKED',revision=revision+1 "
                            "WHERE user_id=? AND status!='REVOKED'", (target['id'],))
@@ -215,6 +220,8 @@ class Administration:
                     raise AdministrationError('unknown_user', 404)
                 if target['revision'] != _revision(data['revision']):
                     raise AdministrationError('stale_revision', 409)
+                if self.before_user_restore is not None:
+                    self.before_user_restore(target['id'])
                 db.execute('UPDATE app_users SET active=1,revision=revision+1 WHERE id=?',
                            (target['id'],))
             elif action == 'bank-add':
