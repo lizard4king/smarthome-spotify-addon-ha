@@ -431,7 +431,7 @@
     "static/lucide-LICENSE.txt": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
     "static/paypal-banking.css": "9401c62f0fcb805acd761f6869832d7c52841efa701aa151022ac95a4e13247f",
-    "static/paypal-banking.js": "fd5d3227fe503bb34b4f86239af0ad8bd8aff74ea5f98ad90940f4949df95f5b",
+    "static/paypal-banking.js": "fcf6db284cfad65e32583f7cbe29c4024ecde69fdd38372354e0947705fc5cca",
     "static/plan_actual.js": "fea50161b6e7653e202d3aabf3e3bc8f75e63c89197580f075a570bfc643ddeb",
     "static/postbank-cards.css": "d88d70dfb12490f3962e8b68ca825ec9f9207f66d09821909a5fb0e4baee44b4",
     "static/postbank-cards.js": "7fc4376e7dd47cb24d0f780e21e54a3350f81f8009ca818f8b2fbd605e4ad26a",
@@ -451,6 +451,6 @@
     "web.py": "46ba24c6cc9ba18e519abf7b651ddcec97b6fd1d45b425f108f324b84f54c41b"
   },
   "schema_version": 1,
-  "source_commit": "e3b5c9f78be91796e0a7e5077c93a41d652e2fab",
-  "source_tree_sha256": "3adac254a611259c804e9160f822f5f388b1b1d246eb35645599ecdc09f4ffe1"
+  "source_commit": "789cd46e7b250951e152b2583144493f737c8bad",
+  "source_tree_sha256": "1b56a1b4bfa1ffa2c40d4cb4997d7e57804f883554030c1ccacdf3241a509546"
 }

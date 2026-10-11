@@ -180,12 +180,13 @@
 
     if (state.setup === 'APPLICATION_READY') {
       const form = node('form', '', 'pb-form');
-      const label = node('label', 'Land der eigenen PayPal-Konten');
+      const label = node('label', 'Anbieterstandort');
       const select = document.createElement('select'); select.name = 'country';
-      for (const [value, text] of [['DE', 'Deutschland'], ['LU', 'Luxemburg']]) {
+      for (const [value, text] of [['LU', 'Luxemburg · PayPal Europe'], ['DE', 'Deutschland']]) {
         const option = node('option', text); option.value = value; select.append(option);
       }
       label.append(select); form.append(label);
+      form.append(node('p', 'PayPal Europe wird im Anbieterverzeichnis unter Luxemburg geführt. Dein Wohnsitz ist davon unabhängig.', 'pb-muted'));
       const button = node('button', '3. PayPal-Freigabe öffnen');
       const actionStatus = node('p', '', 'pb-action-status');
       form.append(button, actionStatus);
