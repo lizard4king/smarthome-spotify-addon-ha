@@ -1,3 +1,36 @@
+.budget-progress-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px;margin:16px 0 24px}
+.budget-progress-card{min-width:0;padding:20px;border:1px solid var(--fc-border,#dde5eb);border-radius:var(--fc-radius,20px);background:var(--fc-surface,#fff);color:var(--fc-text,#172a37)}
+.budget-progress-card h4{margin:0 0 8px;font-size:1.05rem;overflow-wrap:anywhere}
+.budget-progress-card p{margin:8px 0;overflow-wrap:anywhere}
+.budget-progress-state,.budget-progress-remaining{color:var(--fc-positive,#167347);font-weight:600}
+.budget-progress-card.no_actual .budget-progress-state,.budget-progress-card.no_actual .budget-progress-remaining,.budget-progress-card.unbudgeted .budget-progress-remaining{color:var(--fc-muted,#61717e)}
+.budget-progress-card.exceeded .budget-progress-state,.budget-progress-card.exceeded .budget-progress-remaining,.budget-progress-card.unbudgeted .budget-progress-state{color:var(--fc-negative,#b53c4b)}
+.budget-progress-values{color:var(--fc-muted,#61717e);font-size:.875rem}
+.budget-progress-card progress{display:block;width:100%;height:10px;margin:16px 0;border:0;border-radius:99px;overflow:hidden;accent-color:var(--fc-positive,#167347);background:var(--fc-border,#dde5eb)}
+.budget-progress-card progress::-webkit-progress-bar{background:var(--fc-border,#dde5eb);border-radius:99px}
+.budget-progress-card progress::-webkit-progress-value{background:var(--fc-positive,#167347);border-radius:99px}
+.budget-progress-card progress::-moz-progress-bar{background:var(--fc-positive,#167347);border-radius:99px}
+.budget-progress-card.exceeded progress{accent-color:var(--fc-negative,#b53c4b)}
+.budget-progress-card.exceeded progress::-webkit-progress-value{background:var(--fc-negative,#b53c4b)}
+.budget-progress-card.exceeded progress::-moz-progress-bar{background:var(--fc-negative,#b53c4b)}
+.budget-progress-card>button{min-height:44px;width:100%;margin-top:8px}
+.budget-progress-card .plan-actual-details{max-width:100%;min-width:0}
+#plan-actual-budget-progress{margin:0 0 24px}
+#plan-actual-budget-progress>.section-head{flex-wrap:wrap;gap:12px}
+#plan-actual-budget-progress h3{margin:0}
+#plan-actual-budget-progress .button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 16px;box-sizing:border-box;text-decoration:none}
+@media(max-width:650px){
+  .budget-progress-card{padding:18px}
+  #budget-form .columns,.budget-item-grid{grid-template-columns:minmax(0,1fr)!important}
+  #budget-form input:not([type=checkbox]),#budget-form select,#budget-form textarea{min-height:44px;min-width:0;max-width:100%;font-size:1rem;box-sizing:border-box}
+  #budget-form button,#budget-form summary{min-height:44px}
+  #budget-form .actions{display:flex;flex-wrap:wrap;gap:8px}
+  #budget-form .actions>button{flex:1 1 100%}
+  .budget-item-head{flex-wrap:wrap;gap:8px}
+  .budget-item-head button{min-height:44px}
+  .budget-item{padding:16px!important;border-radius:var(--fc-radius,20px)}
+  #budget-form>label:has(textarea){margin-top:16px}
+}
 #budget-planner{border-top:1px solid #dbe5e9;padding-top:24px;margin-top:8px}
 #payment-policy{margin:8px 0 24px;padding:18px;border:1px solid #dbe5e9;border-radius:8px;background:#fbfcfd}
 #payment-policy h3{margin:0 0 8px;font-size:16px}

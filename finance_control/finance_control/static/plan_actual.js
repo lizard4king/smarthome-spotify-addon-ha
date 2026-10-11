@@ -1963,8 +1963,56 @@ function planActualRenderPeople(result) {
   }
 }
 
+function planActualRenderBudgetProgress(result) {
+  const cards = $('plan-actual-budget-cards');
+  if (!cards) return;
+  cards.replaceChildren();
+  const available = result.plan_available !== false
+    && result.basis?.type !== 'retrospective_reference';
+  $('plan-actual-budget-period').textContent = `Kalendermonat ${result.month}`;
+  const note = $('plan-actual-budget-note');
+  if (!available) {
+    note.textContent = 'Kein gespeicherter Monatsplan. Die historischen Istwerte sind eine Vergleichsbasis, kein Budgetfortschritt. Details findest Du in den Auswertungen.';
+    return;
+  }
+  note.textContent = `Ausgaben im Monat: ${eur(result.totals.actual_expenses)} von ${eur(result.totals.planned_expenses)} geplant. Der Rest gilt je Planposition, nicht als verfügbarer Kontostand.`;
+  const rows = (result.rows || []).filter(item => item.kind !== 'income');
+  if (!rows.length) {
+    note.textContent = 'Für diesen Monat sind keine Ausgabenpositionen aktiv.';
+    return;
+  }
+  rows.forEach((item, index) => {
+    const card = document.createElement('article');
+    const status = planActualExpenseStatus(item);
+    card.className = `budget-progress-card ${status.className}`;
+    const heading = document.createElement('h4');
+    heading.textContent = planActualContextLabel(planActualCashItemLabel(result, item), item.owner_group);
+    const state = document.createElement('p'); state.className = 'budget-progress-state';
+    state.textContent = status.label;
+    const values = document.createElement('p'); values.className = 'budget-progress-values';
+    values.textContent = `${eur(item.actual)} ausgegeben · ${item.planned == null ? 'kein Plan' : `${eur(item.planned)} geplant`}`;
+    card.append(heading, state, values);
+    // The bar is only a visual ratio. Money and status remain backend values.
+    if (Number(item.planned) > 0) {
+      const progress = document.createElement('progress');
+      progress.max = Number(item.planned);
+      progress.value = Math.max(0, Number(item.actual || 0));
+      progress.setAttribute('aria-label', `Ausgaben für ${item.label}`);
+      card.append(progress);
+    }
+    const remaining = document.createElement('p'); remaining.className = 'budget-progress-remaining';
+    remaining.textContent = `Rest: ${status.className === 'unbudgeted' || item.remaining == null ? '—' : eur(item.remaining)}`;
+    const details = document.createElement('div'); details.hidden = true;
+    const id = `budget-progress-detail-${index}-${String(item.item_id).replace(/[^A-Za-z0-9_-]/g, '-')}`;
+    card.append(remaining, planActualDetailsButton(`${item.transaction_count || 0} Buchungen ansehen`,
+      planActualContext('item', item.item_id), details, id, 'expense'), details);
+    cards.append(card);
+  });
+}
+
 function planActualRender(result) {
   $('plan-actual-result').hidden = false;
+  planActualRenderBudgetProgress(result);
   planActualRenderAccountOverview(result);
   planActualRenderAccounts(result);
   const planAvailable = result.plan_available !== false;

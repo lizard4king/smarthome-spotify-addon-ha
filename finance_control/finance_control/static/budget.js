@@ -281,6 +281,7 @@ function budgetAddItem(values = {}, persisted = false) {
   for (const kind of ['income','fixed','variable']) { const option = document.createElement('option'); option.value = kind; option.textContent = budgetKindLabels[kind]; kindSelect.append(option); }
   kindSelect.value = values.kind || 'variable';
   const amountInput = budgetInput('text', values.amount); amountInput.required = true; amountInput.inputMode = 'decimal'; amountInput.pattern = '\\d+(?:[.,]\\d{1,2})?'; amountInput.placeholder = '0,00'; amountInput.dataset.budgetField = 'amount';
+  amountInput.enterKeyHint = 'next';
   const intervalSelect = document.createElement('select'); intervalSelect.dataset.budgetField = 'interval_months';
   for (const [value, text] of [[1,'Monatlich'],[2,'Alle zwei Monate'],[3,'Vierteljährlich'],[6,'Halbjährlich'],[12,'Jährlich']]) { const option = document.createElement('option'); option.value = value; option.textContent = text; intervalSelect.append(option); }
   if (values.interval_months && ![1,2,3,6,12].includes(Number(values.interval_months))) { const option = document.createElement('option'); option.value = values.interval_months; option.textContent = `Alle ${values.interval_months} Monate`; intervalSelect.append(option); }
@@ -299,8 +300,8 @@ function budgetAddItem(values = {}, persisted = false) {
     budgetControl('Bezeichnung', labelInput, `${token}-label`),
     budgetControl('Art', kindSelect, `${token}-kind`),
     budgetControl('Betrag EUR je Zahlung', amountInput, `${token}-amount`),
-    budgetControl('Zahlungsrhythmus', intervalSelect, `${token}-interval`),
     budgetControl('Gültig ab', startInput, `${token}-start`),
+    budgetControl('Zahlungsrhythmus', intervalSelect, `${token}-interval`),
     budgetControl('Gültig bis (optional)', endInput, `${token}-end`),
     budgetControl('Girokonto (optional)', accountSelect, `${token}-account`)
   );

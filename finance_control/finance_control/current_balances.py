@@ -1,8 +1,49 @@
 """Latest recorded bank or reconciled statement balance per account."""
 
 from datetime import date
+from decimal import Decimal
 
 from .core import money
+
+
+def summarize(account_rows, balances):
+    """Sum only recorded current balances, keeping unknown accounts explicit.
+
+    ``balances`` maps account ids to the current_balance objects returned by
+    :func:`latest_by_account`. Amounts are accumulated as Decimal and never
+    converted between currencies.
+    """
+    totals = {}
+    for account in account_rows:
+        account_id = account['id']
+        currency = account['currency']
+        if type(currency) is not str or not currency:
+            continue
+        group = totals.setdefault(currency, {
+            'currency': currency, 'amount': Decimal('0.00'),
+            'known_count': 0, 'account_count': 0,
+            'oldest_booked_on': None, 'newest_booked_on': None,
+        })
+        group['account_count'] += 1
+        balance = balances.get(account_id)
+        if not isinstance(balance, dict) or balance.get('currency') != currency:
+            continue
+        try:
+            amount = money(balance['amount'])
+            booked_on = balance['booked_on']
+            if (type(booked_on) is not str
+                    or date.fromisoformat(booked_on).isoformat() != booked_on):
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        group['amount'] += amount
+        group['known_count'] += 1
+        if group['oldest_booked_on'] is None or booked_on < group['oldest_booked_on']:
+            group['oldest_booked_on'] = booked_on
+        if group['newest_booked_on'] is None or booked_on > group['newest_booked_on']:
+            group['newest_booked_on'] = booked_on
+    return [{**group, 'amount': format(group['amount'], '.2f')}
+            for _, group in sorted(totals.items())]
 
 
 def _candidate(account_id, currency, amount, booked_on, retrieved_at, source):

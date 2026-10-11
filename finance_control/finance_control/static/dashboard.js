@@ -5,12 +5,31 @@
   let snapshot = null;
   let selected = null;
   let query = '';
+  const filters = {category:'', direction:'', status:''};
+  let drilldown = null;
+  const expandedBookings = new Set();
+  const scrollPositions = new Map();
+  let visibleArea = null;
+  let viewOptionsOpen = false;
+  let filterDialogArea = null;
+  let filterLayout = null;
+  window.addEventListener('scroll', () => {
+    if (visibleArea) scrollPositions.set(visibleArea, window.scrollY);
+  }, {passive:true});
+  document.addEventListener('cockpit-area-changed', event => {
+    visibleArea = ['dashboard', 'category-outflows'].includes(event.detail.id) ? event.detail.id : null;
+    if (filterDialogArea && filterDialogArea !== event.detail.id) {
+      filterDialogArea = null;
+      document.querySelectorAll('.fd-filter-dialog[open]').forEach(dialog => dialog.close());
+    }
+  });
   let area = 'dashboard';
   const expandedAccounts = new Set();
   const mobileQuery = window.matchMedia('(max-width: 700px)');
   mobileQuery.addEventListener('change', event => {
     document.querySelectorAll('#dashboard-root .fd-account-picker, #category-outflows-root .fd-account-picker')
       .forEach(picker => { picker.open = !event.matches; });
+    if (filterLayout) filterLayout();
   });
   let view = (() => { try { return localStorage.getItem(key) === 'guru' ? 'guru' : 'blick'; } catch { return 'blick'; } })();
   const el = (tag, className, value) => {
@@ -213,6 +232,7 @@
   function pick(id) {
     if (selected === id) return;
     selected = id;
+    drilldown = null;
     const root = activeRoot();
     root?.querySelectorAll('.fd-account').forEach(card => {
       const active = card.dataset.accountId === id;
@@ -232,13 +252,7 @@
     const summary = add(card, 'summary', `fd-account-summary${isSavings ? ' fd-account-summary-savings' : ''}`);
     summary.setAttribute('aria-current', selected === id ? 'true' : 'false');
     const name = add(summary, 'span', 'fd-account-name');
-    const brand = bankBrand(account);
-    if (brand) {
-      const logo = add(name, 'img', 'fd-bank-logo');
-      logo.src = {postbank:'/bank-postbank.svg',sparkasse:'/bank-sparkasse.png',
-        ing:'/bank-ing.svg',paypal:'/bank-paypal.png'}[brand];
-      logo.alt = ''; logo.setAttribute('aria-hidden', 'true');
-    } else name.append(icon(accountIcon(account.kind)));
+    name.append(window.financeAccountIcon(account));
     name.append(document.createTextNode(accountName(account)));
     add(summary, 'small', 'fd-account-kind', `${account.owner_label || account.owner || 'Ohne Zuordnung'} · ${kindName(account.kind)} · ${count} erfasste Buchung${count === 1 ? '' : 'en'}`);
     add(summary, 'small', 'fd-account-last-booking', `Letzte Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
@@ -290,36 +304,194 @@
     return item.category_status === 'proposal' ? `${label} · Vorschlag` : label;
   };
   const categoryStatusLabel = status => ({confirmed:'Bestätigt',proposal:'Vorschlag · noch nicht bestätigt',imported:'Importiert',open:'Offen'})[status];
+  const bookingKey = item => JSON.stringify([item.account_id,item.external_id]);
+  const transfer = item => item.is_transfer === true || item.direction === 'transfer'
+    || item.category_id === 'TRANSFER' || item.category === 'Umbuchung' || item.category === 'TRANSFER';
+  const direction = item => transfer(item) ? 'transfer' : (cents(item.amount) > 0n ? 'income' : 'expense');
+  function filteredBookings() {
+    const account = current();
+    const term = query.trim().toLocaleLowerCase('de-DE');
+    return bookings().filter(item => String(item.account_id) === selected)
+      .filter(item => !filters.direction || direction(item) === filters.direction)
+      .filter(item => !filters.status || (item.category_status || 'open') === filters.status)
+      .filter(item => !filters.category || categoryLabel(item) === filters.category)
+      .filter(item => !term || [item.counterparty,item.description,item.category,item.amount,item.date,
+        money(item.amount,item.currency || account?.currency),date(item.date)]
+        .some(value => String(value || '').toLocaleLowerCase('de-DE').includes(term)))
+      .sort(bookingDateOrder);
+  }
+  function filterControls(section, update) {
+    const controls = add(section, 'div', 'fd-filters');
+    const label = add(controls, 'label', 'fd-search-label');
+    add(label, 'span', '', 'Buchungen suchen');
+    const search = add(label, 'input', 'fd-search');
+    search.type = 'search'; search.placeholder = 'Empfänger, Zweck, Betrag'; search.value = query;
+    search.addEventListener('input', () => {query = search.value; drilldown = null; update();});
+    const filterArea = area;
+    const open = add(controls,'button','fd-filter-open','Filter'); open.type = 'button';
+    open.setAttribute('aria-haspopup','dialog');
+    const filterLabel = () => {
+      const count = Object.values(filters).filter(Boolean).length;
+      open.textContent = count ? `Filter (${count})` : 'Filter';
+    };
+    filterLabel();
+    const dialog = add(controls,'dialog','fd-filter-dialog');
+    dialog.setAttribute('aria-labelledby',`${filterArea}-filter-title`);
+    const heading = add(dialog,'h2','','Buchungen filtern'); heading.id = `${filterArea}-filter-title`;
+    const advanced = add(controls,'div','fd-filter-advanced');
+    const close = () => {
+      filterDialogArea = null;
+      if (dialog.open) dialog.close();
+    };
+    const activate = () => {
+      if (mobileQuery.matches) {
+        dialog.insertBefore(advanced,apply);
+        if (filterDialogArea === filterArea && dialog.isConnected && !dialog.open) {
+          dialog.showModal();
+        }
+      } else {
+        if (dialog.open) close();
+        controls.append(advanced);
+      }
+    };
+    open.addEventListener('click', () => {filterDialogArea = filterArea; activate();});
+    dialog.addEventListener('cancel', () => {filterDialogArea = null;});
+    dialog.addEventListener('close', () => {
+      if (!dialog.isConnected) return;
+      filterDialogArea = null; update();
+      if (mobileQuery.matches && !open.closest('[hidden]')) open.focus({preventScroll:true});
+    });
+    const categories = [...new Set([
+      ...bookings().filter(item => String(item.account_id) === selected).map(categoryLabel),
+      ...(filters.category ? [filters.category] : []),
+    ])].sort((a,b) => a.localeCompare(b,'de'));
+    for (const [key,labelText,choices] of [
+      ['category','Kategorie',categories.map(value => [value,value])],
+      ['direction','Richtung',[['income','Zugänge'],['expense','Abgänge'],['transfer','Umbuchungen']]],
+      ['status','Kategoriestatus',[['confirmed','Bestätigt'],['imported','Importiert'],['proposal','Vorschlag'],['open','Offen']]],
+    ]) {
+      const field = add(advanced, 'label'); add(field,'span','',labelText);
+      const select = add(field,'select',`fd-filter-${key}`);
+      add(select,'option','','Alle').value = '';
+      for (const [value,text] of choices) add(select,'option','',text).value = value;
+      select.value = filters[key];
+      select.addEventListener('change', () => {filters[key] = select.value; filterLabel(); drilldown = null; update();});
+    }
+    const reset = add(advanced,'button','fd-filter-reset','Filter zurücksetzen'); reset.type = 'button';
+    const apply = add(dialog,'button','fd-filter-apply','Anwenden'); apply.type = 'button';
+    apply.addEventListener('click', close);
+    reset.addEventListener('click', () => {
+      query = ''; search.value = ''; Object.keys(filters).forEach(key => {filters[key] = '';});
+      advanced.querySelectorAll('select').forEach(select => {select.value = '';});
+      drilldown = null; filterLabel(); update();
+    });
+    filterLayout = () => {if (controls.isConnected) activate();};
+    // showModal requires a connected node; rendering builds the section detached.
+    requestAnimationFrame(() => {if (controls.isConnected) activate();});
+  }
+  // Only a checksum-valid full leading IBAN is hidden in the compact display.
+  // Imported source text and the complete detail remain untouched.
+  function recipientDisplay(value) {
+    const original = String(value || '');
+    const lengths = {AT:20,BE:16,CH:21,DE:22,ES:24,FR:27,GB:22,IT:27,LU:20,NL:18,PL:28,PT:25};
+    const start = /^\s*([A-Z]{2})\d{2}/iu.exec(original);
+    const length = start && lengths[start[1].toUpperCase()];
+    if (!length) return original;
+    let compact = start[0].trim().toUpperCase(), position = start[0].length;
+    while (compact.length < length && position < original.length) {
+      const character = original[position++];
+      if (/\s/u.test(character)) continue;
+      if (!/[A-Z0-9]/iu.test(character)) return original;
+      compact += character.toUpperCase();
+    }
+    const numeric = ['AT','BE','DE','ES','PL','PT'].includes(start[1].toUpperCase());
+    if (compact.length !== length || (numeric && !/^\d+$/u.test(compact.slice(4)))
+      || (numeric ? /\p{N}/u : /[\p{L}\p{N}]/u).test(original[position] || '')) return original;
+    let remainder = 0;
+    for (const character of compact.slice(4) + compact.slice(0,4)) {
+      const digits = /[A-Z]/u.test(character) ? String(character.charCodeAt(0)-55) : character;
+      for (const digit of digits) remainder = (remainder*10 + Number(digit)) % 97;
+    }
+    return remainder === 1 ? (original.slice(position).replace(/^[\s,;:/–—-]+/u,'').trim() || original) : original;
+  }
+  function categoryEntries(item, account) {
+    const components = componentRows(item,account.currency);
+    const amounts = components.length ? components.map(({component,value}) => ({
+      ...component, category_status:component.category_status || item.category_status,
+      value, currency:component.currency || item.currency || account.currency || 'EUR',
+    })) : [{...item,value:cents(item.amount),currency:item.currency || account.currency || 'EUR'}];
+    return amounts.filter(entry => entry.value !== null && entry.value < 0n).map(entry => {
+      const path = Array.isArray(entry.category_path) && entry.category_path.length
+        ? entry.category_path.map(node => ({id:node.id,label:node.label}))
+        : [{id:entry.category_id || null,label:categoryLabel(entry)}];
+      // Keep proposals distinguishable from confirmed labels, including in a path.
+      path[path.length-1] = {...path[path.length-1],label:categoryLabel(entry)};
+      return {...entry,path,booking:item};
+    });
+  }
+  const pathKey = path => JSON.stringify(path.map(node => [node.id,node.label]));
   function categories() {
     const section = el('section', 'fd-categories');
     add(section, 'p', 'fd-kicker', monthLabel());
     add(section, 'h2', '', 'Abgänge nach Kategorie');
     add(section, 'p', 'fd-disclosure', `Kontosicht einschließlich Umbuchungen · bis ${date(snapshot.as_of)}.`);
     const account = current();
-    if (!account) { add(section, 'p', 'fd-empty', 'Wähle ein Konto aus.'); return section; }
-    add(section, 'p', 'fd-category-account', `${account.owner_label || account.owner || 'Konto'} · ${accountName(account)}`);
+    if (!account) {add(section,'p','fd-empty','Wähle ein Konto aus.'); return section;}
+    add(section,'p','fd-category-account',`${account.owner_label || account.owner || 'Konto'} · ${accountName(account)}`);
+    let result;
+    filterControls(section, () => renderCategories(result,account));
+    result = add(section,'div','fd-category-results');
+    result.setAttribute('aria-live','polite');
+    renderCategories(result,account);
+    return section;
+  }
+  function renderCategories(result,account) {
+    result.replaceChildren();
+    const entries = filteredBookings().flatMap(item => categoryEntries(item,account));
+    if (!entries.length) {add(result,'p','fd-empty','Keine Abgänge für diesen Filter.'); return;}
     const groups = new Map();
-    for (const item of bookings().filter(entry => String(entry.account_id) === selected)) {
-      const components = componentRows(item,account.currency);
-      const amounts = components.length
-        ? components.map(({component,value}) => ({category:categoryLabel({...component,category_status:component.category_status || item.category_status}),currency:component.currency || item.currency || account.currency || 'EUR',value}))
-        : [{category:categoryLabel(item),currency:item.currency || account.currency || 'EUR',value:cents(item.amount)}];
-      for (const entry of amounts) {
-        if (entry.value === null || entry.value >= 0n) continue;
-        const key = `${entry.currency}\u0000${entry.category}`;
-        const prior = groups.get(key) || {category:entry.category,currency:entry.currency,value:0n};
+    for (const entry of entries) {
+      // Build the actual authoritative root-to-leaf tree, separately per currency.
+      for (let depth=1; depth<=entry.path.length; depth++) {
+        const path = entry.path.slice(0,depth);
+        const key = JSON.stringify([entry.currency,pathKey(path)]);
+        const prior = groups.get(key) || {path,currency:entry.currency,value:0n};
         prior.value += -entry.value; groups.set(key,prior);
       }
     }
-    if (!groups.size) { add(section, 'p', 'fd-empty', 'Keine Abgänge im Monat.'); return section; }
-    const ordered = [...groups.values()].sort((a,b) => a.currency.localeCompare(b.currency) || (a.value > b.value ? -1 : a.value < b.value ? 1 : a.category.localeCompare(b.category)));
-    const list = add(section, 'div', 'fd-category-list');
-    for (const item of ordered) {
-      const row = add(list, 'div', 'fd-category');
-      iconLabel(row, 'fd-category-name', categoryIcon(item.category), item.category);
-      add(row, 'strong', '', moneyFromCents(item.value,item.currency));
+    const list = add(result,'div','fd-category-list');
+    const appendLevel = (parentPath, currency, container) => {
+      const children = [...groups.values()].filter(group => group.currency===currency
+        && group.path.length===parentPath.length+1
+        && pathKey(group.path.slice(0,-1))===pathKey(parentPath))
+        .sort((a,b) => a.value>b.value ? -1 : a.value<b.value ? 1 : a.path.at(-1).label.localeCompare(b.path.at(-1).label,'de'));
+      for (const group of children) {
+        const branch = add(container,'div','fd-category-branch');
+        const row = add(branch,'button','fd-category'); row.type='button';
+        row.dataset.depth=String(parentPath.length);
+        iconLabel(row,'fd-category-name',categoryIcon(group.path.at(-1).label),group.path.at(-1).label);
+        add(row,'strong','',moneyFromCents(group.value,group.currency));
+        row.setAttribute('aria-pressed',String(drilldown?.key===JSON.stringify([currency,pathKey(group.path)])));
+        row.addEventListener('click', () => {
+          drilldown={key:JSON.stringify([currency,pathKey(group.path)]),path:group.path,currency};
+          renderCategories(result,account);
+          result.querySelector('.fd-category-drilldown')?.scrollIntoView({block:'nearest'});
+        });
+        const subtree = add(branch,'div','fd-category-children');
+        appendLevel(group.path,currency,subtree);
+      }
+    };
+    for (const currency of [...new Set(entries.map(entry => entry.currency))].sort()) appendLevel([],currency,list);
+    if (drilldown) {
+      const matching = entries.filter(entry => entry.currency===drilldown.currency
+        && pathKey(entry.path.slice(0,drilldown.path.length))===pathKey(drilldown.path));
+      const detail = add(result,'section','fd-category-drilldown');
+      add(detail,'h3','',drilldown.path.map(node=>node.label).join(' › '));
+      add(detail,'p','fd-disclosure','Originalbuchungen zum gewählten Kategorieanteil; Aufteilungen stehen in den Details.');
+      const unique = [...new Map(matching.map(entry => [bookingKey(entry.booking),entry.booking])).values()];
+      const rows = add(detail,'div','fd-booking-rows');
+      populateBookings(rows,unique);
     }
-    return section;
   }
   function bookingList() {
     const section = el('section', 'fd-bookings');
@@ -335,11 +507,7 @@
     const title = add(top, 'div');
     add(title, 'p', 'fd-kicker', monthLabel());
     add(title, 'h2', '', 'Buchungen');
-    const label = add(top, 'label', 'fd-search-label');
-    add(label, 'span', '', 'Buchungen suchen');
-    const search = add(label, 'input', 'fd-search');
-    search.type = 'search'; search.placeholder = 'Text, Kategorie, Betrag'; search.value = query;
-    search.addEventListener('input', () => { query = search.value; updateBookings(section); });
+    filterControls(section, () => updateBookings(section));
     const rows = add(section, 'div', 'fd-booking-rows');
     rows.setAttribute('aria-live', 'polite');
     populateBookings(rows);
@@ -352,9 +520,9 @@
     const row = add(parent, 'tr', 'fd-booking');
     add(row, 'td', 'fd-booking-date', date(item.date));
     const counterparty = add(row, 'td', 'fd-booking-counterparty');
-    if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), item,
+    if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), {...item,counterparty:recipientDisplay(item.counterparty)},
       {fallbackIcon: () => icon(categoryIcon(item.category))});
-    else counterparty.textContent = item.counterparty || item.description || 'Ohne Gegenpartei';
+    else counterparty.textContent = recipientDisplay(item.counterparty) || item.description || 'Ohne Gegenpartei';
     const description = add(row, 'td', 'fd-booking-description');
     add(description, 'span', '', item.description || '—');
     const components = componentRows(item,account.currency);
@@ -374,17 +542,19 @@
     button.type = 'button';
     button.setAttribute('aria-expanded', 'false');
     const detailRow = add(parent, 'tr', 'fd-booking-expanded');
-    detailRow.hidden = true;
+    detailRow.hidden = !expandedBookings.has(bookingKey(item));
+    button.setAttribute('aria-expanded',String(!detailRow.hidden));
     const detailCell = add(detailRow, 'td'); detailCell.colSpan = 6;
     const body = add(detailCell, 'div', 'fd-booking-detail');
-    const detailId = `fd-booking-detail-${index}`;
+    const detailId = `${area}-fd-booking-detail-${index}`;
     body.id = detailId;
     button.setAttribute('aria-controls', detailId);
     button.addEventListener('click', () => {
       detailRow.hidden = !detailRow.hidden;
+      if (detailRow.hidden) expandedBookings.delete(bookingKey(item)); else expandedBookings.add(bookingKey(item));
       button.setAttribute('aria-expanded', String(!detailRow.hidden));
     });
-    const detailFields = [['Gegenpartei', item.counterparty], ['Verwendungszweck', item.description], ['Kategorie', categoryLabel(item)]];
+    const detailFields = [['Konto',accountName(account)],['Gegenpartei', item.counterparty], ['Verwendungszweck', item.description], ['Kategorie', categoryLabel(item)]];
     const status = categoryStatusLabel(item.category_status);
     if (status) detailFields.push(['Kategoriestatus', status]);
     if (item.source_category && item.source_category !== item.category) detailFields.push(['Quellangabe', item.source_category]);
@@ -415,16 +585,12 @@
         {detail:{account_id:item.account_id,external_id:item.external_id}})));
     }
   }
-  function populateBookings(rows) {
+  function populateBookings(rows, supplied = null) {
     rows.replaceChildren();
     const account = current();
-    if (!account) { add(rows, 'p', 'fd-empty', 'Kein Konto ausgewählt.'); return; }
-    const term = query.trim().toLocaleLowerCase('de-DE');
-    const list = bookings().filter(item => String(item.account_id) === selected)
-      .filter(item => !term || [item.counterparty, item.description, item.category, item.amount, item.date,
-        money(item.amount, item.currency || account.currency), date(item.date)]
-        .some(value => String(value || '').toLocaleLowerCase('de-DE').includes(term)))
-      .sort(bookingDateOrder);
+    if (!account) {add(rows,'p','fd-empty','Kein Konto ausgewählt.'); return;}
+    const term = query.trim();
+    const list = supplied || filteredBookings();
     add(rows, 'p', 'fd-result-count', `${list.length} Buchung${list.length === 1 ? '' : 'en'}`);
     if (!list.length) { add(rows, 'p', 'fd-empty', term ? 'Keine Buchung zum Suchtext.' : 'Keine Buchungen in diesem Monat.'); return; }
     const scroller = add(rows, 'div', 'fd-table-scroll');
@@ -461,7 +627,7 @@
       const first = relevantAccounts()[0];
       selected = first ? accountKey(first) : null;
     }
-    root.replaceChildren(); root.className = `fd-root fd-${view}`;
+    root.replaceChildren(); root.className = 'fd-root fd-blick';
     const hero = add(root, 'header', 'fd-hero');
     const intro = add(hero, 'div');
     add(intro, 'p', 'fd-kicker', 'FINANCE CONTROL · KONTEN');
@@ -478,12 +644,16 @@
       event.preventDefault();
       document.dispatchEvent(new CustomEvent('finance-dashboard-cutoff', {detail: {as_of: cutoff.value}}));
     });
-    const switcher = add(controls, 'div', 'fd-switch');
-    switcher.setAttribute('role', 'group'); switcher.setAttribute('aria-label', 'Dashboard-Stil');
-    for (const [id, label] of [['blick', 'finanzblick-Stil'], ['guru', 'Finanzguru-Stil']]) {
+    const options = add(controls,'details','fd-view-options');
+    options.open = viewOptionsOpen;
+    options.addEventListener('toggle', () => {if (options.isConnected) viewOptionsOpen = options.open;});
+    add(options,'summary','','Konten sortieren');
+    const switcher = add(options, 'div', 'fd-switch');
+    switcher.setAttribute('role', 'group'); switcher.setAttribute('aria-label', 'Kontenreihenfolge');
+    for (const [id, label] of [['blick', 'Nach Nutzung'], ['guru', 'Nach Person']]) {
       const button = add(switcher, 'button', '', label); button.type = 'button';
       button.setAttribute('aria-pressed', String(view === id)); button.dataset.view = id;
-      button.addEventListener('click', () => { view = id; try { localStorage.setItem(key, id); } catch {} paint(); activeRoot()?.querySelector('[data-view="' + id + '"]')?.focus({preventScroll:true}); });
+      button.addEventListener('click', () => { viewOptionsOpen = options.open; view = id; try { localStorage.setItem(key, id); } catch {} paint(); activeRoot()?.querySelector('[data-view="' + id + '"]')?.focus({preventScroll:true}); });
     }
     if (snapshot.error) {
       const error = add(root, 'p', 'fd-note', snapshot.error);
@@ -504,6 +674,13 @@
     footer.append('Für Haushaltsplan und verfügbare Mittel: ');
     const link = add(footer, 'a', '', 'Plan & Ist'); link.href = '#plan-actual';
   }
+  window.financeAccountIcon = account => {
+    const brand = bankBrand(account);
+    if (!brand) return icon(accountIcon(account.kind));
+    const logo = el('img', 'fd-bank-logo');
+    logo.src = {postbank:'/bank-postbank.svg',sparkasse:'/bank-sparkasse.png',ing:'/bank-ing.svg',paypal:'/bank-paypal.png'}[brand];
+    logo.alt = ''; logo.setAttribute('aria-hidden','true'); return logo;
+  };
   window.financeDashboardRender = (payload, requestedArea = 'dashboard') => {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)
         || !Array.isArray(payload.accounts) || !Array.isArray(payload.bookings))
@@ -513,7 +690,18 @@
       throw new Error('Der Anzeigebereich für die Buchungen fehlt.');
     snapshot = payload;
     area = requestedArea === 'category-outflows' ? requestedArea : 'dashboard';
+    const scroll = scrollPositions.get(area) || 0;
     paint();
+    visibleArea = area;
+    const renderedArea = area;
+    requestAnimationFrame(() => {if (visibleArea === renderedArea) window.scrollTo(0,scroll);});
+  };
+  window.financeDashboardSelectAccount = id => {
+    selected = String(id);
+    drilldown = null;
+    if (typeof window.cockpitNavigate === 'function') window.cockpitNavigate('dashboard');
+    else if (typeof cockpitNavigate === 'function') cockpitNavigate('dashboard');
+    if (snapshot) {area = 'dashboard'; paint();}
   };
   // app.js reloads the active area after refresh(). Hidden dashboards are
   // loaded on navigation, avoiding duplicate and invisible DOM rebuilds.
