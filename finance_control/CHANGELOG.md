@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.45
+
+- Remove a late compact toolbar override that squeezed primary tools into narrow buttons with smaller text.
+- Retain the two-column mobile toolbar and scalable primary text; keep complete words and at least 44 CSS-pixel touch targets.
+- Extend the synthetic mobile browser test to check the effective toolbar layout, text growth and the complete "Belege bearbeiten" label. Physical Samsung verification remains separate.
+
 ## 0.2.44
 
 - Keep the five main workspaces readable on narrow screens, with scalable text and primary touch targets of at least 44 CSS pixels.
