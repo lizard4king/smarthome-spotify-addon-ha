@@ -1,13 +1,14 @@
 """Read-only account dashboard data from the local ledger."""
 
 from datetime import date
+from decimal import Decimal
 
 from .account_overview import build_account_overview
 from .booking_categories import CategoryResolver
 from .cash_components import explicit_cash_component
 from .classification import canonical_category_id
 from .core import money
-from .current_balances import latest_by_account
+from .current_balances import latest_by_account, summarize
 from .person_attribution import person_label
 from .reporting_history import scope_for_month
 from .transfer_corrections import sql_transfer_predicate
@@ -170,6 +171,21 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                             "category_path": category_path(cash_id, cash_label)}]
                     )
             bookings.append(booking)
+    # Account movements are deliberately gross: a transfer appears on both
+    # accounts. Never present this as household consumption or net wealth.
+    period_totals = {}
+    for account in account_rows:
+        bucket = period_totals.setdefault(account["currency"],
+                                          {"inflow": Decimal(0), "outflow": Decimal(0)})
+        bucket["inflow"] += money(account["inflow"])
+        bucket["outflow"] += money(account["outflow"])
+    period_totals = [{"currency": currency,
+                      **{key: format(value, ".2f") for key, value in values.items()}}
+                     for currency, values in sorted(period_totals.items())]
     return {"as_of": day.isoformat(), "month": month, "accounts": account_rows,
             "bookings": bookings,
+            "balance_summary": summarize(account_rows, current_balances),
+            "period_totals": period_totals,
+            "period_incomplete_account_ids": [row["id"] for row in account_rows
+                                               if row.get("reason") == "incomplete_source_coverage"],
             "currencies": sorted({row["currency"] for row in account_rows})}

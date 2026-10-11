@@ -33,6 +33,7 @@ _LIMIT_NOTES = [
 _EXCLUDED_DOCUMENT_WARNINGS = {
     'duplicate_source_document', 'source_excluded_bonsy', 'not_invoice_like',
 }
+_PORTFOLIO_LIMIT = 200
 
 
 def _document(store, document_id):
@@ -176,6 +177,59 @@ def _active_contracts(store):
         "SELECT d.* FROM classification_documents d JOIN contract_metadata m ON m.document_id=d.id "
         "WHERE d.kind='contract' AND d.status='confirmed' ORDER BY d.id")
         if not set(json.loads(document['warnings'])) & _EXCLUDED_DOCUMENT_WARNINGS]
+
+
+def portfolio(store, data):
+    """Return configured, confirmed contracts and only their explicit evidence links.
+
+    This read-only view intentionally does not infer future dates, expected
+    payments, balances, or outstanding debt.
+    """
+    if not isinstance(data, dict) or data:
+        raise ValueError('invalid_contract_portfolio_request')
+    active = [(document, contract) for document, contract in _active_contracts(store)
+              if contract['configured']]
+    total = len(active)
+    selected = active[:_PORTFOLIO_LIMIT]
+    result = []
+    for document, contract in selected:
+        booking_total = store.db.execute(
+            'SELECT COUNT(*) FROM classification_document_links l '
+            "WHERE l.document_id=? AND NOT EXISTS (SELECT 1 FROM classification_audit a "
+            "WHERE a.action='document_link_rejected' AND a.account_id=l.account_id "
+            'AND a.external_id=l.external_id AND a.document_id=l.document_id)',
+            (document['id'],)).fetchone()[0]
+        rows = store.db.execute(
+            'SELECT l.account_id,l.external_id,l.allocated_amount,l.allocation_type,'
+            't.date,t.amount,t.currency,c.counterparty,c.description '
+            'FROM classification_document_links l '
+            'JOIN transactions t ON t.account_id=l.account_id AND t.external_id=l.external_id '
+            'LEFT JOIN transaction_context c ON c.account_id=t.account_id '
+            'AND c.external_id=t.external_id '
+            "WHERE l.document_id=? AND NOT EXISTS (SELECT 1 FROM classification_audit a "
+            "WHERE a.action='document_link_rejected' AND a.account_id=l.account_id "
+            'AND a.external_id=l.external_id AND a.document_id=l.document_id) '
+            'ORDER BY t.date DESC,l.account_id,l.external_id '
+            'LIMIT ?', (document['id'], _PORTFOLIO_LIMIT + 1)).fetchall()
+        bookings = [{
+            'account_id': row['account_id'], 'external_id': row['external_id'],
+            'date': row['date'], 'amount': row['amount'], 'currency': row['currency'],
+            'counterparty': row['counterparty'], 'description': row['description'],
+            'allocated_amount': row['allocated_amount'],
+            'allocation_type': row['allocation_type'],
+        } for row in rows[:_PORTFOLIO_LIMIT]]
+        result.append({
+            'document_id': document['id'], 'revision': document['revision'],
+            'title': document['title'], 'provider': document['vendor'],
+            'reference': contract['reference'], 'valid_from': contract['valid_from'],
+            'valid_to': contract['valid_to'], 'origin': contract['origin'],
+            'phases': contract['phases'], 'next_exact_date': None,
+            'next_exact_date_label': 'Genauer Abbuchungstag unbekannt',
+            'bookings': bookings,
+            'booking_total': booking_total,
+            'bookings_truncated': booking_total > _PORTFOLIO_LIMIT,
+        })
+    return {'contracts': result, 'total': total, 'truncated': total > _PORTFOLIO_LIMIT}
 
 
 def _candidate_rows(store, contract, document):

@@ -1,11 +1,9 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.46` separates factual booking categories from technical bank-source
-labels and marks unconfirmed proposals explicitly. Contract documents now support
-confirmed terms and optional amount phases with individually confirmed booking
-suggestions. Contract evidence does not consume invoice payment capacity and
-does not change ledger amounts, balances, categories or plans. See
-[contract workflow and limits](https://github.com/lizard4king/finance-control/blob/main/docs/contracts.md).
+Version `0.2.47` introduces a consistent mobile cockpit with recorded balances,
+account bookings, budgets, analysis and secondary tools. Financial calculations
+and bank originals remain authoritative. Unknown balances and incomplete
+history are explicit; currencies are never converted for the overview.
 
 Version `0.2.45` removes a late compact toolbar override that squeezed primary
 mobile tools into narrow buttons with smaller text. The mobile toolbar retains

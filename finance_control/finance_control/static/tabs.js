@@ -3,12 +3,14 @@
 const cockpitNav = document.querySelector('nav[aria-label="Bereiche"]');
 const cockpitAnnouncement = document.getElementById('active-area-announcement');
 const cockpitAreas = {
-  dashboard: 'Buchungen', 'category-outflows': 'Abgänge nach Kategorie', purchases: 'Einkäufe & Belege', administration: 'Verwaltung', 'plan-actual': 'Plan & Ist', classification: 'Buchungen bearbeiten', planning: 'Planung',
+  home: 'Übersicht', more: 'Mehr', recurring: 'Verträge', dashboard: 'Konten', 'category-outflows': 'Abgänge nach Kategorie', purchases: 'Einkäufe & Belege', administration: 'Verwaltung', 'plan-actual': 'Plan & Ist', classification: 'Buchungen bearbeiten', planning: 'Planung',
   scenarios: 'Planvarianten', accounts: 'Konten', finanzguru: 'Finanzguru-Import',
   intake: 'Vorbereiteter Import', documents: 'Belege', overview: 'Überblick',
   wealth: 'Vermögen', monthly: 'Monatsauswertung', approvals: 'Freigaben', analytics: 'Auswertung',
 };
-let cockpitPrimary = 'plan-actual';
+let cockpitPrimary = 'home';
+let cockpitActiveArea = null;
+const cockpitScrollPositions = new Map();
 let cockpitAuxiliary = false;
 let cockpitReturnFocus = null;
 
@@ -17,7 +19,11 @@ function cockpitTabs() {
 }
 
 function cockpitShowTab(id, {focus = false} = {}) {
-  const area = Object.hasOwn(cockpitAreas, id) ? id : 'plan-actual';
+  const area = Object.hasOwn(cockpitAreas, id) ? id : 'home';
+  if (cockpitActiveArea && cockpitActiveArea !== area)
+    cockpitScrollPositions.set(cockpitActiveArea, window.scrollY || 0);
+  const changed = cockpitActiveArea !== area;
+  cockpitActiveArea = area;
   const tabs = cockpitTabs();
   const primary = tabs.some(tab => tab.hash === '#' + area);
   const returning = cockpitAuxiliary && primary;
@@ -64,10 +70,13 @@ function cockpitShowTab(id, {focus = false} = {}) {
   else if (focus || returning) (primary ? selected : returnButton)?.focus();
   if (returning) cockpitReturnFocus = null;
   document.dispatchEvent(new CustomEvent('cockpit-area-changed', {detail: {id: area}}));
+  if (changed && typeof requestAnimationFrame === 'function') requestAnimationFrame(() => {
+    window.scrollTo?.({top: cockpitScrollPositions.get(area) || 0, behavior: 'instant'});
+  });
 }
 
 function cockpitNavigate(id, {focus = false} = {}) {
-  const area = Object.hasOwn(cockpitAreas, id) ? id : 'plan-actual';
+  const area = Object.hasOwn(cockpitAreas, id) ? id : 'home';
   if (location.hash !== '#' + area) location.hash = '#' + area;
   cockpitShowTab(area, {focus});
 }
@@ -99,5 +108,5 @@ document.addEventListener('keydown', event => {
 });
 window.addEventListener('hashchange', () => cockpitShowTab(location.hash.slice(1)));
 if (location.hash === '#classification') history.replaceState(null, '', '#dashboard');
-else if (!Object.hasOwn(cockpitAreas, location.hash.slice(1))) location.hash = '#plan-actual';
+else if (!Object.hasOwn(cockpitAreas, location.hash.slice(1))) location.hash = '#home';
 cockpitShowTab(location.hash.slice(1));

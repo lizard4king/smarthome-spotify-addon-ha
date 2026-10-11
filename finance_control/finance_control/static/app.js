@@ -12,7 +12,7 @@ function cockpitAreaKey(id) {
 }
 
 function cockpitDashboardFailure(id, error) {
-  const text = `Dieser Bereich konnte nicht angezeigt werden: ${error.message} Bitte lade die Seite erneut.`;
+  const text = `Dieser Bereich konnte nicht angezeigt werden: ${error.message} Du kannst es erneut versuchen.`;
   cockpitDashboardErrors.set(id, text);
   const root = $(id === 'category-outflows' ? 'category-outflows-root' : 'dashboard-root') || $(id);
   if (root) {
@@ -22,9 +22,11 @@ function cockpitDashboardFailure(id, error) {
     notice.textContent = text;
     const retry = document.createElement('button');
     retry.type = 'button';
-    retry.textContent = 'Seite erneut laden';
-    retry.addEventListener('click', () => window.location.reload());
-    root.replaceChildren(notice, retry);
+    retry.textContent = 'Erneut versuchen';
+    retry.addEventListener('click', () => void cockpitLoadArea(id, {force: true}));
+    root.querySelector('.fc-retry-notice')?.remove();
+    const errorBox = document.createElement('div'); errorBox.className = 'fc-retry-notice';
+    errorBox.append(notice, retry); root.prepend(errorBox);
   }
   if ($('message') && cockpitAreaKey(location.hash.slice(1)) === id) message(text, true);
 }
@@ -43,6 +45,8 @@ async function cockpitLoadArea(id, {force = false} = {}) {
   if (cockpitAreaLoading.has(key)) return cockpitAreaLoading.get(key);
   if (!force && cockpitAreaLoaded.get(key) === cockpitDataGeneration) return true;
   const loaders = {
+    home: async () => { if (typeof window.financeHomeLoad === 'function') await window.financeHomeLoad(); },
+    recurring: async () => { if (typeof window.financeRecurringLoad === 'function') await window.financeRecurringLoad(); },
     dashboard: async () => {
       cockpitRenderDashboard('dashboard');
       if (typeof window.financeBankRefresh?.activate === 'function') void window.financeBankRefresh.activate();
@@ -118,7 +122,7 @@ document.addEventListener('finance-purchase-edit', event => {
 });
 document.addEventListener('DOMContentLoaded', () => {
   cockpitFeaturesReady = true;
-  void cockpitLoadArea(location.hash.slice(1) || 'plan-actual');
+  void cockpitLoadArea(location.hash.slice(1) || 'home');
 });
 const accountSaveMessages = new Map();
 const eur = value => new Intl.NumberFormat('de-DE', {style:'currency', currency:'EUR'}).format(Number(value));
@@ -297,7 +301,7 @@ async function refresh() {
   $('comparison').hidden=true;
   cockpitDataGeneration += 1;
   document.dispatchEvent(new Event('finance-refreshed'));
-  await cockpitLoadArea(location.hash.slice(1) || 'plan-actual', {force: true});
+  await cockpitLoadArea(location.hash.slice(1) || 'home', {force: true});
 }
 function planInput(){const f=$('plan-form');if(!f.reportValidity())throw new Error('Bitte alle Planbeträge angeben.');const one_offs=[];for(const line of f.elements.one_offs.value.split('\n').filter(x=>x.trim())){const parts=line.split(';');if(parts.length!==2||!/^\s*\d+\s*$/.test(parts[0]))throw new Error('Einmalzahlungen: je Zeile Planmonat; Betrag.');one_offs.push({month:Number(parts[0]),amount:parts[1].trim()});}return {as_of:$('cutoff').value,plan:{income:f.elements.income.value,expenses:f.elements.expenses.value,reserve:f.elements.reserve.value,one_offs}};}
 const ns='http://www.w3.org/2000/svg';

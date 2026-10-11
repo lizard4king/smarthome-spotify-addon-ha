@@ -395,7 +395,8 @@ class Cockpit:
             if route.startswith('/api/contracts-'):
                 from . import contracts
                 actions = {'load': contracts.load, 'save': contracts.save,
-                           'matches': contracts.matches, 'link': contracts.link}
+                           'matches': contracts.matches, 'link': contracts.link,
+                           'portfolio': contracts.portfolio}
                 action = route.removeprefix('/api/contracts-')
                 if action not in actions:
                     raise ValueError('unknown_contract_action')
@@ -1072,6 +1073,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
+                      '/cockpit.css': ('cockpit.css', 'text/css; charset=utf-8'),
+                      '/home.js': ('home.js', 'text/javascript; charset=utf-8'),
                       '/administration.js': ('administration.js', 'text/javascript; charset=utf-8'),
                       '/administration.css': ('administration.css', 'text/css; charset=utf-8'),
                       '/server-banking.js': ('server-banking.js', 'text/javascript; charset=utf-8'),
