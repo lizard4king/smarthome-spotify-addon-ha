@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.39
+
+- Restore favorable green and unfavorable red plan deviations in the account overview and its expandable planned positions.
+- Judge account outflow deviations in the opposite direction to inflows while preserving the displayed actual-minus-plan values.
+- Keep missing plan values and zero deviations neutral; leave the virtual cash account without plan coloring.
+
 ## 0.2.38
 
 - Accept both documented Enable Banking consent hosts, `auth.enablebanking.com` and `tilisy.enablebanking.com`, using exact HTTPS host validation in the client and UI.

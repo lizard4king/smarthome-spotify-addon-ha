@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "5b2e3215cf1e36e39f10868578f3cfda6369ec7942e87702e840d5b176af42b9",
-  "addon_version": "0.2.38",
+  "addon_tree_sha256": "983ae547c7c56ae0e38bac70125d33538912c2229219ad012e2ead65fb150a4d",
+  "addon_version": "0.2.39",
   "deployment_files": {
-    "Dockerfile": "9a527f2a2535e2575cf917af941a19ebab634b525c54673dad304e3777334fbe",
-    "README.md": "b58dbaf59009790228b2588063a2bd1eb9c29de4cb6f66b777216ece8148d039",
+    "Dockerfile": "5c23d427a18014ddabda6a9861845cf59275d308b9be72648f81af3ebd3cac73",
+    "README.md": "2bc96d96bbb067e86edfd023ff504169b033bb02d8f002852464a8a2c001ffc7",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "2912c37d5b5a26c3e5b593153d2ef34e37a08cf7f8a489c09b1276c35a8d564f",
+    "config.yaml": "043845d3a5b0d9eaf54e109c448c7eea091b3b1fe69c6d640b481fb60a73c7b7",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e6d1373436e7a64b5b8502923bab7b826e01e52bc43ca86b8b0291eae45ec7cd"
   },
@@ -416,7 +416,7 @@
     "static/brand-zalando.svg": "38e0468af811cb418eca217ae1d259e931fc3ff33fa012085e91e720aabceaa4",
     "static/brand-zattoo.svg": "c4f6348d524e882bf1b2adcf1571b401ab25f533c8a7998118f2bbb8a3e724a5",
     "static/budget-section.html": "434132ef28f6ee4d14957dcc12aa042b54e27127101ca1d2e058f66cc731eb78",
-    "static/budget.css": "ad1874078d171d564d028ebe4d702a0571d38602aec4490067303149e2c97e37",
+    "static/budget.css": "5f4103395c6f8a0f800284672fdc2528d421c020eca755f5d7913a03aae338ae",
     "static/budget.js": "ea3023482093ef21eba12b4ecb97b9e0bf81e9d4c85853fe4f857b38b3906502",
     "static/classification.js": "0ecb0a1cf0e7b8471ea4e724a3c714a91a0a5e3927ad9b19b21f3701452d7f44",
     "static/classification_mobile.css": "b5aa35f4a1cbfa496ea24b0651f4a19fad35c3b780151c466ce3b33708477e6f",
@@ -432,7 +432,7 @@
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
     "static/paypal-banking.css": "9401c62f0fcb805acd761f6869832d7c52841efa701aa151022ac95a4e13247f",
     "static/paypal-banking.js": "a674324e4dce510d4c671319e9172504a7d945284195e1a7c3f06c178b205d39",
-    "static/plan_actual.js": "fea50161b6e7653e202d3aabf3e3bc8f75e63c89197580f075a570bfc643ddeb",
+    "static/plan_actual.js": "1c0a97be3a5b0907eec8ac19600f12f7b358699d0e7d1daed8ecb4dfec5c863c",
     "static/postbank-cards.css": "d88d70dfb12490f3962e8b68ca825ec9f9207f66d09821909a5fb0e4baee44b4",
     "static/postbank-cards.js": "7fc4376e7dd47cb24d0f780e21e54a3350f81f8009ca818f8b2fbd605e4ad26a",
     "static/postbank-transactions.css": "4cf8b6ef9faadd6ac2d257605d3396699ec97f436b00f7554bc0bab85a308ade",
@@ -451,6 +451,6 @@
     "web.py": "46ba24c6cc9ba18e519abf7b651ddcec97b6fd1d45b425f108f324b84f54c41b"
   },
   "schema_version": 1,
-  "source_commit": "10f5abdb8382204c70b3209a2eae7ab1742cc886",
-  "source_tree_sha256": "8ee996fb253daddd4d1d341124dfa4de6210eb9e204bfb0baf44afa45f97cbde"
+  "source_commit": "709549fdcc26da8ee285d77d1c68b0f52aa977d1",
+  "source_tree_sha256": "1cc2515e4f88abbfbfcb87c5017e2c769afcbe27a2e2226386a77e24a0197761"
 }
