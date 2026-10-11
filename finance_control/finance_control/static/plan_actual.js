@@ -1491,6 +1491,13 @@ function planActualAccountCell(row, value, className = '') {
   return cell;
 }
 
+function planActualAccountVarianceClass(actual, plan, flow) {
+  if (actual == null || plan == null) return '';
+  const difference = Number(actual) - Number(plan);
+  const favorableDifference = flow === 'outflow' ? -difference : difference;
+  return `plan-actual-account-variance ${planActualVarianceClass(favorableDifference)}`;
+}
+
 function planActualRenderAccountOverview(result) {
   const columns = $('plan-actual-account-columns'); columns.replaceChildren();
   const overview = result?.account_overview;
@@ -1525,17 +1532,19 @@ function planActualRenderAccountOverview(result) {
       for (const label of ['Position', 'Plan', 'Ist', 'Abweichung']) { const th = document.createElement('th'); th.textContent = label; hr.append(th); }
       head.append(hr); table.append(head);
       const body = document.createElement('tbody');
-      const addFlow = (label, planKey, actualKey) => {
+      const addFlow = (label, planKey, actualKey, flow) => {
         const row = document.createElement('tr'), plan = account.plan?.[planKey];
         const title = document.createElement('th'); title.scope = 'row'; title.textContent = label; row.append(title);
         planActualAccountCell(row, plan == null ? '—' : planActualAccountMoney(plan, account.currency));
         planActualAccountCell(row, planActualAccountMoney(account[actualKey], account.currency));
         planActualAccountCell(row, plan == null || account[actualKey] == null ? '—'
-          : planActualAccountMoney(Number(account[actualKey]) - Number(plan), account.currency));
+          : planActualAccountMoney(Number(account[actualKey]) - Number(plan), account.currency),
+        planActualAccountVarianceClass(account[actualKey], plan, flow));
         body.append(row);
       };
-      addFlow('Einnahmen', 'inflow', 'inflow'); addFlow('Ausgaben', 'outflow', 'outflow');
-      addFlow('Einnahmen minus Ausgaben', 'change', 'change');
+      addFlow('Einnahmen', 'inflow', 'inflow', 'inflow');
+      addFlow('Ausgaben', 'outflow', 'outflow', 'outflow');
+      addFlow('Einnahmen minus Ausgaben', 'change', 'change', 'change');
       table.append(body); card.append(table);
       const dates = document.createElement('p'); dates.className = 'muted';
       dates.textContent = [account.end == null ? null : `Ende: ${planActualAccountMoney(account.end, account.currency)}`,
@@ -1566,7 +1575,8 @@ function planActualRenderAccountOverview(result) {
               planActualAccountCell(row, plan == null ? '—' : planActualAccountMoney(plan, account.currency));
               planActualAccountCell(row, planActualAccountMoney(actual, account.currency));
               planActualAccountCell(row, plan == null || actual == null ? '—'
-                : planActualAccountMoney(Number(actual) - Number(plan), account.currency));
+                : planActualAccountMoney(Number(actual) - Number(plan), account.currency),
+              planActualAccountVarianceClass(actual, plan, actualKey));
               posBody.append(row);
             }
           }
@@ -1939,7 +1949,9 @@ function planActualRenderPeople(result) {
         for (const [index, text] of [result.plan_available === false ? '—' : eur(rowPlanned), eur(rowActual),
           result.plan_available === false ? '—' : planActualSignedEur(planActualVariance(rowActual, rowPlanned))].entries()) {
           const amount = document.createElement('td'); amount.textContent = text;
-          if (index === 2 && result.plan_available !== false) amount.className = `plan-actual-person-variance ${planActualVarianceClass(planActualVariance(rowActual, rowPlanned))}`;
+          if (index === 2 && result.plan_available !== false
+              && row.planned_by_person?.[person.id] != null)
+            amount.className = `plan-actual-person-variance ${planActualVarianceClass(planActualVariance(rowActual, rowPlanned))}`;
           entry.append(amount);
         }
         body.append(entry);

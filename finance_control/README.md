@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.39` restores green favorable and red unfavorable plan deviations in
+the account overview and its expandable planned positions. Expense deviations
+use the opposite color direction to income, without changing displayed values.
+Missing plans and zero deviations remain neutral; virtual cash has no plan colors.
+
 Version `0.2.38` fixes PayPal consent links by accepting both documented Enable
 Banking hosts (`auth.enablebanking.com` and `tilisy.enablebanking.com`) with exact
 HTTPS validation in the client and UI. It reports non-JSON API responses with bounded HTTP metadata rather
