@@ -3,6 +3,7 @@
 from datetime import date
 
 from .account_overview import build_account_overview
+from .booking_categories import CategoryResolver
 from .cash_components import explicit_cash_component
 from .classification import canonical_category_id
 from .core import money
@@ -108,9 +109,11 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
         account_ids = sorted(selected)
         placeholders = ",".join("?" for _ in account_ids)
         transfer_predicate = sql_transfer_predicate(alias="t", context_alias="c")
+        category_resolver = CategoryResolver(store)
         query = (
             "SELECT t.account_id,t.external_id,t.date,t.amount,t.currency,"
             "t.category,c.counterparty,c.description,o.category_id,o.confirmed,"
+            "o.account_id AS override_present,"
             "cat.label AS override_label,cat.transaction_type,a.kind AS account_kind,"
             f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
             "FROM transactions t "
@@ -122,16 +125,16 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
             "ORDER BY t.date DESC,t.account_id,t.external_id")
         params = (month + "-01", day.isoformat(), *account_ids)
         for row in store.db.execute(query, params):
-            raw_category = row["category"] or "Ohne Kategorie"
-            category_id = row["category_id"]
-            category_label = row["override_label"] or raw_category
+            resolved = category_resolver.resolve(row)
+            category_id = resolved["category_id"]
+            category_label = resolved["category"]
             booking = {
                 "account_id": row["account_id"], "external_id": row["external_id"],
                 "date": row["date"], "amount": format(money(row["amount"]), ".2f"),
                 "currency": row["currency"], "counterparty": row["counterparty"] or "",
                 "description": row["description"] or "",
-                "category": category_label,
-                "category_id": category_id,
+                **resolved,
+                "source_category": row["category"] or "",
                 "category_path": category_path(category_id, category_label),
             }
             if (row["currency"] == "EUR" and row["account_kind"] == "CHECKING"
@@ -157,11 +160,13 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                              "currency": "EUR", "category": category_label,
                              "category_id": category_id,
                              "category_confirmed": row["confirmed"] == 1,
+                             "category_status": resolved["category_status"],
                              "category_path": booking["category_path"]},
                         ] if noncash > 0 else [])
                         + [{"component_type": "cash_transfer", "amount": format(-principal, ".2f"),
                             "currency": "EUR", "category": cash_label,
                             "category_id": cash_id,
+                            "category_status": "explicit",
                             "category_path": category_path(cash_id, cash_label)}]
                     )
             bookings.append(booking)

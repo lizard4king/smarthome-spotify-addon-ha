@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.46
+
+- Show factual booking categories separately from technical bank-source labels; mark proposals and unresolved categories explicitly without changing ledger data.
+- Add confirmed contract terms, optional amount phases and individually confirmed recurring-payment suggestions with reasons and uncertainty.
+- Keep contract evidence separate from invoice payment capacity, including older contract links; preserve payment amounts, balances, categories and plans.
+- Verify contract workflows and category status on synthetic mobile and desktop browser fixtures; no private documents or bank network are used in tests.
+
 ## 0.2.45
 
 - Remove a late compact toolbar override that squeezed primary tools into narrow buttons with smaller text.

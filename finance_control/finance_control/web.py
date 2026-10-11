@@ -392,6 +392,14 @@ class Cockpit:
                 if action not in actions:
                     raise ValueError('unknown_budget_action')
                 return actions[action](store, data)
+            if route.startswith('/api/contracts-'):
+                from . import contracts
+                actions = {'load': contracts.load, 'save': contracts.save,
+                           'matches': contracts.matches, 'link': contracts.link}
+                action = route.removeprefix('/api/contracts-')
+                if action not in actions:
+                    raise ValueError('unknown_contract_action')
+                return actions[action](store, data)
             if route.startswith('/api/classification-'):
                 from . import classification
                 if route == '/api/classification-local-suggestion':
@@ -1059,6 +1067,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/paypal-banking.css': ('paypal-banking.css', 'text/css; charset=utf-8'),
                       '/paypal-credit.js': ('paypal-credit.js', 'text/javascript; charset=utf-8'),
                       '/paypal-credit.css': ('paypal-credit.css', 'text/css; charset=utf-8'),
+                      '/contracts.js': ('contracts.js', 'text/javascript; charset=utf-8'),
+                      '/contracts.css': ('contracts.css', 'text/css; charset=utf-8'),
                       '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
@@ -1435,6 +1445,15 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 if (urlsplit(self.path).path == '/api/fg-commit' and
                         isinstance(error, ValueError) and str(error) == 'review_stale_or_blocked'):
                     return self.reply(409, {'error': 'review_stale_or_blocked'})
+                if urlsplit(self.path).path.startswith('/api/contracts-'):
+                    if isinstance(error, ValueError) and str(error) in {
+                            'stale_revision', 'stale_document_revision',
+                            'stale_transaction_revision', 'stale_transaction_values',
+                            'contract_candidate_no_longer_eligible'}:
+                        return self.reply(409, {
+                            'error': 'Vertrag oder Buchung wurde inzwischen geändert. Bitte neu laden.'})
+                    return self.reply(400, {
+                        'error': 'Vertragsangaben prüfen: bestätigtes Dokument, gültige Laufzeit, positive EUR-Beträge und nicht überlappende Betragsphasen. Zuordnungen einzeln prüfen und bestätigen.'})
                 if urlsplit(self.path).path.startswith('/api/classification-'):
                     if isinstance(error, ValueError) and str(error) == 'stale_revision':
                         return self.reply(409, {
