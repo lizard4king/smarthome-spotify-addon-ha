@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "78bef8e14eb84a83102e5adf7e4a7bf299090bf293f740622614b8f8aaf88609",
-  "addon_version": "0.2.37",
+  "addon_tree_sha256": "5b2e3215cf1e36e39f10868578f3cfda6369ec7942e87702e840d5b176af42b9",
+  "addon_version": "0.2.38",
   "deployment_files": {
-    "Dockerfile": "0c43611002e473c9709be02c5ce0497d1cf03072bec8663e224017bbd7ec4635",
-    "README.md": "29b7135abe4e93fdedcc92a5d0a349f55becfa89b97e20a56c5d421fcbef83aa",
+    "Dockerfile": "9a527f2a2535e2575cf917af941a19ebab634b525c54673dad304e3777334fbe",
+    "README.md": "b58dbaf59009790228b2588063a2bd1eb9c29de4cb6f66b777216ece8148d039",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "a93466e3db4f22fb1169aeb1783a3cffcc274356224d3ba651287875610aba0e",
+    "config.yaml": "2912c37d5b5a26c3e5b593153d2ef34e37a08cf7f8a489c09b1276c35a8d564f",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e6d1373436e7a64b5b8502923bab7b826e01e52bc43ca86b8b0291eae45ec7cd"
   },
@@ -42,7 +42,7 @@
     "connectors/amazon_portability.py": "066ddc8afb9d8786e3c0fd53fca0a80cec53e1111ba154d8b5dd1ddb1a62e8a6",
     "connectors/camt_bookings.py": "28bdb4fd56527a3b1c446f452c6121bd50bed22a40a169c70b1e50fc9456fee5",
     "connectors/credit_card.py": "ead1fa359c64a0c81153441907114af247bead53b8fb7169a2f60300c63255bc",
-    "connectors/enable_banking.py": "007c6a930898fd3a05857aeac148ce151b1437fc311a23403a3768af336cd6d1",
+    "connectors/enable_banking.py": "29f6fc6c3c399138199e16f17a883932cfe89ff80d844beb73450de82aaa2a82",
     "connectors/fints_readonly.py": "2f1a6719121b5f2a16c79441abcb6c3c03f4f65394fa01507f27c903b5646354",
     "connectors/ing_period_snapshot.py": "2285114c24d84c552c4f1581224d9076a8a0d315a7d82d8551fcdeb67b6a3961",
     "connectors/ing_sync.py": "441f595685dcdb6f0191ee25cd9d65771dc770a6fbe95b4001a9d2e22673dec3",
@@ -170,7 +170,7 @@
     "static/administration.css": "4f0df018f6a774ecc62dcf3320cb449bc1c419502db2597d89df012410c277e5",
     "static/administration.js": "f51970bb35ad9f9565ba70b341eaae8f7f8510db0b0080db611dcd6197077ae5",
     "static/analytics.js": "c5f2309bba6f3d2c26d9bb4ab28a5776c120cd26f4f5c5a0eb0045473d3de2af",
-    "static/app.js": "3c68a282dea3cf44989d8825f281c3b01c2dec115b75269823f31efcc1526245",
+    "static/app.js": "8d8671c5578490553f844b0d69c67881069c692e4361c9430a27d84a8f9075a7",
     "static/approvals.js": "b2ae174b568681202a90312f91a0509771052044b4164ae213ad37609dee8029",
     "static/bank-ing.svg": "172e4562c1e35378afc6d43748b7d25188810e6744e43d01ad7da4cdac7be586",
     "static/bank-paypal.png": "b94a7952974e87a72f0b7a46ee3b3ea0f05801ac05bd7b166d9c173fac58ec56",
@@ -431,7 +431,7 @@
     "static/lucide-LICENSE.txt": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
     "static/paypal-banking.css": "9401c62f0fcb805acd761f6869832d7c52841efa701aa151022ac95a4e13247f",
-    "static/paypal-banking.js": "ee6b15cda1d819bae0b141e8f396d4febc2b4f5bcae9b5d8c2ed4fed6af60dc2",
+    "static/paypal-banking.js": "a674324e4dce510d4c671319e9172504a7d945284195e1a7c3f06c178b205d39",
     "static/plan_actual.js": "fea50161b6e7653e202d3aabf3e3bc8f75e63c89197580f075a570bfc643ddeb",
     "static/postbank-cards.css": "d88d70dfb12490f3962e8b68ca825ec9f9207f66d09821909a5fb0e4baee44b4",
     "static/postbank-cards.js": "7fc4376e7dd47cb24d0f780e21e54a3350f81f8009ca818f8b2fbd605e4ad26a",
@@ -451,6 +451,6 @@
     "web.py": "46ba24c6cc9ba18e519abf7b651ddcec97b6fd1d45b425f108f324b84f54c41b"
   },
   "schema_version": 1,
-  "source_commit": "ca540f567147fb24dd41c49a0418dd8f23a5e64d",
-  "source_tree_sha256": "46f9d8ecbb646b58c613fcce30cec2c865b90f9d7951b09fffc0181bf529751a"
+  "source_commit": "10f5abdb8382204c70b3209a2eae7ab1742cc886",
+  "source_tree_sha256": "8ee996fb253daddd4d1d341124dfa4de6210eb9e204bfb0baf44afa45f97cbde"
 }

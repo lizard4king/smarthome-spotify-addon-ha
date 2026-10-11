@@ -133,7 +133,31 @@ function accountBalanceLabel(balance) {
 function message(text, error=false) { $('message').textContent=text; $('message').className=error?'error':''; }
 async function api(route, data, retryAfterTokenRefresh=true) {
   const options = data === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json','X-Finance-Token':state.csrf},body:JSON.stringify(data)};
-  const response = await fetch(route, options); const result = await response.json();
+  const response = await fetch(route, options);
+  const responseDiagnostics = () => {
+    const status = Number.isInteger(response.status) && response.status >= 100 && response.status <= 599
+      ? response.status : null;
+    const rawType = response.headers?.get?.('content-type');
+    const candidate = typeof rawType === 'string' ? rawType.split(';', 1)[0].trim().toLowerCase() : '';
+    const contentType = candidate.length <= 96 && /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(candidate)
+      ? candidate : null;
+    return {httpStatus:status, contentType, redirected:response.redirected === true};
+  };
+  const invalidResponse = () => {
+    const diagnostics = responseDiagnostics();
+    const status = diagnostics.httpStatus ?? 'unbekannt';
+    const contentType = diagnostics.contentType || 'unbekannt';
+    const redirect = diagnostics.redirected ? 'ja' : 'nein';
+    const error = new Error(`Der Server hat keine gültige JSON-Antwort gesendet. Bitte lade die Seite neu. (HTTP ${status} · Antworttyp ${contentType} · Umleitung: ${redirect})`);
+    error.responseDiagnostics = diagnostics;
+    return error;
+  };
+  const contentType = responseDiagnostics().contentType;
+  if (!contentType || !(contentType === 'application/json' || (contentType.startsWith('application/') && contentType.endsWith('+json'))))
+    throw invalidResponse();
+  let result;
+  try { result = await response.json(); } catch { throw invalidResponse(); }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw invalidResponse();
   if(response.status===403&&data!==undefined&&retryAfterTokenRefresh&&result.error==='Anfrage nicht freigegeben. Seite neu laden.'){
     const fresh=await api('/api/state',undefined,false);
     state={...state,...fresh};
@@ -142,6 +166,7 @@ async function api(route, data, retryAfterTokenRefresh=true) {
   if (!response.ok) {
     const error = new Error(result.error || 'Anfrage fehlgeschlagen.');
     if (typeof result.code === 'string') error.code = result.code;
+    error.responseDiagnostics = responseDiagnostics();
     throw error;
   }
   return result;

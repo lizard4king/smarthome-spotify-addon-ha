@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.38` fixes PayPal consent links by accepting both documented Enable
+Banking hosts (`auth.enablebanking.com` and `tilisy.enablebanking.com`) with exact
+HTTPS validation in the client and UI. It reports non-JSON API responses with bounded HTTP metadata rather
+than a raw parser error. It preserves JSON error codes and the single CSRF refresh;
+response bodies, headers and return URLs stay outside error messages.
+
 Version `0.2.37` prepares a personal PayPal connection through Enable Banking.
 The owner registers their own application and links their own accounts. Server
 keys and consent metadata stay encrypted in the excluded bank vault. Verified
