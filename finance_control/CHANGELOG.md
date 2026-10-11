@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.38
+
+- Accept both documented Enable Banking consent hosts, `auth.enablebanking.com` and `tilisy.enablebanking.com`, using exact HTTPS host validation in the client and UI.
+- Report non-JSON API responses with bounded HTTP metadata instead of exposing an HTML parser error.
+- Preserve existing JSON errors and the single CSRF refresh; never show response HTML, headers or return URLs.
+
 ## 0.2.37
 
 - Add owner-bound Enable Banking setup for a personal PayPal read-only connection, with a server-generated public certificate and official consent return.

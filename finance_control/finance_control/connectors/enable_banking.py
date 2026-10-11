@@ -17,6 +17,7 @@ from typing import Callable, Mapping, Protocol
 from uuid import UUID
 
 API_BASE = "https://api.enablebanking.com"
+AUTHORIZATION_HOSTS = frozenset({"auth.enablebanking.com", "tilisy.enablebanking.com"})
 TIMEOUT = 15.0
 MAX_BYTES = 2_000_000
 MAX_PAGES = 100
@@ -100,7 +101,7 @@ def _date(value: str) -> str:
     return value
 
 
-def _https_url(value: object, code: str, *, host: str | None = None) -> str:
+def _https_url(value: object, code: str, *, hosts: frozenset[str] | None = None) -> str:
     try:
         if not isinstance(value, str):
             raise ValueError
@@ -108,8 +109,9 @@ def _https_url(value: object, code: str, *, host: str | None = None) -> str:
             raise ValueError
         parsed = urllib.parse.urlsplit(value)
         if (parsed.scheme != "https" or not parsed.hostname
-                or parsed.username or parsed.password or parsed.fragment or parsed.port not in (None, 443)
-                or (host is not None and parsed.hostname != host)):
+                or parsed.username is not None or parsed.password is not None
+                or parsed.fragment or parsed.port not in (None, 443)
+                or (hosts is not None and parsed.hostname not in hosts)):
             raise ValueError
     except (ValueError, TypeError):
         raise EnableBankingError(code) from None
@@ -231,7 +233,7 @@ class EnableBankingClient:
             "aspsp": dict(aspsp),
             "state": state, "redirect_url": redirect_url, "psu_type": "personal",
         })
-        _https_url(result.get("url"), "invalid_authorization_url", host="auth.enablebanking.com")
+        _https_url(result.get("url"), "invalid_authorization_url", hosts=AUTHORIZATION_HOSTS)
         canonical_uuid(result.get("authorization_id"), "invalid_authorization_id")
         return result
 

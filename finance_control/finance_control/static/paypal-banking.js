@@ -27,6 +27,21 @@
     return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
   };
   const safe = (value, max = 180) => typeof value === 'string' && value.length <= max ? value : '';
+  const authorizationUrl = value => {
+    if (typeof value !== 'string' || value.length > 4096 || /[\\\s\u0000-\u001f\u007f-\u009f]/u.test(value) || value.includes('#')) return null;
+    const authorityMatch = value.match(/^https:\/\/([^/?#]*)/i);
+    if (!authorityMatch || authorityMatch[1].includes('@')) return null;
+    const authorityParts = authorityMatch[1].match(/^([^:]+)(?::([0-9]+))?$/);
+    if (!authorityParts) return null;
+    const host = authorityParts[1].toLowerCase();
+    const allowedHosts = ['auth.enablebanking.com', 'tilisy.enablebanking.com'];
+    if (!allowedHosts.includes(host) || (authorityParts[2] && authorityParts[2] !== '443')) return null;
+    let parsed;
+    try { parsed = new URL(value); } catch (_) { return null; }
+    if (parsed.protocol !== 'https:' || !allowedHosts.includes(parsed.hostname)
+      || parsed.username || parsed.password || (parsed.port && parsed.port !== '443') || parsed.hash) return null;
+    return parsed;
+  };
   let dashboardMounted = false;
   let dashboardPending = false;
 
@@ -193,9 +208,8 @@
       form.addEventListener('submit', event => {
         event.preventDefault();
         void perform(button, actionStatus, routes.authorize, {confirmed: true, country: select.value}, result => {
-          let url;
-          try { url = new URL(result?.authorization_url); } catch (_) { url = null; }
-          if (!url || url.protocol !== 'https:' || url.hostname !== 'auth.enablebanking.com') {
+          const url = authorizationUrl(result?.authorization_url);
+          if (!url) {
             message(actionStatus, 'Der Server hat keinen gültigen Enable-Banking-Freigabelink geliefert.', true); return;
           }
           const link = node('a', 'Freigabe bei Enable Banking öffnen');
