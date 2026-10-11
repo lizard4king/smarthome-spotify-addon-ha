@@ -37,6 +37,7 @@ from .server_bank_refresh import ServerBankRefresh
 from .server_card_gateway import ServerCardGateway
 from .server_cards import ServerCards
 from .paypal_banking import PayPalBanking
+from .paypal_credit import PayPalCredit
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -733,6 +734,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
     server_cards = (ServerCards(administration, ServerCardGateway(administration, bank_product_id))
                     if administration is not None else None)
     paypal_banking = PayPalBanking(administration) if administration is not None else None
+    paypal_credit = PayPalCredit(administration) if administration is not None else None
     if administration is not None:
         def cleanup_bank_connections(connections):
             server_cards.cleanup_connections(connections)
@@ -861,6 +863,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 'paypal_invalid_return': 'Die Rückkehr von Enable Banking ist ungültig. Bitte die Freigabe neu starten.',
                 'paypal_return_expired': 'Diese PayPal-Rückkehr ist abgelaufen oder wurde bereits verarbeitet. Bitte den Status in der Verwaltung prüfen.',
                 'paypal_consent_failed': 'Die PayPal-Freigabe wurde nicht abgeschlossen. Bitte erneut starten.',
+                'paypal_credit_invalid': 'Kreditstand prüfen: Stichtag, Beträge, Zinsen und vollständiger Ratenplan müssen zusammenpassen. Unbekannte Kreditsumme leer lassen.',
+                'paypal_credit_stale': 'Dieser Kreditstand wurde inzwischen aktualisiert. Bitte neu laden.',
                 'invalid_period': 'Bitte einen gültigen Zeitraum von höchstens 90 Tagen bis heute wählen.',
             }
             return self.reply(error.status, {'error': messages.get(error.code, 'Eingaben prüfen und erneut bestätigen.'),
@@ -1018,6 +1022,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
                       '/paypal-banking.js': ('paypal-banking.js', 'text/javascript; charset=utf-8'),
                       '/paypal-banking.css': ('paypal-banking.css', 'text/css; charset=utf-8'),
+                      '/paypal-credit.js': ('paypal-credit.js', 'text/javascript; charset=utf-8'),
+                      '/paypal-credit.css': ('paypal-credit.css', 'text/css; charset=utf-8'),
                       '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.js': ('dashboard.js', 'text/javascript; charset=utf-8'),
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
@@ -1411,6 +1417,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 if administration is None:
                     return self.management_error(AdministrationError('administration_disabled', 403))
                 action = urlsplit(self.path).path.removeprefix('/api/administration/')
+                if action.startswith('paypal-credit-'):
+                    return self.reply(200, paypal_credit.dispatch(self.management_user, action, data))
                 if action.startswith('paypal-'):
                     return self.reply(200, paypal_banking.dispatch(
                         self.management_user, action, data, self.headers.get('Origin', '')))

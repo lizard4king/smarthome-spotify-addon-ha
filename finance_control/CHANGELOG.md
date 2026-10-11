@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.40
+
+- Record owner-bound, dated manual PayPal credit plans with immutable revisions and cent-exact checks for complete unchanged regular plans.
+- Separate remaining scheduled payments including future interest from unknown outstanding principal; show verified repayment components without creating ledger entries.
+- Explain the current AIS credit-data limitation and display supplied transaction codes and unconfirmed repayment text hints without automatic classification.
+
 ## 0.2.39
 
 - Restore favorable green and unfavorable red plan deviations in the account overview and its expandable planned positions.

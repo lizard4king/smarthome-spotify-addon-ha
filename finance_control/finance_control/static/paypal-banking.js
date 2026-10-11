@@ -267,6 +267,39 @@
     return indicator === 'DBIT' ? `-${magnitude}` : magnitude;
   }
 
+  function bankTransactionType(tx) {
+    const code = tx?.bank_transaction_code;
+    return [safe(code?.description, 120), safe(code?.code, 48), safe(code?.sub_code, 48)]
+      .filter(Boolean).join(' · ').slice(0, 200);
+  }
+
+  function hasCreditTextSignal(tx) {
+    const remittance = Array.isArray(tx?.remittance_information)
+      ? tx.remittance_information.filter(value => typeof value === 'string').join(' ').slice(0, 240) : '';
+    const description = safe(tx?.bank_transaction_code?.description, 120);
+    const text = `${remittance} ${description}`;
+    const signal = /\b(?:Ratenzahlung|Kreditrate|Tilgung|Darlehen|loan repayment|instalment repayment|installment repayment)\b/iu;
+    const negated = /\b(?:kein(?:e[rsn]?)?|nicht|ohne)\s+(?:[\p{L}-]+\s+){0,2}(?:Ratenzahlung|Kreditrate|Tilgung|Darlehen|loan repayment|instalment repayment|installment repayment)\b/iu;
+    return signal.test(text) && !negated.test(text);
+  }
+
+  function renderCreditInfo() {
+    const details = node('details', '', 'pb-credit-info');
+    details.append(node('summary', 'Ratenkredite'));
+    details.append(node('p', 'Kreditplan ist nicht im Kontoabruf enthalten. Ein separat manuell geprüfter Stand wird darunter geführt.', 'pb-note'));
+    const values = document.createElement('dl');
+    for (const label of ['Restbetrag inkl. künftiger Zinsen', 'Offene Kreditsumme',
+      'Zins- und Ratenplan', 'Nächster Termin']) {
+      values.append(node('dt', label), node('dd', 'Nicht im Kontoabruf enthalten'));
+    }
+    details.append(values);
+    const link = node('a', 'PayPal-Übersicht öffnen');
+    link.href = 'https://www.paypal.com/myaccount/summary';
+    link.target = '_blank'; link.rel = 'noopener noreferrer';
+    details.append(link);
+    return details;
+  }
+
   function showReadResults(result, target) {
     target.replaceChildren();
     if (!result || result.complete !== true || result.imported !== false) {
@@ -311,6 +344,10 @@
         ? tx.remittance_information.filter(value => typeof value === 'string').join(' · ').slice(0, 240) : '';
       const description = remittance || safe(tx?.creditor?.name, 120) || safe(tx?.debtor?.name, 120);
       if (description) row.append(node('span', description));
+      const bookingType = bankTransactionType(tx);
+      if (bookingType) row.append(node('small', `Buchungsart: ${bookingType}`));
+      if (hasCreditTextSignal(tx))
+        row.append(node('small', 'Prüfhinweis: Kreditbezug im Text; nicht bestätigt.', 'pb-credit-hint'));
       target.append(row);
     }
   }
@@ -321,7 +358,10 @@
     const root = node('div', '', 'pb-root');
     const status = node('p', 'PayPal-Konten werden geladen.', 'pb-status');
     status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-    root.append(status); host.append(root);
+    const creditHost = node('div', '', 'pb-credit-host');
+    root.append(status, renderCreditInfo(), creditHost); host.append(root);
+    if (typeof window.PayPalCredit?.renderBookings === 'function')
+      void window.PayPalCredit.renderBookings(creditHost);
     const state = await loadState(host, root, status);
     if (!state) return;
     if (state.supported !== true) { message(status, 'PayPal-Lesen wird auf dieser Serverinstallation nicht unterstützt.'); return; }
@@ -350,6 +390,7 @@
     const results = node('section', '', 'pb-results');
     const button = node('button', 'Leseprobe starten');
     form.append(button, actionStatus); root.append(form, results);
+    message(status, '');
     form.addEventListener('submit', async event => {
       event.preventDefault();
       const from = dateFrom.value; const to = dateTo.value;
