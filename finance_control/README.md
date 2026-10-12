@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.52` keeps account names and balances readable on narrow screens,
+including enlarged text. Navigation labels retain complete words; monthly
+analysis values keep their own scroll area and auxiliary task controls stack.
+The synthetic browser suite covers all 20 cockpit routes and expanded forms
+at 360, 390, 430 and 1440 CSS pixels. Physical Android acceptance remains separate.
+
 Version `0.2.51` preserves recurring payment identity across bank-source name
 prefixes and adds an explicit metadata-only enrichment for exactly proven,
 already accepted Finanzguru originals. This path never writes transactions or
