@@ -10,7 +10,6 @@
   const expandedBookings = new Set();
   const scrollPositions = new Map();
   let visibleArea = null;
-  let viewOptionsOpen = false;
   let filterDialogArea = null;
   let filterLayout = null;
   window.addEventListener('scroll', () => {
@@ -27,8 +26,6 @@
   const expandedAccounts = new Set();
   const mobileQuery = window.matchMedia('(max-width: 700px)');
   mobileQuery.addEventListener('change', event => {
-    document.querySelectorAll('#dashboard-root .fd-account-picker, #category-outflows-root .fd-account-picker')
-      .forEach(picker => { picker.open = !event.matches; });
     if (filterLayout) filterLayout();
   });
   let view = (() => { try { return localStorage.getItem(key) === 'guru' ? 'guru' : 'blick'; } catch { return 'blick'; } })();
@@ -194,7 +191,7 @@
     }
     const retrieved = balance.retrieved_at ? ` · abgerufen ${date(balance.retrieved_at)}` : '';
     return {amount:money(balance.amount, balance.currency || account.currency),
-      stand:`Stand: ${date(balance.booked_on)}${retrieved}`};
+      stand:`Stand: ${date(balance.booked_on) || 'unbekannt'}${retrieved}`};
   };
   const accountName = account => account.display_name || account.id || 'Konto';
   const kindName = kind => ({CHECKING:'Girokonto',CURRENT:'Girokonto',SAVINGS:'Sparkonto',CASH:'Bargeld',CREDIT_CARD:'Kreditkarte',DEPOT:'Depot',INVESTMENT:'Depot'}[String(kind || '').toUpperCase()] || kind || 'Konto');
@@ -627,13 +624,15 @@
       const first = relevantAccounts()[0];
       selected = first ? accountKey(first) : null;
     }
-    root.replaceChildren(); root.className = 'fd-root fd-blick';
+    root.replaceChildren(); root.className = `fd-root fd-${view}`;
     const hero = add(root, 'header', 'fd-hero');
     const intro = add(hero, 'div');
     add(intro, 'p', 'fd-kicker', 'FINANCE CONTROL · KONTEN');
     add(intro, 'h1', '', area === 'category-outflows' ? 'Abgänge nach Kategorie' : 'Buchungen');
     add(intro, 'p', 'fd-hero-sub', `${monthLabel()} · Stichtag ${date(snapshot.as_of)}`);
-    add(intro, 'p', 'fd-data-basis', 'Buchungen: importierte Buchungen · Kontostände: letzter belegter Stand');
+    const basis = add(intro, 'details', 'fd-data-basis');
+    add(basis, 'summary', '', 'Datengrundlage');
+    add(basis, 'p', '', 'Buchungen: importierte Buchungen · Kontostände: letzter belegter Stand');
     const controls = add(hero, 'div', 'fd-controls');
     const cutoffForm = add(controls, 'form', 'fd-cutoff-form');
     const cutoffLabel = add(cutoffForm, 'label'); add(cutoffLabel, 'span', '', 'Stand am');
@@ -644,17 +643,7 @@
       event.preventDefault();
       document.dispatchEvent(new CustomEvent('finance-dashboard-cutoff', {detail: {as_of: cutoff.value}}));
     });
-    const options = add(controls,'details','fd-view-options');
-    options.open = viewOptionsOpen;
-    options.addEventListener('toggle', () => {if (options.isConnected) viewOptionsOpen = options.open;});
-    add(options,'summary','','Konten sortieren');
-    const switcher = add(options, 'div', 'fd-switch');
-    switcher.setAttribute('role', 'group'); switcher.setAttribute('aria-label', 'Kontenreihenfolge');
-    for (const [id, label] of [['blick', 'Nach Nutzung'], ['guru', 'Nach Person']]) {
-      const button = add(switcher, 'button', '', label); button.type = 'button';
-      button.setAttribute('aria-pressed', String(view === id)); button.dataset.view = id;
-      button.addEventListener('click', () => { viewOptionsOpen = options.open; view = id; try { localStorage.setItem(key, id); } catch {} paint(); activeRoot()?.querySelector('[data-view="' + id + '"]')?.focus({preventScroll:true}); });
-    }
+    controls.prepend(window.financeViewSwitcher());
     if (snapshot.error) {
       const error = add(root, 'p', 'fd-note', snapshot.error);
       error.setAttribute('role', 'alert');
@@ -663,7 +652,7 @@
     const layout = add(root, 'div', 'fd-layout');
     const side = add(layout, 'aside', 'fd-sidebar');
     const picker = add(side, 'details', 'fd-account-picker');
-    picker.open = !mobileQuery.matches;
+    picker.open = true;
     const sideHead = add(picker, 'summary', 'fd-side-head');
     add(sideHead, 'h2', '', 'Konten wählen');
     add(sideHead, 'span', '', String(accounts().length));
@@ -674,6 +663,24 @@
     footer.append('Für Haushaltsplan und verfügbare Mittel: ');
     const link = add(footer, 'a', '', 'Plan & Ist'); link.href = '#plan-actual';
   }
+  // One persisted presentation mode for overview and account workspace.
+  window.financeViewMode = () => view;
+  window.financeViewSwitcher = () => {
+    const switcher = el('div', 'fd-switch fc-view-switch');
+    switcher.setAttribute('role', 'group'); switcher.setAttribute('aria-label', 'Ansicht');
+    for (const [id, label] of [['guru', 'Finanzguru'], ['blick', 'Finanzblick']]) {
+      const button = add(switcher, 'button', '', label); button.type = 'button';
+      button.dataset.view = id; button.setAttribute('aria-pressed', String(view === id));
+      button.addEventListener('click', () => {
+        view = id; try { localStorage.setItem(key, id); } catch {}
+        if (['dashboard', 'category-outflows'].includes(visibleArea)) paint();
+        document.dispatchEvent(new CustomEvent('finance-view-changed'));
+        const active = document.querySelector('main>section:not([hidden])');
+        active?.querySelector('[data-view="' + id + '"]')?.focus({preventScroll:true});
+      });
+    }
+    return switcher;
+  };
   window.financeAccountIcon = account => {
     const brand = bankBrand(account);
     if (!brand) return icon(accountIcon(account.kind));

@@ -15,7 +15,8 @@ from pathlib import Path
 from .classification import apply_exact_rule_if_safe
 from .core import money
 from .finanzguru_import import (digest, load_batch, selected_source_rows,
-                               validate_selected_transfer_pairs)
+                               validate_selected_transfer_pairs, _mapped_row_metadata,
+                               _persist_row_metadata)
 
 
 _CHILD_TABLES = (
@@ -548,7 +549,8 @@ def _plan(store, staged, choices, root):
                     'dependencies': {key[0] + '\0' + key[1]: _dependent_state(store, key)
                                      for key in sorted(set(desired) | set(removed))},
                     'transfer_pairs': {key[0] + '\0' + key[1]: _transfer_pair_state(store, key)
-                                       for key in sorted(set(desired) | set(removed))}})
+                                       for key in sorted(set(desired) | set(removed))},
+                    'metadata_sha256': staged.get('metadata_sha256')})
     for name in ('new', 'updated', 'removed', 'already_imported'):
         counts[name] += 0
     report = {'counts': dict(counts), 'blockers': sorted(set(blockers)), 'rows': detail,
@@ -625,6 +627,9 @@ def commit_snapshot(store, root, batch, choices, review_token):
                     'source_sha256': staged['source_sha256'], 'ledger_written': False,
                     'no_op': True}
         if plan['replay']:
+            metadata_rows = _mapped_row_metadata(
+                staged, plan['mapping'], date_to=report.get('date_to'))
+            _persist_row_metadata(store, metadata_rows, staged['source_sha256'])
             store.db.commit()
             return {'inserted': 0, 'updated': 0, 'removed': 0, 'auto_classified': 0,
                     'auto_transfers': {'status': 'skipped', 'confirmed': 0, 'pair_ids': []},
@@ -641,12 +646,16 @@ def commit_snapshot(store, root, batch, choices, review_token):
         with (folder / ('decision-' + secrets.token_hex(8) + '.json')).open(
                 'x', encoding='utf-8') as stream:
             json.dump(receipt, stream, ensure_ascii=False, indent=2)
+        metadata_rows = _mapped_row_metadata(
+            staged, plan['mapping'], date_to=report.get('date_to'))
         source_text = _json({'kind': 'finanzguru_full_snapshot',
                              'source_sha256': staged['source_sha256'],
+                             'metadata_sha256': staged.get('metadata_sha256'),
                              'exported_at': plan['exported_at'],
                              'choices': choices,
                              'rows': [row for row in staged['rows']
-                                      if row['source_account'] in plan['mapping']]})
+                                      if row['source_account'] in plan['mapping']],
+                             'row_metadata': metadata_rows})
         import_id = store.db.execute(
             'INSERT INTO imports(digest,imported_at,source) VALUES (?,?,?)',
             (hashlib.sha256(source_text.encode()).hexdigest(),
@@ -744,6 +753,7 @@ def commit_snapshot(store, root, batch, choices, review_token):
                    sha=staged['source_sha256'], action='accepted',
                    current={'fingerprint': plan['source_fingerprints'][source],
                             'import_id': import_id})
+        _persist_row_metadata(store, metadata_rows, staged['source_sha256'])
         store.db.commit()
     except Exception:
         store.db.rollback()

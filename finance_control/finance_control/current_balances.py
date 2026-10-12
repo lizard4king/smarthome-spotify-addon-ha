@@ -126,4 +126,40 @@ def latest_by_account(store, account_rows, *, as_of=None):
         if (previous is None or (balance['booked_on'], balance['source'] == 'bank')
                 > (previous['booked_on'], previous['source'] == 'bank')):
             result[account_id] = balance
+
+    # File evidence is a fallback only. Any qualified bank or bound statement
+    # candidate above retains the existing source/date priority.
+    file_only = set(wanted) - set(result)
+    if file_only:
+        ids = sorted(file_only)
+        placeholders = ','.join('?' for _ in ids)
+        file_parameters = (*ids, as_of) if as_of is not None else tuple(ids)
+        file_rows = store.db.execute(
+            'SELECT m.account_id,m.balance_amount,m.currency,m.booked_on '
+            'FROM finanzguru_row_metadata m JOIN transactions t '
+            'ON t.account_id=m.account_id AND t.external_id=m.external_id '
+            'AND t.date=m.booked_on AND t.currency=m.currency '
+            'WHERE m.balance_amount IS NOT NULL '
+            f'AND m.account_id IN ({placeholders})'
+            + (' AND m.booked_on<=?' if as_of is not None else ''), file_parameters)
+        by_account = {}
+        for row in file_rows:
+            if row['currency'] != wanted[row['account_id']]:
+                continue
+            candidate = _candidate(row['account_id'], row['currency'], row['balance_amount'],
+                                   row['booked_on'], None, 'finanzguru_file')
+            if candidate is not None:
+                by_account.setdefault(candidate[0], []).append(candidate[1])
+        for account_id, values in by_account.items():
+            latest_date = max(value['booked_on'] for value in values)
+            latest = [value for value in values if value['booked_on'] == latest_date]
+            amounts = {value['amount'] for value in latest}
+            if len(amounts) > 1:
+                result[account_id] = {
+                    'amount': None, 'currency': wanted[account_id], 'booked_on': latest_date,
+                    'retrieved_at': None, 'source': 'finanzguru_file', 'status': 'ambiguous',
+                    'warning': 'conflicting_finanzguru_balances_on_same_date',
+                }
+            else:
+                result[account_id] = latest[0]
     return result

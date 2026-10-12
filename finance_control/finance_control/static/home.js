@@ -7,8 +7,9 @@
     if (text !== undefined) node.textContent = text;
     return node;
   };
-  const moneyText = (value, currency = 'EUR') => new Intl.NumberFormat('de-DE',
-    {style: 'currency', currency}).format(Number(value));
+  const hasAmount = value => value !== null && value !== undefined && value !== '' && /^[+-]?\d+(?:\.\d{1,2})?$/.test(String(value));
+  const moneyText = (value, currency = 'EUR') => hasAmount(value) ? new Intl.NumberFormat('de-DE',
+    {style: 'currency', currency: currency || 'EUR'}).format(Number(value)) : 'Betrag fehlt';
   const dateText = value => value ? new Date(value + 'T12:00:00').toLocaleDateString('de-DE') : 'unbekannt';
   const navigate = id => cockpitNavigate(id);
   const link = (text, target) => { const a = el('a', 'fc-text-link', text); a.href = '#' + target; return a; };
@@ -33,25 +34,36 @@
     const name = el('span', 'fc-home-account-name');
     name.append(el('strong', '', account.display_name), el('small', 'muted',
       [account.owner_label, account.institution].filter(Boolean).join(' · ')));
-    const balance = account.current_balance;
+    const balance = hasAmount(account.current_balance?.amount) ? account.current_balance : null;
     const value = el('span', 'fc-home-account-value');
     value.append(el('strong', balance && Number(balance.amount) < 0 ? 'fc-negative' : '',
       balance ? moneyText(balance.amount, balance.currency) : 'Stand fehlt'));
-    value.append(el('small', 'muted', balance ? 'Stand ' + dateText(balance.booked_on) : 'Kein belegter Kontostand'));
+    value.append(el('small', 'muted', balance ? 'Stand ' + dateText(balance.booked_on) : 'Kein belegter Stand'));
     button.append(icon, name, value);
     button.addEventListener('click', () => window.financeDashboardSelectAccount(account.id));
     return button;
   }
   function renderOverview(data) {
     const root = document.getElementById('home-root'), fragment = document.createDocumentFragment();
-    const heading = el('div', 'fc-page-heading'); heading.append(el('p', 'eyebrow', 'DEINE ÜBERSICHT'), el('h2', '', 'Alles im Blick'));
+    root.className = `fc-home fc-home-${window.financeViewMode()}`;
+    const heading = el('div', 'fc-page-heading'); heading.append(el('h2', '', 'Übersicht'), window.financeViewSwitcher());
     const dateForm = el('form', 'fc-home-period'), label = el('label', '', 'Buchungen bis');
     const input = el('input'); input.type = 'date'; input.value = state.as_of; input.required = true;
     input.setAttribute('aria-label', 'Buchungen bis'); label.append(input);
     const submit = el('button', 'secondary', 'Anzeigen'); dateForm.append(label, submit);
     dateForm.addEventListener('submit', event => { event.preventDefault(); document.getElementById('cutoff').value = input.value; void run(refresh); });
-    heading.append(dateForm); fragment.append(heading);
-    const hero = el('article', 'fc-balance-hero'); hero.append(el('span', 'eyebrow', 'BEKANNTE KONTOSTÄNDE'));
+    fragment.append(heading);
+    const accounts = section('Kontostände', 'dashboard', 'Buchungen'); accounts.classList.add('fc-home-accounts');
+    const list = el('div', 'fc-home-account-list');
+    const ordered = [...data.accounts].sort((a, b) => {
+      const usage = id => data.bookings.filter(item => item.account_id === id).length;
+      return usage(b.id) - usage(a.id) || a.display_name.localeCompare(b.display_name, 'de');
+    });
+    for (const account of ordered) list.append(accountButton(account));
+    if (!ordered.length) list.append(el('p', 'muted', 'Noch keine Konten vorhanden.'), link('Konten einrichten', 'accounts'));
+    accounts.append(list); fragment.append(accounts);
+    fragment.append(dateForm);
+    const hero = el('details', 'fc-balance-hero'); hero.append(el('summary', '', 'Gesamtstände & Datengrundlage'));
     for (const item of data.balance_summary || []) {
       const line = el('div', 'fc-balance-line');
       line.append(el('strong', '', item.known_count ? moneyText(item.amount, item.currency) : 'Nicht verfügbar'),
@@ -68,20 +80,12 @@
     for (const item of data.period_totals || []) for (const [key, title] of [['inflow', 'Zugänge'], ['outflow', 'Abgänge']]) {
       const metric = el('div'); metric.append(el('span', 'muted', title), el('strong', key === 'inflow' ? 'fc-positive' : '', moneyText(item[key], item.currency))); flow.append(metric);
     }
-    movements.append(flow, el('p', 'fc-caption', 'Aus Kontosicht, einschließlich Umbuchungen. Für Haushaltsausgaben verwende die Analyse.'));
+    const movementDetails = el('details', 'fc-caption'); movementDetails.append(el('summary', '', 'Datengrundlage'), el('p', '', 'Aus Kontosicht, einschließlich Umbuchungen. Für Haushaltsausgaben verwende die Analyse.'));
+    movements.append(flow, movementDetails);
     if (data.period_incomplete_account_ids?.length) movements.append(el('p', 'notice', `Unvollständiger Zeitraum: Für ${data.period_incomplete_account_ids.length} Konten bestehen bekannte Datenlücken. Die Summen enthalten nur vorhandene Buchungen.`));
     columns.append(movements);
     const budget = section('Budgets', 'plan-actual', 'Öffnen'); budget.id = 'home-budget';
     budget.append(el('p', 'muted fc-budget-status', 'Gespeicherter Plan wird geprüft …')); columns.append(budget); fragment.append(columns);
-    const accounts = section('Deine Konten', 'dashboard');
-    const list = el('div', 'fc-home-account-list');
-    const ordered = [...data.accounts].sort((a, b) => {
-      const usage = id => data.bookings.filter(item => item.account_id === id).length;
-      return usage(b.id) - usage(a.id) || a.display_name.localeCompare(b.display_name, 'de');
-    });
-    for (const account of ordered) list.append(accountButton(account));
-    if (!ordered.length) list.append(el('p', 'muted', 'Noch keine Konten vorhanden.'), link('Konten einrichten', 'accounts'));
-    accounts.append(list); fragment.append(accounts);
     const recent = section('Letzte Buchungen', 'dashboard'), bookings = el('div', 'fc-home-bookings');
     for (const item of data.bookings.slice(0, 5)) {
       const button = el('button', 'fc-home-booking'); button.type = 'button';
@@ -132,6 +136,13 @@
       root.append(forecasts, el('p', 'fc-caption', 'Teilprognose: nur erfasste regelmäßige Zahlungen. Ungeplante variable Ausgaben und fehlende Verträge sind nicht enthalten.'));
     } catch (error) { if (document.getElementById('home-expected') === root) retryNotice(root, error, () => void loadExpected(root)); }
   }
+  document.addEventListener('finance-view-changed', () => {
+    const root = document.getElementById('home-root');
+    if (root) {
+      root.className = `fc-home fc-home-${window.financeViewMode()}`;
+      root.querySelectorAll('[data-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.view === window.financeViewMode())));
+    }
+  });
   window.financeHomeLoad = async () => {
     const root = document.getElementById('home-root'); root.setAttribute('aria-busy', 'true');
     try {

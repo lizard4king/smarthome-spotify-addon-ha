@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from statistics import median
 
-from . import contracts
+from . import contracts, recurring_detection
 from .classification import _audit, _filter_date, _now, _text, _document_link_rejected
 from .core import money, parse_money_input
 from .current_balances import latest_by_account
@@ -262,6 +262,17 @@ def view(store, data):
     schedules.extend(_doc_schedule(d, c, settings.get(d['id']), full_rows[d['id']])
                      if c['configured'] else _unconfigured_schedule(d)
                      for d, c in active_contracts)
+    detected_candidates = recurring_detection.detect(store, as_of=cutoff, known_schedules=schedules)
+    if data['account_id']:
+        detected_candidates = [c for c in detected_candidates if c['account_id'] == data['account_id']]
+    schedules.extend({'id': c['id'], 'revision': 0, 'document_id': None, 'document_revision': None,
+                      'label': c['label'], 'account_id': c['account_id'], 'currency': c['currency'],
+                      'amount': c['amount'], 'valid_from': c['valid_from'], 'valid_to': c['valid_to'],
+                      'day_of_month': c['day_of_month'], 'interval_months': c['interval_months'],
+                      'reference': '', 'active': True, 'basis': 'auto_detected', 'estimated': True,
+                      'date_estimated': True, 'amount_estimated': True, 'missing_fields': [], 'phases': [],
+                      'inferred': True, 'candidate_id': c['id'], 'bookings': c['bookings'], 'warnings': c['warnings']}
+                     for c in detected_candidates if c['status'] == 'stable')
     schedules = [s for s in schedules if not data['account_id'] or s['account_id'] in (None, data['account_id'])]
     lower = cutoff[:8] + '01'
     matching_lower = max(date.min, date.fromisoformat(lower)-timedelta(days=min(7, date.fromisoformat(lower).toordinal()-1))).isoformat()
@@ -279,6 +290,8 @@ def view(store, data):
             'valid_from': schedule['valid_from'], 'valid_to': schedule['valid_to'],
             'amount': schedule['amount'], 'interval_months': schedule['interval_months']}]
         explicit = {(r['account_id'], r['external_id']) for r in full_rows.get(schedule['document_id'], [])}
+        inferred_bookings = {(r['account_id'], r['external_id']) for r in schedule.get('bookings', [])}
+        explicit |= inferred_bookings
         partial = linked_rows.get(schedule['document_id'], [])
         for phase in phases:
             end = min(value for value in (phase['valid_to'], schedule['valid_to'], matching_upper) if value is not None)
@@ -287,7 +300,8 @@ def view(store, data):
                 candidates = [b for b in bookings if b['account_id'] == schedule['account_id']
                               and b['currency'] == schedule['currency'] and not b['transfer_id']
                               and (not schedule['document_id'] or not is_rejected(b['account_id'], b['external_id'], schedule['document_id']))
-                              and money(b['amount']) == amount and (b['date'][:7] == expected[:7]
+                              and (money(b['amount']) == amount or (b['account_id'], b['external_id']) in inferred_bookings)
+                              and (b['date'][:7] == expected[:7]
                                   or abs((date.fromisoformat(b['date'])-date.fromisoformat(expected)).days) <= 7)
                               and ((b['account_id'], b['external_id']) in explicit or contracts._reference_present(
                                   schedule['reference'], b['counterparty']+' '+b['description']))]
@@ -298,7 +312,8 @@ def view(store, data):
                 events.append({'id': f"{schedule['id'] or 'd'+str(schedule['document_id'])}:{expected}",
                                'rule_id': schedule['id'], 'document_id': schedule['document_id'],
                                'label': schedule['label'], 'expected_date': expected, 'observed_date': None,
-                               'amount': format(amount, '.2f'), 'currency': schedule['currency'],
+                               'amount': format(amount, '.2f'), 'expected_amount': format(amount, '.2f'), 'observed_amount': None,
+                               'currency': schedule['currency'],
                                'account_id': schedule['account_id'], 'status': 'expected' if expected > cutoff else 'unresolved',
                                'estimated': schedule['estimated'], 'date_estimated': schedule['date_estimated'],
                                'amount_estimated': schedule['amount_estimated'], 'basis': schedule['basis'],
@@ -333,7 +348,8 @@ def view(store, data):
             booking = candidates[0]
             if booking['date'][:7] != event['expected_date'][:7]:
                 event['warnings'].append('booking_date_proximity_estimate')
-            event.update(status='booked', observed_date=booking['date'], matched_bookings=[{
+            event.update(status='booked', observed_date=booking['date'], amount=format(money(booking['amount']), '.2f'),
+                         observed_amount=format(money(booking['amount']), '.2f'), matched_bookings=[{
                 key: booking[key] for key in ('account_id', 'external_id', 'date', 'amount')}])
         elif candidates:
             event.update(status='unresolved', warnings=['ambiguous_booking_match'])
@@ -348,7 +364,7 @@ def view(store, data):
         recorded = balances.get(aid)
         warnings, points = [], []
         current = projected = None
-        if recorded:
+        if recorded and recorded.get('status') != 'ambiguous' and recorded.get('amount') is not None:
             current = money(recorded['amount']) + sum((money(r['amount']) for r in store.db.execute(
                 'SELECT amount FROM transactions WHERE account_id=? AND currency=? AND date>? AND date<=?',
                 (aid, account['currency'], recorded['booked_on'], cutoff))), Decimal('0'))
@@ -369,7 +385,8 @@ def view(store, data):
             if points[-1]['date'] != upper:
                 points.append({'date': upper, 'amount': format(projected, '.2f')})
         else:
-            warnings.append('recorded_balance_missing')
+            warnings.append('recorded_balance_ambiguous' if recorded and recorded.get('status') == 'ambiguous'
+                            else 'recorded_balance_missing')
         if any(e['account_id'] == aid and e['status'] == 'unresolved' for e in events):
             warnings.append('unresolved_payments_excluded')
         accounts.append({'account_id': aid, 'label': account.get('display_name') or aid,
@@ -378,5 +395,5 @@ def view(store, data):
                          'projected_balance': format(projected, '.2f') if projected is not None else None,
                          'points': points, 'warnings': warnings})
     return {'as_of': cutoff, 'until': upper, 'schedules': schedules, 'events': events,
-            'accounts': accounts, 'warnings': ['projection_conditional_on_imported_ledger',
+            'accounts': accounts, 'candidates': detected_candidates, 'warnings': ['projection_conditional_on_imported_ledger',
                                               'transfers_not_inferred', 'budgets_not_payment_events']}

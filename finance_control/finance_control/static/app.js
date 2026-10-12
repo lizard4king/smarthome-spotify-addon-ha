@@ -110,8 +110,8 @@ async function cockpitLoadArea(id, {force = false} = {}) {
 }
 
 document.addEventListener('cockpit-area-changed', event => {
-  if (event.detail.id !== 'dashboard' && typeof window.financeBankRefresh?.deactivate === 'function')
-    window.financeBankRefresh.deactivate();
+  // A bank job belongs to the page session, not the currently visible panel.
+  // Navigating must neither stop its status polling nor start a second job.
   // Both views share selection state and must repaint when becoming visible.
   const sharedAccountView = ['dashboard', 'category-outflows'].includes(event.detail.id);
   void cockpitLoadArea(event.detail.id, {force: sharedAccountView});
@@ -123,6 +123,7 @@ document.addEventListener('finance-purchase-edit', event => {
 document.addEventListener('DOMContentLoaded', () => {
   cockpitFeaturesReady = true;
   void cockpitLoadArea(location.hash.slice(1) || 'home');
+  if (state?.csrf) window.financeBankRefresh?.activate();
 });
 const accountSaveMessages = new Map();
 const eur = value => new Intl.NumberFormat('de-DE', {style:'currency', currency:'EUR'}).format(Number(value));
@@ -277,6 +278,10 @@ async function backupMaintain() {
   return status;
 }
 async function refresh() {
+  if (!$('cutoff').value) {
+    const now = new Date();
+    $('cutoff').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
   const query=$('cutoff').value?'?as_of='+encodeURIComponent($('cutoff').value):'';
   state=await api('/api/state'+query); $('cutoff').value=state.as_of;renderAccountOwnerControls();
   $('backup-package-drive').hidden=!state.drive_backup_configured;
@@ -302,6 +307,7 @@ async function refresh() {
   cockpitDataGeneration += 1;
   document.dispatchEvent(new Event('finance-refreshed'));
   await cockpitLoadArea(location.hash.slice(1) || 'home', {force: true});
+  if (cockpitFeaturesReady) window.financeBankRefresh?.activate();
 }
 function planInput(){const f=$('plan-form');if(!f.reportValidity())throw new Error('Bitte alle Planbeträge angeben.');const one_offs=[];for(const line of f.elements.one_offs.value.split('\n').filter(x=>x.trim())){const parts=line.split(';');if(parts.length!==2||!/^\s*\d+\s*$/.test(parts[0]))throw new Error('Einmalzahlungen: je Zeile Planmonat; Betrag.');one_offs.push({month:Number(parts[0]),amount:parts[1].trim()});}return {as_of:$('cutoff').value,plan:{income:f.elements.income.value,expenses:f.elements.expenses.value,reserve:f.elements.reserve.value,one_offs}};}
 const ns='http://www.w3.org/2000/svg';

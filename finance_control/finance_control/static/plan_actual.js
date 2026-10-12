@@ -2201,7 +2201,8 @@ async function planActualLoadRevision(revision) {
     const [year, monthNumber] = periods[0].split('-').map(Number);
     month.min = planActualAvailableFromMonth || `${year}-01`;
     const currentMonth = planActualCurrentMonth();
-    month.max = periods.at(-1) < currentMonth ? periods.at(-1) : currentMonth;
+    // A past budget revision must not hide current actuals without a saved plan.
+    month.max = currentMonth;
     if (month.max < month.min) month.max = month.min;
     if (!requestedMonth || requestedMonth < month.min || requestedMonth > month.max)
       month.value = month.max;
@@ -2336,7 +2337,7 @@ async function planActualSaveMappings() {
 }
 
 function planActualCurrentMonth(now = new Date()) {
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 async function planActualEnsureLoaded(force = false) {
