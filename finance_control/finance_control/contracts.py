@@ -172,9 +172,11 @@ def _reference_present(reference, text):
     return re.search(rf'(?<!\w){re.escape(reference)}(?!\w)', text, re.IGNORECASE) is not None
 
 
-def _active_contracts(store):
+def _active_contracts(store, *, include_unconfigured=False):
+    """Keep configured-only callers stable; optionally expose setup placeholders."""
+    join = 'LEFT JOIN' if include_unconfigured else 'JOIN'
     return [(document, _load(store, document)) for document in store.db.execute(
-        "SELECT d.* FROM classification_documents d JOIN contract_metadata m ON m.document_id=d.id "
+        f"SELECT d.* FROM classification_documents d {join} contract_metadata m ON m.document_id=d.id "
         "WHERE d.kind='contract' AND d.status='confirmed' ORDER BY d.id")
         if not set(json.loads(document['warnings'])) & _EXCLUDED_DOCUMENT_WARNINGS]
 

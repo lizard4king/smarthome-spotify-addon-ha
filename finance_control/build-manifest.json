@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "87d6010b9f315bb612b8872a626ec865681d136c6ee7b7ef3b5c54166bb36a0c",
-  "addon_version": "0.2.48",
+  "addon_tree_sha256": "399e70733374e688d6d54fa4074e2f72f9996c38ba4118c9b39458b7dac35f05",
+  "addon_version": "0.2.49",
   "deployment_files": {
-    "Dockerfile": "23b67e411b02f217fc847c9aa3eab14aa5b7e4f8ac621f2f0135661f27f26519",
-    "README.md": "b5058dedbc42dc474e85b7659173bc6204e102c19f8cbfe34654aa8abaf9cfb5",
+    "Dockerfile": "60335e36139f01f30c59d834d811ea79f1c84fd1023f898bec2016a0f70b3617",
+    "README.md": "a820dc1e791874b03eeb7779edddc1482015fe5df266fbd60bbc711acc99a1b4",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "8cc541e560b7314575217df53b7a48f9175b73aee78e6739892ca4c3c62b312b",
+    "config.yaml": "07654b46964935acae7914ec670a2d845f18808b6e1a896f4d072e0e644ec206",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -55,7 +55,7 @@
     "connectors/server_card_worker.py": "4582b6bd5676c9e3802cd72ac2001b7610f75a84881a63d86bc22da769cc941c",
     "connectors/server_transactions_worker.py": "26e38b1f5a2e1ae057529faba7f38a6dfe15250fe9740db6253b861a3efc5071",
     "connectors/synthetic.py": "15350c66e7749544ccc7e454f7c562495645968d3b89560e67d88db2e6b20edd",
-    "contracts.py": "18d62a5fed6a94e546ae1010d84e92d126102d368843d9f6562c3d556e2326c5",
+    "contracts.py": "61fe28f6ce6ceb9f27d75f6e44a1ce018130493c56e68b41f09c1c9cafbad384",
     "core.py": "1dcbae4cb29da8f32dd0a93be67396b9341c5c43ec698b4c8da8089bc6538037",
     "current_balances.py": "5d8d4a048d018a0c8db57b01fc38ce5c9db48daccdf8360de917395f3815b52b",
     "dashboard.py": "d44f19514e82f8e622a8a684daa1e6d252109808bc58dd403751e50581672259",
@@ -152,7 +152,7 @@
     "read_api.py": "9b768baeca1987803ea64d4f2d758c9ca169ba61bebd037d7b6ea0151cc6f89e",
     "read_api_server.py": "ee9f9ba419608b9b2f3f7577414440e4a6190f65143929369a86ccb323a71250",
     "reconciliation_proof.py": "0a5de7ca2f4c423462206c57218f0d53303b9970bdef07902f411d4d71a40a6f",
-    "recurring.py": "d359c9b7a941d074a2f7e68e4fe179780f0e15719875ae7878de6809090e7694",
+    "recurring.py": "afb38ea3d5ddfd814d4535a9be07831c16345653b99edc241281b958ea4ce804",
     "reporting_history.py": "c4227380991bc3756fe1311504057624dd75ad3601257d81e82d845b4d52eafa",
     "safe_http.py": "2561dda83ee407de3be15de22595988a4832a2a543c047f6dbe1e50ad9dc8c98",
     "security/__init__.py": "927572fa80b59c4de1f2af7ac46c3f771f0e2a7b508bb103c9d1312895c5c90b",
@@ -439,7 +439,7 @@
     "static/dashboard.js": "e391911376b4da5db24d85a4790610cababeca7fb962f4db4f7a51b5cb451871",
     "static/finanzguru.js": "6fc8e893cda929179408883fc4a44ce66fea07138a55d63cae12371629ede1a3",
     "static/home.js": "e4cbe07098c9d87524719eb017e8d99ea7da5d052a94091624c9d12f2b2b6eb4",
-    "static/index.html": "bc998b8763019251c91dea7ca65b9a5acac5268edf242de7f365a6e65debd4ec",
+    "static/index.html": "0970ea1b3723397bfd687fbcdbc9bab7060b9e4ae147e78aa88523baf941d570",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/klarna-banking.css": "fcc4a31614dda44f905ab0f5b9b654ce3a0e77b5969011e9eb5f058db3a85665",
     "static/klarna-banking.js": "b36af5b19a1b9c63b20be09807c5024445b23bac7db115f13b8697bfd0676cf9",
@@ -458,7 +458,7 @@
     "static/purchases.css": "0efed6050aab0c156dd47895d67c4c194ba1bb597188b2f2f261494e88582b7d",
     "static/purchases.js": "3e5753837a6bac64d2c1367217986ec05ca22e802e7ee7f77946248123348089",
     "static/recurring.css": "b3d9d89dad400f48bead49d67eec0938344f6562d57f6e24397c2f46780d3280",
-    "static/recurring.js": "cbc35a50e775228294faa388cda569b0caeea97c461805679620193186a983be",
+    "static/recurring.js": "9c4dbd60b332c7a8e44e90cdb97d615099e114887ae9ec7a505acf277fb4215a",
     "static/server-banking.css": "a693cdd1bba6e935b046deeff8663156d718455895a674e5067bc20301dbfc0e",
     "static/server-banking.js": "34c60977a37b2eceeb5d95235c9e5e6e6a68de75e06ea6c1778f58365ff4d42d",
     "static/simple-icons-LICENSE.txt": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
@@ -471,6 +471,6 @@
     "web.py": "8b34d37f24565a26aabc0e99e546af5336a8e283a9ced72e4deb7c4ac8213b16"
   },
   "schema_version": 1,
-  "source_commit": "16f7daa8df008c0e946a141ccc1973a7da0e7cef",
-  "source_tree_sha256": "df8796c5c146cae306860deca13613fcb94212ea340b0e235ca8f8081a4f809d"
+  "source_commit": "aa87d839d687172e7a84e2664dc6da880af38498",
+  "source_tree_sha256": "e4c4240d99d73a8ccf5a845135b0536a0267a9a53d6f41326d95aaa440a1c64d"
 }

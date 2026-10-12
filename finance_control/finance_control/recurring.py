@@ -162,6 +162,19 @@ def _linked(store, document_id, cutoff, *, full_only=True, is_rejected):
         and not is_rejected(row['account_id'], row['external_id'], document_id)]
 
 
+def _unconfigured_schedule(document):
+    """Expose missing contract terms without inferring payments from the document."""
+    return {'id': None, 'revision': 0, 'document_id': document['id'],
+            'document_revision': document['revision'], 'label': document['vendor'],
+            'account_id': None, 'currency': None, 'amount': None,
+            'valid_from': None, 'valid_to': None, 'day_of_month': None,
+            'interval_months': None, 'reference': '', 'active': True,
+            'estimated': True, 'amount_estimated': False, 'date_estimated': False,
+            'basis': 'unconfigured_document', 'phases': [],
+            'requires_contract_setup': True,
+            'missing_fields': ['contract_terms', 'account_id', 'currency', 'day_of_month', 'phases']}
+
+
 def _doc_schedule(document, contract, setting, evidence):
     if contract['phases']:
         evidence = [r for r in evidence if (phase := contracts._phase_on(contract, r['date'])) is not None
@@ -240,13 +253,14 @@ def view(store, data):
             rejected[key] = _document_link_rejected(store, account_id, external_id, document_id)
         return rejected[key]
 
-    active_contracts = contracts._active_contracts(store)
+    active_contracts = contracts._active_contracts(store, include_unconfigured=True)
     linked_rows = {d['id']: _linked(store, d['id'], cutoff, full_only=False, is_rejected=is_rejected)
-                   for d, _ in active_contracts}
+                   for d, c in active_contracts if c['configured']}
     full_rows = {document_id: [row for row in rows
                               if money(row['allocated_amount']) == abs(money(row['amount']))]
                  for document_id, rows in linked_rows.items()}
     schedules.extend(_doc_schedule(d, c, settings.get(d['id']), full_rows[d['id']])
+                     if c['configured'] else _unconfigured_schedule(d)
                      for d, c in active_contracts)
     schedules = [s for s in schedules if not data['account_id'] or s['account_id'] in (None, data['account_id'])]
     lower = cutoff[:8] + '01'
