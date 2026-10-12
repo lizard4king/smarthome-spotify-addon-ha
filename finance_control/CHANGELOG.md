@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.49
+
+- Keep confirmed contract documents without payment terms visible in Contracts.
+- Explain missing setup and link to the document; never infer a recurring payment from its document amount.
+- Preserve configured contract matching, forecasts and existing portfolio behavior.
+
 ## 0.2.48
 
 - Add a primary Contracts workspace alongside Budgets, with confirmed recurring payments, booked/expected/unresolved dates and conditional per-account balance curves.

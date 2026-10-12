@@ -1,5 +1,9 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.49` keeps confirmed contract documents visible when their payment
+terms are still missing. These documents link to their setup and generate no
+payment expectations or balance changes until configured.
+
 Version `0.2.48` adds a Contracts workspace beside Budgets: confirmed recurring
 payments, booked/expected/unresolved dates and conditional balance forecasts
 from recorded account balances. Amount phases remain authoritative; unknown
