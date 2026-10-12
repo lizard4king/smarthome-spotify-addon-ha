@@ -13,12 +13,18 @@ from decimal import Decimal, ROUND_HALF_UP
 from statistics import median
 
 from . import budget, contracts
-from .classification import _cash_withdrawal_evidence, normalize_counterparty
+from .booking_categories import _canonical_counterparty
+from .classification import _cash_withdrawal_evidence
 from .core import money
 from .transfer_corrections import sql_transfer_predicate
 
 _REVERSAL = re.compile(r'\b(?:storno\w*|reversal|refund|rückzahlung|rueckzahlung)\b', re.I)
 _SETTLEMENT = re.compile(r'kreditkarten(?:ausgleich|abrechnung)|credit.?card.{0,20}(?:settlement|payment)|card settlement', re.I)
+
+
+def _party_key(value):
+    """Return a recurring-comparison key, ignoring a valid leading DE IBAN."""
+    return _canonical_counterparty(value)
 
 
 def _month(value):
@@ -70,12 +76,12 @@ def detect(store, *, as_of, known_schedules):
                 or _REVERSAL.search(text) or _SETTLEMENT.search(text) or _cash_withdrawal_evidence(store, row['account_id'], row['external_id'])):
             continue
         item = dict(row)
-        item['party'] = normalize_counterparty(row['counterparty'])
+        item['party'] = _party_key(row['counterparty'])
         if not markers.get((row['account_id'], row['external_id'])) and item['party'] in {'lastschrift', 'abbuchung', 'zahlung', 'kartenzahlung', 'sonstige', 'paypal', 'amazon', 'klarna', 'apple', 'google'}:
             continue
         rows.append(item)
     rows = [r for r in rows if not any(v['account_id'] == r['account_id'] and v['currency'] == r['currency']
-            and normalize_counterparty(v['counterparty']) == r['party'] and money(v['amount']) == -money(r['amount'])
+            and _party_key(v['counterparty']) == r['party'] and money(v['amount']) == -money(r['amount'])
             and abs((date.fromisoformat(v['date'])-date.fromisoformat(r['date'])).days) <= 7 for v in reversals)]
     row_by_key = {(r['account_id'], r['external_id']): r for r in rows}
     allocations = defaultdict(list)
@@ -133,7 +139,7 @@ def detect(store, *, as_of, known_schedules):
             "WHERE a.action='document_link_rejected' AND a.account_id=l.account_id AND a.external_id=l.external_id AND a.document_id=l.document_id)"):
         if not set(json.loads(row['warnings'])) & contracts._EXCLUDED_DOCUMENT_WARNINGS:
             links[(row['account_id'], row['external_id'])].add(row['document_id'])
-    classification_rules = {(r['counterparty_normalized'], r['direction']): r['id']
+    classification_rules = {(_party_key(r['counterparty_normalized']), r['direction']): r['id']
                             for r in store.db.execute('SELECT * FROM classification_rules')}
     candidates = []
     for identity, evidence in sorted(groups.items(), key=lambda pair: str(pair[0])):
@@ -173,7 +179,7 @@ def detect(store, *, as_of, known_schedules):
             refs.append({'type': 'classification_rule', 'id': rule_id})
         booking_refs = [{k: r[k] for k in ('account_id', 'external_id', 'date', 'amount')} for r in recent]
         for schedule in known_schedules:
-            if schedule.get('requires_contract_setup') and normalize_counterparty(schedule['label']) == party:
+            if schedule.get('requires_contract_setup') and _party_key(schedule['label']) == party:
                 refs.append({'type': 'document', 'document_id': schedule['document_id']})
         covered = []
         for row in evidence:
@@ -181,13 +187,13 @@ def detect(store, *, as_of, known_schedules):
         for schedule in known_schedules:
             if (schedule.get('document_id') and not schedule.get('requires_contract_setup')
                     and schedule.get('account_id') in (None, aid) and schedule.get('currency') in (None, currency)
-                    and normalize_counterparty(schedule['label']) == party):
+                    and _party_key(schedule['label']) == party):
                 covered.append({'type': 'document', 'document_id': schedule['document_id']})
                 continue
             if (schedule.get('account_id') != aid or schedule.get('currency') != currency
                     or schedule.get('amount') is None or (money(schedule['amount']) > 0) != positive):
                 continue
-            same_label = normalize_counterparty(schedule['label']) in {party, normalize_counterparty(item['label']) if item else normalize_counterparty(marker['contract_label']) if marker and marker['contract_label'] else party}
+            same_label = _party_key(schedule['label']) in {party, _party_key(item['label']) if item else _party_key(marker['contract_label']) if marker and marker['contract_label'] else party}
             same_ref = any(contracts._reference_present(schedule.get('reference', ''), r['description'] or '') for r in evidence)
             same_payment = (money(schedule['amount']) == amount and schedule.get('day_of_month') == day
                             and schedule.get('interval_months') == interval)

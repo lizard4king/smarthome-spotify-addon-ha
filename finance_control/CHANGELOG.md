@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.51
+
+- Keep recurring payment histories together when direct bank records add a valid German IBAN before the same counterparty name; original bank texts remain unchanged.
+- Allow explicit metadata enrichment from an exactly proven, already accepted Finanzguru file without changing transactions or snapshot baselines. Direct bank accounts remain excluded.
+- Verify source integrity, unchanged ledger state and review-token freshness before adding file balances or contract markers.
+
 ## 0.2.50
 
 - Start in the current calendar month; show compact multi-account balances and a direct mobile Finanzguru/Finanzblick switch.

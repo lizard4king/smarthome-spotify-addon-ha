@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "25eff28a6e45e867b52c6d9230bdf32aff0b9a778a0f0f2559acc2142dda0c6b",
-  "addon_version": "0.2.50",
+  "addon_tree_sha256": "d50913ab07b57fb26c2f55b4d05cae2c559bc834e15abb458f470c322f55e9d5",
+  "addon_version": "0.2.51",
   "deployment_files": {
-    "Dockerfile": "d56180c1733387fd1d69e95c7fc92e1554f50989a917e61ead2df1d627d513b4",
-    "README.md": "23972477057798b7f95a06c8ea18af041fba357d52b5f1ff305c9fd1f0c858ad",
+    "Dockerfile": "6bc1d4a3c03e5a9b29a9ffd84ffbd4f8f77b9dabe22af04b3f5743a5f7f4f81c",
+    "README.md": "e6b47b8e20edf50e77bece9166294cdddd816500d774f9388d193708c73a8bd6",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "4fb4af2d635a9f5961ef59d2f8065a51725d3865418c1e6d42a6b737f21fa527",
+    "config.yaml": "344c60d05d63724284c3811642a97a3256471e10473d390b2265fa81cfeeb199",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -62,8 +62,8 @@
     "document_intake.py": "0b78d48ffadc0259dbbd3d727ae0f4b00ca7b9ea9683d2688bb4cd39e1a5780c",
     "drive_api.py": "c728c4ffaad59e866fbec1c629846d186e2f36e09daf92f1f4bb144e8288fb04",
     "file_import.py": "3aa95547f4f29c8349eb86fd1dc3dcbbc62c7b0ff645f5d8078267543dec456c",
-    "finanzguru_import.py": "69f8c38edd094fb577373cb53028477e71f6bccd55797e8341cd08bb0ef5394b",
-    "finanzguru_snapshot.py": "8e655b03d4c2b5b19ded9e83a14055bfae40a1c5959a2bf6111651fa9dbbb84f",
+    "finanzguru_import.py": "a8edca4ef00bfb28d1758b2c281465fe6e9fc472e03261aedda8135ddcd8dbdb",
+    "finanzguru_snapshot.py": "4ad0f51548908200a6d4aca4608ce410f37e920a19c1b33893d697afb4e3bdbc",
     "historical_positions.py": "39ce60a69315c54f54abd0c63d82d4ca1e189392f3e7501c02d999f037641270",
     "history_read.py": "86d45da6c5c3c8f6f8c3439fceb41153ca124d8b5778710f0d8e4ee4b0e7ff1b",
     "household.py": "9a2f1a92703a96a20a19d7baebd315f10fc830d7ab64ac864ab67caaa73e531e",
@@ -154,7 +154,7 @@
     "read_api_server.py": "ee9f9ba419608b9b2f3f7577414440e4a6190f65143929369a86ccb323a71250",
     "reconciliation_proof.py": "0a5de7ca2f4c423462206c57218f0d53303b9970bdef07902f411d4d71a40a6f",
     "recurring.py": "b84b078550aa178d9de89c543f3329b91ecd1011143f00440aba35e5da70bf2d",
-    "recurring_detection.py": "ed0c794adcdbe5ec95bee202c97123554911bb53ff140c4ac60d3c9ab54e0e83",
+    "recurring_detection.py": "49642c0f2f19b2d68a9d074172b393dd6775cd1882f22bd79570e468a25a39f0",
     "reporting_history.py": "c4227380991bc3756fe1311504057624dd75ad3601257d81e82d845b4d52eafa",
     "safe_http.py": "2561dda83ee407de3be15de22595988a4832a2a543c047f6dbe1e50ad9dc8c98",
     "security/__init__.py": "927572fa80b59c4de1f2af7ac46c3f771f0e2a7b508bb103c9d1312895c5c90b",
@@ -439,9 +439,9 @@
     "static/counterparties.js": "c99215bd0b142522792e521e8b848ba9489b476ace31751124ad784f2f72ab94",
     "static/dashboard.css": "22a2911647034f3d26e62db2a7d57d9945730060de41c3d377ecfb44aaf511af",
     "static/dashboard.js": "c19118564cc0defb4e6a9520fc7f7b642221583a2bbfefd88d533fdb209f80ae",
-    "static/finanzguru.js": "6fc8e893cda929179408883fc4a44ce66fea07138a55d63cae12371629ede1a3",
+    "static/finanzguru.js": "c17480dd0039fde3596d6726d4a4e3864b9e42b342e7c73139075847bba68452",
     "static/home.js": "4ffee320547b6b047e7938c163e206a37310e867bf441f4f1944533eda38d9ab",
-    "static/index.html": "f8e531e4a788a4c84829bf77b896096e3cb766a232f51e5704beb8ef2a05df79",
+    "static/index.html": "aea92fe07f521b167847a592b192aab42667066ddb599e6ce0951828d36ea2f9",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/klarna-banking.css": "fcc4a31614dda44f905ab0f5b9b654ce3a0e77b5969011e9eb5f058db3a85665",
     "static/klarna-banking.js": "b36af5b19a1b9c63b20be09807c5024445b23bac7db115f13b8697bfd0676cf9",
@@ -473,6 +473,6 @@
     "web.py": "8b34d37f24565a26aabc0e99e546af5336a8e283a9ced72e4deb7c4ac8213b16"
   },
   "schema_version": 1,
-  "source_commit": "6d63f486882bff03fcb7d96475b6bc0a82497d96",
-  "source_tree_sha256": "dfa5dabec3870344cfc72763219435c977d12904132ccf01f85c91c2d24a970e"
+  "source_commit": "07ed62fb571203f75f88a3558a201c20f3d6174b",
+  "source_tree_sha256": "13fbffd1c855e25c41a3843f08b422db445b97ffa95577fad3357c215e08fd6a"
 }

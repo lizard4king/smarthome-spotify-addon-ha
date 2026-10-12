@@ -83,17 +83,29 @@ def _source_row_metadata(row, *, reference, external_id, booked_on):
 def _mapped_row_metadata(staged, mapping, *, excluded_sources=(), date_to=None):
     excluded_sources = set(excluded_sources)
     result = []
+    originals = {(row['source_account'], row['external_id']): row for row in staged['rows']}
     for row in staged.get('row_metadata', []):
         source = row['source_account']
         if (source not in mapping or source in excluded_sources
                 or (date_to is not None and row['booked_on'] > date_to)):
             continue
-        result.append(row | {'account_id': mapping[source]})
+        original = originals.get((source, row['external_id']))
+        if original is None:
+            continue
+        result.append(row | {'account_id': mapping[source],
+                             'original_amount': format(money(original['amount']), '.2f')})
     return result
 
 
 def _persist_row_metadata(store, rows, source_sha256):
     for row in rows:
+        ledger = store.db.execute(
+            'SELECT date,amount,currency FROM transactions WHERE account_id=? AND external_id=?',
+            (row['account_id'], row['external_id'])).fetchone()
+        if (ledger is None or ledger['date'] != row['booked_on']
+                or ledger['currency'] != row['currency']
+                or ledger['amount'] != row.get('original_amount')):
+            continue
         store.db.execute(
             'INSERT INTO finanzguru_row_metadata('
             'source_sha256,source_account,source_reference,account_id,external_id,booked_on,'
@@ -493,6 +505,8 @@ def prepare(store, staged, choices):
 def preview_batch(store, root, batch, choices):
     if not isinstance(choices, dict) or choices.get('mode', 'append') not in {'append', 'snapshot'}:
         raise ValueError('invalid_import_mode')
+    if choices.get('metadata_only') and choices.get('mode') != 'snapshot':
+        raise ValueError('metadata_only_requires_snapshot')
     if choices.get('mode') == 'snapshot':
         from .finanzguru_snapshot import preview_snapshot
         return preview_snapshot(store, root, batch, choices)
@@ -503,6 +517,8 @@ def preview_batch(store, root, batch, choices):
 def commit_batch(store, root, batch, choices, review_token):
     if not isinstance(choices, dict) or choices.get('mode', 'append') not in {'append', 'snapshot'}:
         raise ValueError('invalid_import_mode')
+    if choices.get('metadata_only') and choices.get('mode') != 'snapshot':
+        raise ValueError('metadata_only_requires_snapshot')
     if choices.get('mode') == 'snapshot':
         from .finanzguru_snapshot import commit_snapshot
         return commit_snapshot(store, root, batch, choices, review_token)
