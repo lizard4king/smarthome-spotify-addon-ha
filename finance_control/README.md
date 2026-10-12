@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.53` adds expected payments to the continuous booking list and a
+desktop column for qualified calculated daily balances. Intraday bank balances
+remain current controls and never masquerade as day-end anchors. PayPal wallet
+balances and dated manual installment liabilities are shown separately.
+Confirmed account closing dates hide later overview entries while preserving history.
+
 Version `0.2.52` keeps account names and balances readable on narrow screens,
 including enlarged text. Navigation labels retain complete words; monthly
 analysis values keep their own scroll area and auxiliary task controls stack.

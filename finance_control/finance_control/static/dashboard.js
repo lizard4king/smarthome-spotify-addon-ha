@@ -6,6 +6,8 @@
   let selected = null;
   let query = '';
   const filters = {category:'', direction:'', status:''};
+  const forecast = {enabled:true, until:'', asOf:'', key:'', data:null,
+    error:'', loading:false, request:0};
   let drilldown = null;
   const expandedBookings = new Set();
   const scrollPositions = new Map();
@@ -184,6 +186,48 @@
     const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     return match ? `${match[3]}.${match[2]}.${match[1]}` : String(value || '');
   };
+  const shiftDate = (value, days) => {
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? new Date(value + 'T12:00:00Z') : null;
+    if (!parsed || !Number.isFinite(parsed.getTime())) return '';
+    parsed.setUTCDate(parsed.getUTCDate() + days);
+    return parsed.toISOString().slice(0,10);
+  };
+  const forecastKey = () => JSON.stringify([selected, snapshot?.as_of, forecast.until]);
+  function ensureForecast() {
+    if (area !== 'dashboard' || !forecast.enabled || !current()) return;
+    const key = forecastKey();
+    if (forecast.key === key && (forecast.loading || forecast.data || forecast.error)) return;
+    forecast.key = key; forecast.data = null; forecast.error = ''; forecast.loading = false;
+    const request = ++forecast.request;
+    if (typeof api !== 'function') {
+      forecast.error = 'Kontoprognose hier nicht verfügbar.';
+      refreshForecastDisplay(); return;
+    }
+    forecast.loading = true; refreshForecastDisplay();
+    const requestData = {as_of:snapshot.as_of, until:forecast.until, account_id:current().id};
+    Promise.resolve().then(() => api('/api/recurring-view', requestData)).then(data => {
+      if (request !== forecast.request || key !== forecastKey() || area !== 'dashboard') return;
+      forecast.data = data; forecast.error = ''; forecast.loading = false; refreshForecastDisplay();
+    }).catch(error => {
+      if (request !== forecast.request || key !== forecastKey() || area !== 'dashboard') return;
+      forecast.error = `Kontoprognose nicht geladen: ${error?.message || 'Unbekannter Fehler'}`;
+      forecast.loading = false; refreshForecastDisplay();
+    });
+  }
+  function refreshForecastDisplay() {
+    const root = document.getElementById('dashboard-root');
+    if (area !== 'dashboard' || !root) return;
+    const section = root.querySelector('.fd-bookings');
+    if (!section) return;
+    const status = section.querySelector('.fd-forecast-status');
+    if (status) status.textContent = !forecast.enabled ? 'Prognose ausgeblendet.'
+      : forecast.error || (forecast.loading ? 'Prognose wird geladen …' :
+        forecast.data && forecast.key === forecastKey() ? `Prognose bis ${date(forecast.until)}. ${(filters.category || filters.status || filters.direction === 'transfer') ? 'Erwartungen bei diesem Filter ausgeblendet; für sie liegt keine Kategorie oder Umbuchung vor.' : 'Erwartungen folgen Suche und Richtungsfilter.'}` : 'Prognose wird vorbereitet …');
+    const balance = section.querySelector('.fd-forecast-balance');
+    if (balance) renderForecastBalance(balance);
+    const rows = section.querySelector('.fd-booking-rows');
+    if (rows) populateBookings(rows);
+  }
   const currentBalanceText = account => {
     const balance = account?.current_balance;
     if (!balance || typeof balance !== 'object' || balance.amount === null || balance.amount === undefined) {
@@ -505,14 +549,121 @@
     add(title, 'p', 'fd-kicker', monthLabel());
     add(title, 'h2', '', 'Buchungen');
     filterControls(section, () => updateBookings(section));
+    if (forecast.asOf !== snapshot.as_of) {
+      forecast.asOf = snapshot.as_of;
+      forecast.until = shiftDate(snapshot.as_of, 30);
+      forecast.key = ''; forecast.data = null; forecast.error = '';
+      ++forecast.request;
+    }
+    const controls = add(section, 'div', 'fd-forecast-controls');
+    const toggleLabel = add(controls, 'label');
+    const toggle = add(toggleLabel, 'input', 'fd-forecast-toggle');
+    toggle.type = 'checkbox'; toggle.checked = forecast.enabled;
+    toggleLabel.append(document.createTextNode('Erwartete Zahlungen in der Buchungsliste'));
+    toggle.addEventListener('change', () => {
+      forecast.enabled = toggle.checked;
+      if (!forecast.enabled) { ++forecast.request; forecast.loading = false; forecast.key = ''; }
+      refreshForecastDisplay();
+      if (forecast.enabled) ensureForecast();
+    });
+    const untilLabel = add(controls, 'label'); add(untilLabel, 'span', '', 'Prognose bis');
+    const until = add(untilLabel, 'input', 'fd-forecast-until');
+    until.type = 'date'; until.min = snapshot.as_of; until.max = shiftDate(snapshot.as_of, 366);
+    until.value = forecast.until;
+    until.addEventListener('change', () => {
+      if (!until.validity.valid || until.value < snapshot.as_of || until.value > until.max) return;
+      forecast.until = until.value; forecast.key = ''; forecast.data = null; forecast.error = '';
+      ++forecast.request; refreshForecastDisplay(); ensureForecast();
+    });
+    const reload = add(controls, 'button', 'fd-forecast-reload', 'Prognose aktualisieren');
+    reload.type = 'button';
+    reload.addEventListener('click', () => {
+      ++forecast.request; forecast.key = ''; forecast.data = null; forecast.error = ''; forecast.loading = false;
+      refreshForecastDisplay(); ensureForecast();
+    });
+    const status = add(section, 'p', 'fd-forecast-status');
+    status.setAttribute('role', 'status');
+    const balance = add(section, 'div', 'fd-forecast-balance');
     const rows = add(section, 'div', 'fd-booking-rows');
     rows.setAttribute('aria-live', 'polite');
+    status.textContent = !forecast.enabled ? 'Prognose ausgeblendet.' : forecast.error ||
+      (forecast.loading ? 'Prognose wird geladen …' : forecast.data && forecast.key === forecastKey() ?
+        `Prognose bis ${date(forecast.until)}. ${(filters.category || filters.status || filters.direction === 'transfer') ? 'Erwartungen bei diesem Filter ausgeblendet; für sie liegt keine Kategorie oder Umbuchung vor.' : 'Erwartungen folgen Suche und Richtungsfilter.'}` : 'Prognose wird vorbereitet …');
+    renderForecastBalance(balance);
     populateBookings(rows);
+    queueMicrotask(ensureForecast);
     return section;
   }
-  function updateBookings(section) { populateBookings(section.querySelector('.fd-booking-rows')); }
+  function updateBookings(section) { refreshForecastDisplay(); }
   const bookingDateOrder = (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
     || String(a.external_id || '').localeCompare(String(b.external_id || ''));
+  const forecastWarnings = {
+    stale_recorded_balance:'Der belegte Kontostand ist älter als sieben Tage.',
+    recorded_balance_missing:'Kein belegter Kontostand vorhanden.',
+    recorded_balance_ambiguous:'Widersprüchliche Kontostände; Projektion unbekannt.',
+    balance_rollforward_ledger_completeness_unverified:'Fortschreibung aus importierten Buchungen; Vollständigkeit nicht bestätigt.',
+    unresolved_payments_excluded:'Ungeklärte Zahlungen sind nicht eingerechnet.',
+    projection_conditional_on_imported_ledger:'Die Prognose setzt vollständige importierte Buchungen voraus.',
+    transfers_not_inferred:'Umbuchungen werden nicht automatisch ergänzt.',
+    budgets_not_payment_events:'Budgets sind Grenzen und keine zusätzlichen Zahlungen.'
+  };
+  function renderForecastBalance(target) {
+    target.replaceChildren();
+    if (!forecast.enabled || !forecast.data || forecast.key !== forecastKey()) return;
+    const account = (forecast.data.accounts || []).find(item =>
+      String(item.account_id) === selected && item.currency === current()?.currency);
+    if (!account) { add(target, 'p', 'fd-forecast-warning', 'Kontoprognose für dieses Konto nicht verfügbar.'); return; }
+    add(target, 'strong', '', `Kontoprognose am ${date(forecast.until)}: ${money(account.projected_balance, account.currency)}`);
+    add(target, 'p', '', 'Teilprognose · alle erwarteten Zahlungen; unabhängig von Buchungsfiltern.');
+    const evidence = add(target, 'details', 'fd-forecast-evidence');
+    add(evidence, 'summary', '', 'Datengrundlage & Grenzen');
+    add(evidence, 'p', '', account.recorded_balance
+      ? `Saldoanker: ${money(account.recorded_balance.amount, account.currency)} am ${date(account.recorded_balance.booked_on)}`
+      : 'Saldoanker fehlt; kein belegter Kontostand.');
+    for (const warning of [...(forecast.data.warnings || []), ...(account.warnings || [])])
+      add(evidence, 'p', 'fd-forecast-warning', forecastWarnings[warning] || 'Die Datenbasis muss geprüft werden.');
+  }
+  function forecastEvents() {
+    if (area !== 'dashboard' || !forecast.enabled || !forecast.data || forecast.key !== forecastKey() || !current()) return [];
+    if (filters.category || filters.status || filters.direction === 'transfer') return [];
+    const term = query.trim().toLocaleLowerCase('de-DE');
+    return (forecast.data.events || []).filter(item => item.status === 'expected'
+      && String(item.account_id) === selected && item.currency === current().currency
+      && item.expected_date > snapshot.as_of && item.expected_date <= forecast.until)
+      .filter(item => !filters.direction || (String(item.amount).startsWith('-') ? 'expense' : 'income') === filters.direction)
+      .filter(item => !term || [item.label,item.amount,item.expected_date,date(item.expected_date),
+        money(item.amount,item.currency)].some(value => String(value || '').toLocaleLowerCase('de-DE').includes(term)))
+      .sort((a,b) => String(b.expected_date).localeCompare(String(a.expected_date)) || String(a.id).localeCompare(String(b.id)));
+  }
+  function forecastRow(parent, event) {
+    const row = add(parent, 'tr', 'fd-forecast-row');
+    add(row, 'td', 'fd-forecast-date', date(event.expected_date));
+    add(row, 'td', 'fd-forecast-name', event.label || 'Erwartete Zahlung');
+    add(row, 'td', 'fd-forecast-status-label', 'Erwartet · Prognose');
+    add(row, 'td', 'fd-forecast-origin', event.basis === 'auto_detected'
+      ? 'Automatisch erkannt · geschätzt' : event.document_id ? 'Bestätigter Vertrag' : 'Bestätigte Regel');
+    add(row, 'td', 'fd-forecast-amount', money(event.amount,event.currency,true));
+    const account = (forecast.data.accounts || []).find(item =>
+      String(item.account_id) === selected && item.currency === event.currency);
+    const point = account?.points?.find(item => item.date === event.expected_date);
+    const knownPoint = point && cents(point.amount) !== null;
+    const running = add(row, 'td', 'fd-forecast-running-balance', knownPoint ? money(point.amount,event.currency) : '—');
+    running.title = 'Prognose für diesen Tag · alle erwarteten Zahlungen, unabhängig von Filtern';
+    if (knownPoint) add(running, 'small', '', 'Prognose');
+    const action = add(row, 'td', 'fd-forecast-action');
+    const details = add(action, 'details', 'fd-forecast-details');
+    add(details, 'summary', '', 'Details');
+    const body = add(details, 'div', 'fd-forecast-detail-body');
+    add(body, 'p', '', `Erwarteter Termin: ${date(event.expected_date)}${event.date_estimated ? ' · geschätzt' : ''}`);
+    add(body, 'p', '', `Betrag: ${money(event.amount,event.currency,true)}${event.amount_estimated ? ' · geschätzt' : ''}`);
+    if (point) add(body, 'p', '', `Gelieferter Kontoprognosepunkt am ${date(point.date)}: ${money(point.amount,event.currency)}`);
+    const candidate = (forecast.data.candidates || []).find(item => item.id === event.rule_id);
+    const budgetRef = candidate?.source_refs?.find(ref => ref.type === 'budget_item');
+    add(body, 'p', '', budgetRef ? 'Aus Budgetposition abgeleitet.' : 'Plan-Zuordnung nicht belegt.');
+    for (const warning of event.warnings || []) add(body, 'p', 'fd-forecast-warning',
+      forecastWarnings[warning] || 'Diese erwartete Zahlung muss geprüft werden.');
+    const link = add(body, 'a', '', 'Verträge & Zahlungen öffnen'); link.href = '#recurring';
+  }
   function bookingRow(parent, item, account, index) {
     const row = add(parent, 'tr', 'fd-booking');
     add(row, 'td', 'fd-booking-date', date(item.date));
@@ -534,6 +685,13 @@
     category.dataset.categoryStatus = item.category_status || '';
     iconLabel(category, 'fd-category-name', categoryIcon(item.category), categoryLabel(item));
     add(row, 'td', `fd-booking-amount ${tone(item.amount)}`, money(item.amount, item.currency || account.currency, true));
+    const balance = item.account_day_balance;
+    const knownBalance = balance && cents(balance.amount) !== null && balance.date === item.date
+      && balance.currency === (item.currency || account.currency);
+    const running = add(row, 'td', 'fd-booking-balance', knownBalance ? money(balance.amount,balance.currency) : '—');
+    running.title = knownBalance ? 'Berechneter Tagesstand · aus belegtem Stand und importierten Buchungen'
+      : 'Kein belegter Tagesstand';
+    if (knownBalance) add(running, 'small', '', 'Tagesstand');
     const action = add(row, 'td', 'fd-booking-action');
     const button = add(action, 'button', 'fd-booking-toggle', 'Details');
     button.type = 'button';
@@ -541,7 +699,7 @@
     const detailRow = add(parent, 'tr', 'fd-booking-expanded');
     detailRow.hidden = !expandedBookings.has(bookingKey(item));
     button.setAttribute('aria-expanded',String(!detailRow.hidden));
-    const detailCell = add(detailRow, 'td'); detailCell.colSpan = 6;
+    const detailCell = add(detailRow, 'td'); detailCell.colSpan = 7;
     const body = add(detailCell, 'div', 'fd-booking-detail');
     const detailId = `${area}-fd-booking-detail-${index}`;
     body.id = detailId;
@@ -556,9 +714,12 @@
     if (status) detailFields.push(['Kategoriestatus', status]);
     if (item.source_category && item.source_category !== item.category) detailFields.push(['Quellangabe', item.source_category]);
     detailFields.push(['Datum', date(item.date)]);
+    if (knownBalance) detailFields.push(['Berechneter Tagesstand', `${money(balance.amount,balance.currency)} · Basis ${date(balance.anchor_booked_on)}`]);
     for (const [label, value] of detailFields) {
       const row = add(body, 'div'); add(row, 'span', '', label); add(row, 'p', '', value || '—');
     }
+    add(body, 'p', 'fd-booking-balance-note', 'Kontostand je Buchungstag, keine belegte Reihenfolge innerhalb eines Tages. Die Berechnung setzt vollständige importierte Buchungen voraus. Ein aktueller Bankstand kann sich im Tagesverlauf noch ändern.');
+    if (!knownBalance) add(body, 'p', 'fd-booking-balance-note', 'Der Tagesstand ist ohne eindeutige Saldenbasis oder bei bekannten Datenlücken nicht verfügbar.');
     const originalAmount = add(body, 'div', 'fd-booking-original-amount');
     add(originalAmount, 'span', '', 'Originalbetrag');
     add(originalAmount, 'p', '', money(item.amount,item.currency || account.currency,true));
@@ -588,8 +749,9 @@
     if (!account) {add(rows,'p','fd-empty','Kein Konto ausgewählt.'); return;}
     const term = query.trim();
     const list = supplied || filteredBookings();
-    add(rows, 'p', 'fd-result-count', `${list.length} Buchung${list.length === 1 ? '' : 'en'}`);
-    if (!list.length) { add(rows, 'p', 'fd-empty', term ? 'Keine Buchung zum Suchtext.' : 'Keine Buchungen in diesem Monat.'); return; }
+    const expected = supplied ? [] : forecastEvents();
+    add(rows, 'p', 'fd-result-count', `${list.length} Buchung${list.length === 1 ? '' : 'en'} · ${expected.length} Erwartung${expected.length === 1 ? '' : 'en'}`);
+    if (!list.length && !expected.length) { add(rows, 'p', 'fd-empty', term ? 'Keine Buchung oder Erwartung zum Suchtext.' : 'Keine Buchungen oder Erwartungen für diese Auswahl.'); return; }
     const scroller = add(rows, 'div', 'fd-table-scroll');
     scroller.tabIndex = 0;
     scroller.setAttribute('role', 'region');
@@ -598,19 +760,24 @@
     add(table, 'caption', 'fd-table-caption', `${account.owner_label || account.owner || 'Konto'} · ${accountName(account)}`);
     const head = add(table, 'thead');
     const header = add(head, 'tr');
-    for (const name of ['Datum', 'Gegenpartei', 'Verwendungszweck', 'Kategorie', 'Betrag', 'Details']) {
+    for (const name of ['Datum', 'Gegenpartei', 'Verwendungszweck', 'Kategorie', 'Betrag', 'Kontostand', 'Details']) {
       const cell = add(header, 'th', '', name); cell.scope = 'col';
+      if (name === 'Kontostand') cell.title = 'Berechneter Tagesstand; bei erwarteten Zahlungen eine Teilprognose';
     }
     const body = add(table, 'tbody');
     let priorDay = null;
-    list.forEach((item, index) => {
-      if (item.date !== priorDay) {
+    const merged = [...list.map((item,index) => ({kind:'booking', item, index, day:item.date})),
+      ...expected.map(item => ({kind:'forecast', item, day:item.expected_date}))]
+      .sort((a,b) => String(b.day).localeCompare(String(a.day)) || (a.kind === b.kind ? 0 : a.kind === 'booking' ? -1 : 1));
+    merged.forEach(({kind,item,index,day:dayValue}) => {
+      if (dayValue !== priorDay) {
         const day = add(body, 'tr', 'fd-booking-day');
-        const heading = add(day, 'th', '', date(item.date));
-        heading.colSpan = 6; heading.scope = 'row';
-        priorDay = item.date;
+        const heading = add(day, 'th', '', date(dayValue));
+        heading.colSpan = 7; heading.scope = 'row';
+        priorDay = dayValue;
       }
-      bookingRow(body, item, account, index);
+      if (kind === 'booking') bookingRow(body, item, account, index);
+      else forecastRow(body, item);
     });
   }
   function populateMain(main) {
@@ -624,6 +791,7 @@
       const first = relevantAccounts()[0];
       selected = first ? accountKey(first) : null;
     }
+    document.body.dataset.financeView = view;
     root.replaceChildren(); root.className = `fd-root fd-${view}`;
     const hero = add(root, 'header', 'fd-hero');
     const intro = add(hero, 'div');
@@ -673,6 +841,7 @@
       button.dataset.view = id; button.setAttribute('aria-pressed', String(view === id));
       button.addEventListener('click', () => {
         view = id; try { localStorage.setItem(key, id); } catch {}
+        document.body.dataset.financeView = view;
         if (['dashboard', 'category-outflows'].includes(visibleArea)) paint();
         document.dispatchEvent(new CustomEvent('finance-view-changed'));
         const active = document.querySelector('main>section:not([hidden])');
@@ -695,6 +864,12 @@
     const rootId = requestedArea === 'category-outflows' ? 'category-outflows-root' : 'dashboard-root';
     if (!document.getElementById(rootId))
       throw new Error('Der Anzeigebereich für die Buchungen fehlt.');
+    if (requestedArea === 'category-outflows' && area === 'dashboard' && forecast.loading) {
+      ++forecast.request; forecast.loading = false; forecast.key = '';
+    }
+    if (snapshot !== payload) {
+      ++forecast.request; forecast.key = ''; forecast.data = null; forecast.error = ''; forecast.loading = false;
+    }
     snapshot = payload;
     area = requestedArea === 'category-outflows' ? requestedArea : 'dashboard';
     const scroll = scrollPositions.get(area) || 0;

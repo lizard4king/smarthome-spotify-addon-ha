@@ -295,6 +295,50 @@ async function refresh() {
   $('account-rows').replaceChildren();
   $('account-config-rows').replaceChildren();
   for(const a of state.accounts){const tr=document.createElement('tr');cell(tr,a.id);cell(tr,a.display_name||'Noch nicht bezeichnet');const ownerText=a.owner==='JOINT'?'Gemeinsam · '+Object.entries(a.shares).map(([person,share])=>`${profilePersonLabel(person)} ${(Number(share)*100).toLocaleString('de-DE',{maximumFractionDigits:2})} %`).join(' / '):(a.owner_label||profilePersonLabel(a.owner));cell(tr,ownerText);cell(tr,kinds[a.kind]);cell(tr,accountBalanceLabel(a.current_balance),true);$('account-rows').append(tr);const config=document.createElement('tr');cell(config,a.id);const edit=cell(config,'');const input=document.createElement('input');input.value=a.display_name||'';input.maxLength=120;input.placeholder='z. B. Haushaltskonto';input.setAttribute('aria-label',`Bezeichnung für ${a.id}`);const save=document.createElement('button');save.type='button';save.textContent='Speichern';save.disabled=true;const status=document.createElement('span');status.className='account-save-status muted';status.setAttribute('role','status');status.textContent=accountSaveMessages.get(a.id)||'';input.addEventListener('input',()=>{save.disabled=!input.value.trim()||input.value.trim()===(a.display_name||'');status.textContent=save.disabled?'':'Ungespeichert';});save.addEventListener('click',()=>run(async()=>{const value=input.value.trim();save.disabled=true;status.textContent='Wird gespeichert …';try{await api('/api/account-display-name',{id:a.id,display_name:value,revision:a.display_name_revision,confirmed:true});accountSaveMessages.set(a.id,'Gespeichert');await refresh();message(`Bezeichnung für ${a.id} gespeichert.`);}catch(error){status.textContent='Nicht gespeichert';save.disabled=false;throw error;}}));edit.append(input,save,status);$('account-config-rows').append(config);}
+  for (const [index, account] of state.accounts.entries()) {
+    const edit = cell($('account-config-rows').rows[index], '');
+    const lifecycle = document.createElement('div');
+    const label = document.createElement('label');
+    label.textContent = 'Schließdatum (leer = offen) ';
+    const closedOn = document.createElement('input');
+    closedOn.type = 'date';
+    closedOn.value = account.closed_on || '';
+    closedOn.min = account.opening_date;
+    closedOn.setAttribute('aria-label', `Schließdatum für ${account.id}`);
+    label.append(closedOn);
+    const confirmation = document.createElement('label');
+    const checked = document.createElement('input');
+    checked.type = 'checkbox';
+    confirmation.append(checked, document.createTextNode(' Schließung oder Wiederöffnung ausdrücklich bestätigen'));
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.textContent = 'Kontostatus speichern';
+    save.disabled = true;
+    const status = document.createElement('span');
+    status.className = 'account-save-status muted';
+    status.setAttribute('role', 'status');
+    const update = () => { save.disabled = !checked.checked || closedOn.value === (account.closed_on || ''); };
+    closedOn.addEventListener('input', update);
+    checked.addEventListener('change', update);
+    save.addEventListener('click', () => run(async () => {
+      save.disabled = true;
+      status.textContent = 'Wird gespeichert …';
+      try {
+        await api('/api/account-lifecycle', {
+          id: account.id, closed_on: closedOn.value || null,
+          revision: account.lifecycle_revision, confirmed: checked.checked,
+        });
+        await refresh();
+        message(`Kontostatus für ${account.id} gespeichert.`);
+      } catch (error) {
+        status.textContent = 'Nicht gespeichert';
+        update();
+        throw error;
+      }
+    }));
+    lifecycle.append(label, confirmation, save, status);
+    edit.append(lifecycle);
+  }
   const opening=$('account-form').elements.opening_date; if(state.accounts.length) {opening.value=state.accounts[0].opening_date;opening.readOnly=true;}
   $('scenario-rows').replaceChildren();$('first').replaceChildren();$('second').replaceChildren();
   for(const s of state.scenarios){const tr=document.createElement('tr');cell(tr,s.name);cell(tr,s.as_of);cell(tr,amount(s.opening),true);cell(tr,amount(s.income),true);cell(tr,amount(s.expenses),true);const actions=cell(tr,'');

@@ -62,6 +62,9 @@
     for (const account of ordered) list.append(accountButton(account));
     if (!ordered.length) list.append(el('p', 'muted', 'Noch keine Konten vorhanden.'), link('Konten einrichten', 'accounts'));
     accounts.append(list); fragment.append(accounts);
+    const paypal = el('article', 'fc-home-panel'); paypal.id = 'home-paypal';
+    paypal.append(el('h3', '', 'Eigene PayPal-Stände'), el('p', 'muted', 'Guthaben und offene Raten werden geladen …'));
+    fragment.append(paypal);
     fragment.append(dateForm);
     const hero = el('details', 'fc-balance-hero'); hero.append(el('summary', '', 'Gesamtstände & Datengrundlage'));
     for (const item of data.balance_summary || []) {
@@ -148,7 +151,9 @@
     try {
       if (state.dashboard?.error) throw new Error(state.dashboard.error);
       const budget = renderOverview(state.dashboard);
-      await Promise.all([loadBudget(budget, state.dashboard), loadExpected(document.getElementById('home-expected'))]);
+      await Promise.all([loadBudget(budget, state.dashboard), loadExpected(document.getElementById('home-expected')),
+        typeof window.financePayPalOverviewLoad === 'function'
+          ? window.financePayPalOverviewLoad(document.getElementById('home-paypal')) : Promise.resolve()]);
     } catch (error) { retryNotice(root, error, () => void run(refresh)); }
     finally { root.setAttribute('aria-busy', 'false'); }
   };

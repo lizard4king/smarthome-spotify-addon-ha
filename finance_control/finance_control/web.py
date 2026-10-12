@@ -637,6 +637,14 @@ class Cockpit:
                     raise ValueError('Explicit confirmation is required')
                 return {'account': store.set_account_display_name(
                     data['id'], data['display_name'], data['revision'])}
+            if route == '/api/account-lifecycle':
+                from .account_lifecycle import set_closed_on
+                if type(data) is not dict or set(data) != {'id', 'closed_on', 'revision', 'confirmed'}:
+                    raise ValueError('invalid_lifecycle_request')
+                if data['confirmed'] is not True:
+                    raise ValueError('confirmation_required')
+                return {'account': set_closed_on(
+                    store, data['id'], data['closed_on'], data['revision'])}
             if route == '/api/import':
                 source = data['csv']
                 if not isinstance(source, str) or len(source) > MAX_REQUEST:
@@ -1083,6 +1091,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
                       '/cockpit.css': ('cockpit.css', 'text/css; charset=utf-8'),
                       '/home.js': ('home.js', 'text/javascript; charset=utf-8'),
+                      '/home-paypal.js': ('home-paypal.js', 'text/javascript; charset=utf-8'),
                       '/recurring.js': ('recurring.js', 'text/javascript; charset=utf-8'),
                       '/recurring.css': ('recurring.css', 'text/css; charset=utf-8'),
                       '/administration.js': ('administration.js', 'text/javascript; charset=utf-8'),
@@ -1455,6 +1464,10 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     'code': 'direct_bank_source',
                     'error': 'Direkter Bankabruf ist führend. Diese CSV-Datei enthält ein direkt angebundenes Konto und wurde vollständig abgewiesen. Importiere nur Konten ohne direkte Bankquelle, zum Beispiel NASPA.'})
             except (ValueError, KeyError, TypeError, ArithmeticError, StopIteration) as error:
+                if urlsplit(self.path).path == '/api/account-lifecycle':
+                    if isinstance(error, ValueError) and str(error) == 'stale_lifecycle_revision':
+                        return self.reply(409, {'error': 'Kontostatus wurde inzwischen geändert. Bitte neu laden.'})
+                    return self.reply(400, {'error': 'Kontostatus prüfen: Schließdatum muss gültig sein und darf keine spätere Buchung verbergen. Änderungen ausdrücklich bestätigen.'})
                 if (urlsplit(self.path).path == '/api/fg-commit' and
                         isinstance(error, ValueError) and str(error) == 'review_stale_or_blocked'):
                     return self.reply(409, {'error': 'review_stale_or_blocked'})
