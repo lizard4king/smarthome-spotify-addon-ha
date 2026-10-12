@@ -95,6 +95,7 @@
     }
     if (!data.bookings.length) bookings.append(el('p', 'muted', 'Keine Buchungen im gewählten Monat. Wähle einen anderen Stichtag.'));
     recent.append(bookings); fragment.append(recent);
+    const expected = section('Was steht als Nächstes an?', 'recurring', 'Verträge & Zahlungen'); expected.id = 'home-expected'; expected.classList.add('rc-home-teaser'); expected.append(el('p', 'muted', 'Erwartete Zahlungen und Kontoprognose ab heute werden geladen …')); fragment.append(expected);
     root.replaceChildren(fragment); root.dataset.loaded = 'true';
     return budget;
   }
@@ -111,34 +112,33 @@
       if (result.plan_available && result.basis?.type !== 'retrospective_reference') root.append(el('p', 'fc-caption', 'Budgetrest aus Plan & Ist, kein Kontostand. Vollständiger Kalendermonat.'));
     } catch (error) { if (document.getElementById('home-budget') === root) retryNotice(root, error, () => void loadBudget(root, data)); }
   }
+  async function loadExpected(root) {
+    const now = new Date(), end = new Date(now); end.setDate(end.getDate() + 30);
+    const localDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const asOf = localDate(now), until = localDate(end);
+    try {
+      const data = await api('/api/recurring-view', {as_of: asOf, until, account_id: ''});
+      if (document.getElementById('home-expected') !== root) return;
+      root.querySelectorAll('p,.rc-event,.rc-metrics').forEach(n => n.remove()); root.querySelector('.fc-retry-notice')?.remove();
+      root.append(el('p', 'fc-caption', `Ab heute (${dateText(asOf)}) bis ${dateText(until)} · unabhängig vom Buchungsstichtag oben.`));
+      for (const event of (data.events || []).filter(item => item.status === 'expected').slice(0, 3)) {
+        const row = el('div', 'rc-event'); row.append(el('span', '', `${dateText(event.expected_date)} · ${event.label}${event.estimated ? ' · geschätzt' : ''}`), el('strong', '', moneyText(event.amount, event.currency))); root.append(row);
+      }
+      if (!(data.events || []).some(item => item.status === 'expected')) root.append(el('p', 'muted', 'Keine erwarteten Zahlungen in den nächsten 30 Tagen.'));
+      const forecasts = el('div', 'rc-metrics');
+      for (const account of (data.accounts || []).slice(0, 2)) {
+        const item = el('div'); item.append(el('span', 'muted', account.label + ' · Prognose'), el('strong', '', account.projected_balance == null ? 'Stand unbekannt' : moneyText(account.projected_balance, account.currency))); forecasts.append(item);
+      }
+      root.append(forecasts, el('p', 'fc-caption', 'Teilprognose: nur erfasste regelmäßige Zahlungen. Ungeplante variable Ausgaben und fehlende Verträge sind nicht enthalten.'));
+    } catch (error) { if (document.getElementById('home-expected') === root) retryNotice(root, error, () => void loadExpected(root)); }
+  }
   window.financeHomeLoad = async () => {
     const root = document.getElementById('home-root'); root.setAttribute('aria-busy', 'true');
     try {
       if (state.dashboard?.error) throw new Error(state.dashboard.error);
       const budget = renderOverview(state.dashboard);
-      await loadBudget(budget, state.dashboard);
+      await Promise.all([loadBudget(budget, state.dashboard), loadExpected(document.getElementById('home-expected'))]);
     } catch (error) { retryNotice(root, error, () => void run(refresh)); }
     finally { root.setAttribute('aria-busy', 'false'); }
   };
-  window.financeRecurringLoad = async () => {
-    const root = document.getElementById('recurring-root'); root.setAttribute('aria-busy', 'true');
-    try {
-      const data = await api('/api/contracts-portfolio', {}), fragment = document.createDocumentFragment();
-      if (!data.contracts.length) fragment.append(el('p', 'notice', 'Noch keine bestätigten Verträge mit Vertragsangaben vorhanden.'), link('Vertrag aus Beleg erfassen', 'documents'));
-      for (const item of data.contracts) {
-        const card = el('article', 'fc-home-panel'); card.append(el('h3', '', item.provider || item.title), el('p', 'muted', item.title));
-        for (const phase of item.phases) card.append(el('p', '', `${moneyText(phase.amount)} · alle ${phase.interval_months} Monate · ab ${dateText(phase.valid_from)}${phase.valid_to ? ' bis ' + dateText(phase.valid_to) : ''}`));
-        if (!item.phases.length) card.append(el('p', 'muted', 'Betrag und Rhythmus nicht hinterlegt.'));
-        card.append(el('p', 'fc-caption', item.next_exact_date_label));
-        const details = el('details'), summary = el('summary', '', `${item.booking_total} zugeordnete Zahlungen`); details.append(summary);
-        for (const booking of item.bookings) details.append(el('p', '', `${dateText(booking.date)} · ${booking.counterparty || booking.account_id} · ${moneyText(booking.amount, booking.currency)}`));
-        if (item.bookings_truncated) details.append(el('p', 'muted', 'Es werden die letzten 200 verknüpften Zahlungen angezeigt.'));
-        card.append(details); fragment.append(card);
-      }
-      if (data.truncated) fragment.append(el('p', 'notice', `200 von ${data.total} Verträgen angezeigt.`));
-      root.replaceChildren(fragment); root.dataset.loaded = 'true';
-    } catch (error) { retryNotice(root, error, () => void window.financeRecurringLoad()); }
-    finally { root.setAttribute('aria-busy', 'false'); }
-  };
-  document.getElementById('recurring-reload')?.addEventListener('click', () => void window.financeRecurringLoad());
 })();

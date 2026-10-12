@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.48
+
+- Add a primary Contracts workspace alongside Budgets, with confirmed recurring payments, booked/expected/unresolved dates and conditional per-account balance curves.
+- Reuse confirmed contract phases and explicit booking evidence; keep forecasts separate from bank originals and budget amounts.
+- Allow manual recurring income/expenses and account/day configuration with confirmation and revision checks; preserve unknown balances, separate currencies and visible estimation limits.
+- Verify cutoff isolation, transfer treatment, payment matching and mobile editing with synthetic tests.
+
+## 0.2.47
+
+- Introduce a shared mobile cockpit with Overview, Accounts, Budgets, Analysis and More; retain all existing tools.
+- Show recorded current balances with explicit coverage and separate currencies; distinguish account movements, household analysis and budget remainder.
+- Add readable date-grouped booking cards, combined filters in a mobile sheet, category drilldown and preserved editing/navigation state.
+- Add budget progress cards from existing calculations and a read-only portfolio of confirmed contracts and their linked payments.
+- Validate complete workflows on synthetic 360, 390, 430 and desktop viewports; retain bank originals, classifications and existing financial calculations.
+
 ## 0.2.46
 
 - Show factual booking categories separately from technical bank-source labels; mark proposals and unresolved categories explicitly without changing ledger data.

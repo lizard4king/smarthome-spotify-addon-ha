@@ -392,6 +392,14 @@ class Cockpit:
                 if action not in actions:
                     raise ValueError('unknown_budget_action')
                 return actions[action](store, data)
+            if route.startswith('/api/recurring-'):
+                from . import recurring
+                actions = {'view': recurring.view, 'save': recurring.save,
+                           'disable': recurring.disable}
+                action = route.removeprefix('/api/recurring-')
+                if action not in actions:
+                    raise ValueError('unknown_recurring_action')
+                return actions[action](store, data)
             if route.startswith('/api/contracts-'):
                 from . import contracts
                 actions = {'load': contracts.load, 'save': contracts.save,
@@ -1075,6 +1083,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/dashboard.css': ('dashboard.css', 'text/css; charset=utf-8'),
                       '/cockpit.css': ('cockpit.css', 'text/css; charset=utf-8'),
                       '/home.js': ('home.js', 'text/javascript; charset=utf-8'),
+                      '/recurring.js': ('recurring.js', 'text/javascript; charset=utf-8'),
+                      '/recurring.css': ('recurring.css', 'text/css; charset=utf-8'),
                       '/administration.js': ('administration.js', 'text/javascript; charset=utf-8'),
                       '/administration.css': ('administration.css', 'text/css; charset=utf-8'),
                       '/server-banking.js': ('server-banking.js', 'text/javascript; charset=utf-8'),
@@ -1448,6 +1458,16 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 if (urlsplit(self.path).path == '/api/fg-commit' and
                         isinstance(error, ValueError) and str(error) == 'review_stale_or_blocked'):
                     return self.reply(409, {'error': 'review_stale_or_blocked'})
+                if urlsplit(self.path).path.startswith('/api/recurring-'):
+                    if isinstance(error, ValueError) and str(error) in {
+                            'stale_recurring_revision', 'stale_document_revision'}:
+                        return self.reply(409, {
+                            'error': 'Vertrag oder Zahlungsregel wurde inzwischen geändert. Bitte neu laden.'})
+                    if isinstance(error, ValueError) and str(error) == 'duplicate_recurring_schedule':
+                        return self.reply(409, {
+                            'error': 'Diese Zahlungsregel ist bereits vorhanden. Bitte die bestehende Regel bearbeiten.'})
+                    return self.reply(400, {
+                        'error': 'Zahlungsregel prüfen: Konto, Währung, Betrag, Zeitraum und Zahlungstag müssen gültig sein. Änderungen ausdrücklich bestätigen.'})
                 if urlsplit(self.path).path.startswith('/api/contracts-'):
                     if isinstance(error, ValueError) and str(error) in {
                             'stale_revision', 'stale_document_revision',
