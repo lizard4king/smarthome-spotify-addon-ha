@@ -19,6 +19,7 @@ from weakref import WeakValueDictionary
 
 from .administration import AdministrationError
 from .connectors.enable_banking import EnableBankingClient, EnableBankingError, canonical_uuid
+from .paypal_balance_view import sanitize_balances
 from .security.server_paypal_store import ServerPayPalStore
 
 _FIELDS = {
@@ -28,6 +29,7 @@ _FIELDS = {
     'paypal-authorize': {'confirmed', 'country'},
     'paypal-disconnect': {'confirmed'},
     'paypal-read': {'account_uid', 'date_from', 'date_to'},
+    'paypal-balances': set(),
 }
 _STATE_TTL = 900
 
@@ -213,6 +215,8 @@ class PayPalBanking:
                     record = None
                 elif action == 'paypal-read':
                     return self._read(actor, record, data)
+                elif action == 'paypal-balances':
+                    return self._balances(actor, record)
                 self._owner(actor)
                 return self._public(record, origin)
         except AdministrationError:
@@ -364,6 +368,48 @@ class PayPalBanking:
             _fail('paypal_invalid_response', 502)
         self._owner(actor)
         return result
+
+    def _balances(self, actor, record):
+        """Read current wallet balances for all consented accounts, never transactions."""
+        session = record.get('session') if record else None
+        if not session or _expiry(session['expires_at']) <= self.clock():
+            _fail('paypal_access_expired', 409)
+        accounts = session.get('accounts')
+        if type(accounts) is not list or not 1 <= len(accounts) <= 8:
+            _fail('paypal_invalid_response', 502)
+        try:
+            uids = [canonical_uuid(account['uid'], 'invalid_id') for account in accounts]
+        except (KeyError, TypeError, EnableBankingError):
+            _fail('paypal_invalid_response', 502)
+        if len(set(uids)) != len(uids) or any(
+                type(account.get('name')) is not str or not account['name'].strip()
+                or len(account['name']) > 256 or type(account.get('currency')) is not str
+                or re.fullmatch(r'[A-Z]{3}', account['currency']) is None
+                for account in accounts):
+            _fail('paypal_invalid_response', 502)
+        client = self._client(record)
+        current = client.session(session['session_id'])
+        if (type(current) is not dict or type(current.get('accounts')) is not list
+                or not all(type(uid) is str for uid in current['accounts'])):
+            _fail('paypal_invalid_response', 502)
+        current_expiry = _access_expiry(current)
+        if (current.get('status') != 'AUTHORIZED' or current.get('aspsp') != session['provider']
+                or current.get('psu_type') != 'personal'
+                or len(current['accounts']) != len(uids)
+                or set(current['accounts']) != set(uids)
+                or _expiry(current_expiry) <= self.clock()):
+            _fail('paypal_access_expired', 409)
+        raw = [client.balances(uid) for uid in uids]
+        retrieved_at = datetime.fromtimestamp(self.clock(), timezone.utc).isoformat()
+        try:
+            sanitized = [{'uid': uid, 'name': account['name'],
+                          'currency': account['currency'],
+                          'balances': sanitize_balances(response, account['currency'], retrieved_at)}
+                         for uid, account, response in zip(uids, accounts, raw)]
+        except ValueError:
+            _fail('paypal_invalid_response', 502)
+        self._owner(actor)
+        return {'accounts': sanitized, 'retrieved_at': retrieved_at}
 
     def cleanup_owner(self, owner):
         """User removal deletes local access material, never financial history.

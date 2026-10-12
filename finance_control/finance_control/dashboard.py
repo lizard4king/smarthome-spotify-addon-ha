@@ -4,7 +4,9 @@ from datetime import date
 from decimal import Decimal
 
 from .account_overview import build_account_overview
+from .account_lifecycle import visible_on
 from .booking_categories import CategoryResolver
+from .booking_balances import attach_day_balances
 from .cash_components import explicit_cash_component
 from .classification import canonical_category_id
 from .core import money
@@ -34,7 +36,8 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
         raise ValueError("invalid dashboard date")
     month = day.strftime("%Y-%m")
     supplied = store.accounts() if accounts is None else accounts
-    account_by_id = {account["id"]: account for account in supplied}
+    account_by_id = {account["id"]: account for account in supplied
+                     if visible_on(account, day.isoformat())}
     try:
         scope = scope_for_month(store, month, reporting_history)
     except ValueError as error:
@@ -171,6 +174,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                             "category_path": category_path(cash_id, cash_label)}]
                     )
             bookings.append(booking)
+    attach_day_balances(store, bookings, account_rows, current_balances)
     # Account movements are deliberately gross: a transfer appears on both
     # accounts. Never present this as household consumption or net wealth.
     period_totals = {}

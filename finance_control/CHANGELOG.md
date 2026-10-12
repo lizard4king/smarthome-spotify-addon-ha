@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.53
+
+- Show expected recurring payments beside booked transactions in the continuous booking feed, with distinct forecast labels and source details.
+- Add a desktop account-balance column with calculated daily balances and separately labeled future projections; preserve unknown values and coverage warnings.
+- Display own PayPal wallet balances and dated manual installment liabilities separately in the overview.
+- Allow confirmed account closure dates and hide closed accounts from later overviews while retaining history.
+
 ## 0.2.52
 
 - Place account balances below account names on narrow screens, in both presentation styles.
