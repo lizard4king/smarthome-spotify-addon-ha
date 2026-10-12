@@ -242,8 +242,47 @@ def _receipt_order_key(item):
     return datetime.fromtimestamp(file_stamp, UTC)
 
 
+def _accepted_metadata_source(store, staged, source, target, head):
+    """Require an intact receipt for this exact, successfully accepted original."""
+    if (head is None or head['source_sha256'] != staged['source_sha256']
+            or head['target_account'] != target or not head['fingerprint']):
+        return False
+    imported = store.db.execute('SELECT digest,source FROM imports WHERE id=?',
+                                (head['import_id'],)).fetchone()
+    if imported is None or hashlib.sha256(imported['source'].encode()).hexdigest() != imported['digest']:
+        return False
+    try:
+        manifest = json.loads(imported['source'])
+        prior_choices = manifest['choices']
+        prior_rows = manifest['rows']
+        eligible = {row['reference']: row for row in prior_rows
+                    if row['date'] <= prior_choices['date_to']}
+        accepted_pairs = [pair for pair in prior_choices['transfer_pairs']
+                          if all(ref in eligible for ref in pair)]
+        expected_fingerprint = 'source-v1:' + digest({
+            'rows': [row for row in prior_rows if row['source_account'] == source],
+            'mapping': {source: target},
+            'transfer_pairs': [pair for pair in accepted_pairs if any(
+                eligible[ref]['source_account'] == source for ref in pair)],
+            'exported_at': manifest['exported_at'], 'date_to': prior_choices['date_to'],
+        })
+        return (head['fingerprint'] == expected_fingerprint
+                and prior_choices['mode'] == 'snapshot' and prior_choices['full_export'] is True
+                and manifest['kind'] == 'finanzguru_full_snapshot'
+                and manifest['source_sha256'] == staged['source_sha256']
+                and manifest['exported_at'] == head['exported_at']
+                and manifest['choices']['mapping'][source] == target
+                and [row for row in manifest['rows'] if row['source_account'] == source]
+                == [row for row in staged['rows'] if row['source_account'] == source])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _plan(store, staged, choices, root):
     if not isinstance(choices, dict) or choices.get('mode') != 'snapshot':
+        raise ValueError('invalid_snapshot_choices')
+    metadata_only = choices.get('metadata_only', False)
+    if not isinstance(metadata_only, bool):
         raise ValueError('invalid_snapshot_choices')
     exported_at = _timestamp(choices)
     cutoff = _date_to(choices, exported_at)
@@ -526,6 +565,10 @@ def _plan(store, staged, choices, root):
         same_source(heads.get(source), source) for source in active_mapping)
     for source in active_mapping:
         head = heads.get(source)
+        if metadata_only:
+            if not _accepted_metadata_source(store, staged, source, active_mapping[source], head):
+                blockers.append('metadata_source_not_accepted')
+            continue
         if head and exported_at < head['exported_at']:
             blockers.append('stale_export')
         elif head and exported_at == head['exported_at'] and not same_source(head, source):
@@ -537,7 +580,9 @@ def _plan(store, staged, choices, root):
     net_change = new_total + updated_delta - removed_total
     if replay and any(counts[name] for name in ('new', 'updated', 'removed')):
         blockers.append('snapshot_state_diverged')
-    token = digest({'fingerprint': fingerprint, 'heads': heads,
+    if metadata_only and any(counts[name] for name in ('new', 'updated', 'removed')):
+        blockers.append('metadata_ledger_diverged')
+    token = digest({'metadata_only': metadata_only, 'fingerprint': fingerprint, 'heads': heads,
                     'direct_bank_targets': sorted(directly_bound),
                     'direct_bank_sources': sorted(direct_sources),
                     'active_transfer_pairs': active_pairs,
@@ -562,7 +607,7 @@ def _plan(store, staged, choices, root):
     return report, {'mapping': active_mapping, 'desired': desired, 'existing': existing,
                     'removed': removed, 'heads': heads, 'fingerprint': fingerprint,
                     'source_fingerprints': source_fingerprints,
-                    'exported_at': exported_at, 'replay': replay,
+                    'exported_at': exported_at, 'replay': replay, 'metadata_only': metadata_only,
                     'no_op': not active_mapping,
                     'skipped_direct_source_pairs': skipped_direct_source_pairs,
                     'skipped_out_of_scope_pairs': skipped_out_of_scope_pairs}
@@ -626,10 +671,22 @@ def commit_snapshot(store, root, batch, choices, review_token):
                     'model_review': {'status': 'skipped', 'counts': {}, 'reviewed': 0},
                     'source_sha256': staged['source_sha256'], 'ledger_written': False,
                     'no_op': True}
-        if plan['replay']:
+        if plan['replay'] or plan['metadata_only']:
             metadata_rows = _mapped_row_metadata(
                 staged, plan['mapping'], date_to=report.get('date_to'))
             _persist_row_metadata(store, metadata_rows, staged['source_sha256'])
+            if plan['metadata_only']:
+                receipt = {'kind': 'finanzguru_metadata_enrichment',
+                           'recorded_at': datetime.now(UTC).isoformat(),
+                           'source_sha256': staged['source_sha256'],
+                           'rows_sha256': staged['rows_sha256'],
+                           'metadata_sha256': staged.get('metadata_sha256'),
+                           'choices': choices, 'review_token': review_token,
+                           'ledger_written': False}
+                receipt['manifest_sha256'] = hashlib.sha256(_json(receipt).encode()).hexdigest()
+                with (folder / ('decision-' + secrets.token_hex(8) + '.json')).open(
+                        'x', encoding='utf-8') as stream:
+                    json.dump(receipt, stream, ensure_ascii=False, indent=2)
             store.db.commit()
             return {'inserted': 0, 'updated': 0, 'removed': 0, 'auto_classified': 0,
                     'auto_transfers': {'status': 'skipped', 'confirmed': 0, 'pair_ids': []},

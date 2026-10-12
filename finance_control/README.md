@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.51` preserves recurring payment identity across bank-source name
+prefixes and adds an explicit metadata-only enrichment for exactly proven,
+already accepted Finanzguru originals. This path never writes transactions or
+changes accepted snapshot baselines; direct bank records remain authoritative.
+
 Version `0.2.50` adds compact multi-account mobile balances, direct Finanzguru and
 Finanzblick presentation switches, current-month startup and automatic configured
 bank refresh from the overview. Existing recurrence decisions and marked file
