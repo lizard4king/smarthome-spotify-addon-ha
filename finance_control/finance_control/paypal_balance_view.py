@@ -7,13 +7,17 @@ from datetime import date
 from .core import money
 
 
-_TYPES = frozenset({'CLBD', 'ITBD', 'CLAV', 'ITAV'})
+_TYPES = frozenset({'CLBD', 'ITBD', 'CLAV', 'ITAV', 'XPCD'})
 _MAX_BALANCES = 100
 _MAX_RESPONSE_BYTES = 128_000
 
 
 def sanitize_balances(response, currency, retrieved_at):
-    """Return only supported booked/available types, without inventing dates."""
+    """Keep supported provider balances separate, without inventing dates or totals.
+
+    XPCD is the provider's instant balance, never a booked closing balance.
+    Account currency XXX permits explicit balance currencies without conversion.
+    """
     if type(response) is not dict:
         raise ValueError('invalid balance response')
     try:
@@ -37,7 +41,10 @@ def sanitize_balances(response, currency, retrieved_at):
         reference_date = entry.get('reference_date')
         if (type(amount) is not dict or type(amount.get('amount')) is not str
                 or type(amount.get('currency')) is not str
-                or amount['currency'] != currency or type(label) is not str
+                or re.fullmatch(r'[A-Z]{3}', amount['currency']) is None
+                or amount['currency'] == 'XXX'
+                or (currency != 'XXX' and amount['currency'] != currency)
+                or type(label) is not str
                 or not label.strip() or len(label) > 160
                 or any(ord(char) < 32 for char in label)):
             raise ValueError('invalid balance')
@@ -51,13 +58,13 @@ def sanitize_balances(response, currency, retrieved_at):
                     raise ValueError
             except ValueError as exc:
                 raise ValueError('invalid balance date') from exc
-        key = (balance_type, reference_date)
+        key = (amount['currency'], balance_type, reference_date)
         if key in seen:
-            raise ValueError('duplicate balance type and date')
+            raise ValueError('duplicate balance currency, type and date')
         seen.add(key)
         # money rejects floats, nonfinite, excessive precision and magnitude.
         result.append({'amount': format(money(amount['amount']), '.2f'),
-                       'currency': currency, 'balance_type': balance_type,
+                       'currency': amount['currency'], 'balance_type': balance_type,
                        'label': label.strip(), 'reference_date': reference_date,
                        'retrieved_at': retrieved_at})
     return result

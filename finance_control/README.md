@@ -1,5 +1,9 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.54` also displays PayPal instant provider balances (XPCD) and
+explicit currencies for multi-currency accounts marked XXX. These balances
+remain separate from booked closing controls, forecasts and installment liabilities.
+
 Version `0.2.53` adds expected payments to the continuous booking list and a
 desktop column for qualified calculated daily balances. Intraday bank balances
 remain current controls and never masquerade as day-end anchors. PayPal wallet

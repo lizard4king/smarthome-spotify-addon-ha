@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.54
+
+- Display PayPal XPCD instant provider balances separately from booked closing balances and Finance Control forecasts.
+- Preserve explicit balance currencies for provider accounts marked XXX; never convert or combine currencies.
+- Keep invalid or missing wallet values unknown and indicate additional balances beyond the overview limit.
+
 ## 0.2.53
 
 - Show expected recurring payments beside booked transactions in the continuous booking feed, with distinct forecast labels and source details.
