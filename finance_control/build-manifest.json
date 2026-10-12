@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "325ef13292dcccaa799a69c00c14b9fb7c75245cf631070703103204d2a538a7",
-  "addon_version": "0.2.47",
+  "addon_tree_sha256": "87d6010b9f315bb612b8872a626ec865681d136c6ee7b7ef3b5c54166bb36a0c",
+  "addon_version": "0.2.48",
   "deployment_files": {
-    "Dockerfile": "19dbcb7817dc4399d82e9198442b0d1fd56c1ca7cef14af5a486de9a4ac9ac82",
-    "README.md": "cbed847c2ec3926b499f37147503ed294f852a43ea36c52f2e43ca2bbb003b58",
+    "Dockerfile": "23b67e411b02f217fc847c9aa3eab14aa5b7e4f8ac621f2f0135661f27f26519",
+    "README.md": "b5058dedbc42dc474e85b7659173bc6204e102c19f8cbfe34654aa8abaf9cfb5",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "b7bb8f0eea7753926609a211eadcf1b37e09328f138624e685ec156c95f24e5b",
+    "config.yaml": "8cc541e560b7314575217df53b7a48f9175b73aee78e6739892ca4c3c62b312b",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -57,7 +57,7 @@
     "connectors/synthetic.py": "15350c66e7749544ccc7e454f7c562495645968d3b89560e67d88db2e6b20edd",
     "contracts.py": "18d62a5fed6a94e546ae1010d84e92d126102d368843d9f6562c3d556e2326c5",
     "core.py": "1dcbae4cb29da8f32dd0a93be67396b9341c5c43ec698b4c8da8089bc6538037",
-    "current_balances.py": "e6e3fce41aa5d6086aa1a187b451c0b59c17fdeb0ac0326286d38e67f42c76eb",
+    "current_balances.py": "5d8d4a048d018a0c8db57b01fc38ce5c9db48daccdf8360de917395f3815b52b",
     "dashboard.py": "d44f19514e82f8e622a8a684daa1e6d252109808bc58dd403751e50581672259",
     "document_intake.py": "0b78d48ffadc0259dbbd3d727ae0f4b00ca7b9ea9683d2688bb4cd39e1a5780c",
     "drive_api.py": "c728c4ffaad59e866fbec1c629846d186e2f36e09daf92f1f4bb144e8288fb04",
@@ -134,6 +134,7 @@
     "migrations/053_server_cards.sql": "cfb62404e32e8e4626e318ef0bfa702c23d3df8fe7a664dbd1e86e2133a9d24f",
     "migrations/054_paypal_credit_snapshots.sql": "d2ed6f6e9b04920b3e1ef38b45ab7b1daae1cc3c58fc26f07db7d76745a0e600",
     "migrations/055_contracts.sql": "befbdc0854cfe44a1b3f4fe30eb07fb5a0d69db67406d7f3c1319ad418e2419a",
+    "migrations/056_recurring.sql": "879039ee0699deeaa3c0b6467975d6a26a8dc32b27de5d12389013e7f6837364",
     "monthly_archive.py": "e0f3c4cf30231891c5fc028581853cd34b5385861b2d3f110d506efe669eba18",
     "monthly_review.py": "b97383952723ddd20269a70c5a20591c14b3ddf228257b54db63c4d43b673f94",
     "onboarding.py": "df057661401a42c5b483ec5356b63724a51d2457d1e828fde39468b007332614",
@@ -151,6 +152,7 @@
     "read_api.py": "9b768baeca1987803ea64d4f2d758c9ca169ba61bebd037d7b6ea0151cc6f89e",
     "read_api_server.py": "ee9f9ba419608b9b2f3f7577414440e4a6190f65143929369a86ccb323a71250",
     "reconciliation_proof.py": "0a5de7ca2f4c423462206c57218f0d53303b9970bdef07902f411d4d71a40a6f",
+    "recurring.py": "d359c9b7a941d074a2f7e68e4fe179780f0e15719875ae7878de6809090e7694",
     "reporting_history.py": "c4227380991bc3756fe1311504057624dd75ad3601257d81e82d845b4d52eafa",
     "safe_http.py": "2561dda83ee407de3be15de22595988a4832a2a543c047f6dbe1e50ad9dc8c98",
     "security/__init__.py": "927572fa80b59c4de1f2af7ac46c3f771f0e2a7b508bb103c9d1312895c5c90b",
@@ -436,8 +438,8 @@
     "static/dashboard.css": "9cad46191f6cdfcfb7eeec07335bdbd8b5b2f3e0555ce7d65e996003ada98650",
     "static/dashboard.js": "e391911376b4da5db24d85a4790610cababeca7fb962f4db4f7a51b5cb451871",
     "static/finanzguru.js": "6fc8e893cda929179408883fc4a44ce66fea07138a55d63cae12371629ede1a3",
-    "static/home.js": "9ef4764079baf657fac05c2a0fc5ccf71fa9af2b646bcb7d2897e6424a1ff0d4",
-    "static/index.html": "da095e6eacfc081c1a142e999c6c2be5be0a3dad05071b7c53cb8a8bd25b0f7b",
+    "static/home.js": "e4cbe07098c9d87524719eb017e8d99ea7da5d052a94091624c9d12f2b2b6eb4",
+    "static/index.html": "bc998b8763019251c91dea7ca65b9a5acac5268edf242de7f365a6e65debd4ec",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/klarna-banking.css": "fcc4a31614dda44f905ab0f5b9b654ce3a0e77b5969011e9eb5f058db3a85665",
     "static/klarna-banking.js": "b36af5b19a1b9c63b20be09807c5024445b23bac7db115f13b8697bfd0676cf9",
@@ -455,6 +457,8 @@
     "static/postbank-transactions.js": "257b7e131315f5b55d68907b6829740c0fb0559431fad3f8320b76b1cfdce2b6",
     "static/purchases.css": "0efed6050aab0c156dd47895d67c4c194ba1bb597188b2f2f261494e88582b7d",
     "static/purchases.js": "3e5753837a6bac64d2c1367217986ec05ca22e802e7ee7f77946248123348089",
+    "static/recurring.css": "b3d9d89dad400f48bead49d67eec0938344f6562d57f6e24397c2f46780d3280",
+    "static/recurring.js": "247bf809d83ff8a983893bae8762191eb3fd2c2499ad0baac21e40822011c6e7",
     "static/server-banking.css": "a693cdd1bba6e935b046deeff8663156d718455895a674e5067bc20301dbfc0e",
     "static/server-banking.js": "34c60977a37b2eceeb5d95235c9e5e6e6a68de75e06ea6c1778f58365ff4d42d",
     "static/simple-icons-LICENSE.txt": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
@@ -464,9 +468,9 @@
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "1eb55db0d79e7cdbf2d069a204cdd784c097cec7e4c1f76b072ded7b32dc51c9",
     "wealth.py": "4a1ec1dfe05229f64c5b566901962e0fc3932a05b6adc6fcfb9b0960a0e70caf",
-    "web.py": "25f024bf0ff69cc692b78a1985039334f397219aa44a969a4a5e94029c5f802a"
+    "web.py": "8b34d37f24565a26aabc0e99e546af5336a8e283a9ced72e4deb7c4ac8213b16"
   },
   "schema_version": 1,
-  "source_commit": "4852751f5241cb3461bae570ec943b3838638232",
-  "source_tree_sha256": "491685b37cb91dcc3c039d3fa16e60cbe9d707ee0db9b35520edae7e6863a67c"
+  "source_commit": "6de02a1f91f2352b0eb8367bb3593619a37dbdb6",
+  "source_tree_sha256": "3595988c72219869f30ab8e3802f6b21230205a1f6752d6e388b20e6c8058b62"
 }

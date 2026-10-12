@@ -1,5 +1,11 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.48` adds a Contracts workspace beside Budgets: confirmed recurring
+payments, booked/expected/unresolved dates and conditional balance forecasts
+from recorded account balances. Amount phases remain authoritative; unknown
+balances, estimates and incomplete ledger coverage remain explicit. Forecasts
+never create ledger rows or bank instructions. See [contract forecast rules](https://github.com/lizard4king/finance-control/blob/main/docs/contracts.md).
+
 Version `0.2.47` introduces a consistent mobile cockpit with recorded balances,
 account bookings, budgets, analysis and secondary tools. Financial calculations
 and bank originals remain authoritative. Unknown balances and incomplete
