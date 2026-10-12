@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.50` adds compact multi-account mobile balances, direct Finanzguru and
+Finanzblick presentation switches, current-month startup and automatic configured
+bank refresh from the overview. Existing recurrence decisions and marked file
+payments feed transparent estimated series and dated balance curves. Explicit
+file balances remain secondary to direct bank records; forecasts never write
+transactions or extend known contract terms.
+
 Version `0.2.49` keeps confirmed contract documents visible when their payment
 terms are still missing. These documents link to their setup and generate no
 payment expectations or balance changes until configured.

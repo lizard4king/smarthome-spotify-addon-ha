@@ -83,6 +83,16 @@
   let automaticStarted = false;
   let running = false;
   let lifecycle = 0;
+  let manualRefresh = null;
+
+  function compactStatus(text, busy = running, error = false) {
+    const host = document.getElementById('cockpit-bank-refresh');
+    if (!host) return;
+    host.hidden = false;
+    host.classList.toggle('fbr-error', error);
+    host.querySelector('[data-bank-status]').textContent = text;
+    host.querySelector('button').disabled = busy || !manualRefresh;
+  }
 
   function message(parent, text, error = false) {
     const paragraph = document.createElement('p');
@@ -90,6 +100,7 @@
     paragraph.setAttribute('role', 'status');
     paragraph.textContent = text;
     parent.append(paragraph);
+    if (parent.classList.contains('fbr-status')) compactStatus(text, running, error);
   }
 
   async function mount() {
@@ -128,6 +139,7 @@
       running = value;
       button.disabled = value;
       button.textContent = value ? 'Banken werden aktualisiert …' : 'Umsätze aktualisieren';
+      compactStatus(value ? 'Konten werden aktualisiert …' : 'Bankabruf abgeschlossen.', value);
     };
     const request = async (path, body) => {
       try {
@@ -190,24 +202,32 @@
           view.feedback.append(feedback);
         }
       }
+      const errors = rows.filter(row => row?.status === 'error' || row?.status === 'setup_required');
+      const updated = rows.filter(row => row?.status === 'updated').length;
+      compactStatus(errors.length ? 'Bankabruf benötigt Deine Prüfung. Details unter Konten.'
+        : updated ? 'Konten aktualisiert.' : 'Vor kurzem abgefragt.', false, errors.length > 0);
     };
 
     const loadSetup = async () => {
-      const [administration, credentials] = await Promise.all([
-        request('/api/administration'),
-        request('/api/administration/bank-credentials-state', {}),
-      ]);
+      const administration = await request('/api/administration');
       if (!live()) return false;
       setup.replaceChildren();
-      if (!administration.ok || !credentials.ok) {
+      if (!administration.ok) {
         message(setup, 'Bankeinrichtungen konnten nicht geladen werden. Es wurde kein Abruf gestartet.', true);
         button.disabled = true;
-        return false;
+        return null;
       }
       if (administration.data?.enabled !== true) {
         message(setup, 'Die Bankverwaltung ist für diesen Zugang nicht freigeschaltet.');
         button.disabled = true;
         return false;
+      }
+      const credentials = await request('/api/administration/bank-credentials-state', {});
+      if (!live()) return false;
+      if (!credentials.ok) {
+        message(setup, 'Bankeinrichtungen konnten nicht geladen werden. Es wurde kein Abruf gestartet.', true);
+        button.disabled = true;
+        return null;
       }
       if (credentials.data?.supported !== true) {
         message(setup, 'Dieser Server unterstützt den sicheren Bankzugang nicht.');
@@ -322,27 +342,27 @@
         const response = await request('/api/administration/bank-refresh-state', {});
         if (!live()) return;
         if (!response.ok) {
-          message(status, errorText(response.code, response.diagnostic), true);
           setBusy(false);
+          message(status, errorText(response.code, response.diagnostic), true);
           return;
         }
         if (response.data?.status === 'complete' && Array.isArray(response.data.connections)) {
-          renderConnections(response.data.connections);
           setBusy(false);
+          renderConnections(response.data.connections);
           document.dispatchEvent(new CustomEvent('finance-bank-refreshed'));
           return;
         }
         if (response.data?.status !== 'running') {
-          message(status, 'Der Aktualisierungsstatus ist nicht verfügbar.', true);
           setBusy(false);
+          message(status, 'Der Aktualisierungsstatus ist nicht verfügbar.', true);
           return;
         }
         status.replaceChildren();
         message(status, 'Bankabruf läuft.');
       }
       if (live()) {
-        message(status, 'Der Abruf läuft länger als erwartet. Prüfe den Status später erneut.', true);
         setBusy(false);
+        message(status, 'Der Abruf läuft länger als erwartet. Prüfe den Status später erneut.', true);
       }
     }
 
@@ -354,19 +374,19 @@
       const response = await request('/api/administration/bank-refresh-start', {});
       if (!live()) return;
       if (!response.ok) {
-        message(status, errorText(response.code, response.diagnostic), true);
         setBusy(false);
+        message(status, errorText(response.code, response.diagnostic), true);
         return;
       }
       if (response.data?.status === 'complete' && Array.isArray(response.data.connections)) {
-        renderConnections(response.data.connections);
         setBusy(false);
+        renderConnections(response.data.connections);
         document.dispatchEvent(new CustomEvent('finance-bank-refreshed'));
         return;
       }
       if (response.data?.status !== 'running') {
-        message(status, 'Der Aktualisierungsstatus ist nicht verfügbar.', true);
         setBusy(false);
+        message(status, 'Der Aktualisierungsstatus ist nicht verfügbar.', true);
         return;
       }
       await poll();
@@ -374,7 +394,21 @@
 
     button.addEventListener('click', start);
     const allowed = await loadSetup();
-    if (!live() || !allowed) return;
+    if (!live()) return;
+    if (!allowed) {
+      if (allowed === null) compactStatus('Bankeinrichtung konnte nicht geladen werden. Details unter Konten.', false, true);
+      else {
+        const compact = document.getElementById('cockpit-bank-refresh');
+        if (compact) compact.hidden = true;
+      }
+      return;
+    }
+    manualRefresh = start;
+    const compactButton = document.querySelector('#cockpit-bank-refresh button');
+    if (compactButton && !compactButton.dataset.bound) {
+      compactButton.dataset.bound = 'true';
+      compactButton.addEventListener('click', () => { if (manualRefresh) void manualRefresh(); });
+    }
     const state = await request('/api/administration/bank-refresh-state', {});
     if (!live()) return;
     if (state.ok && state.data?.status === 'complete' && Array.isArray(state.data.connections)) {
@@ -400,6 +434,7 @@
         if (!host) return;
         host.replaceChildren();
         message(host, 'Bankabruf konnte nicht angezeigt werden.', true);
+        compactStatus('Bankabruf konnte nicht gestartet werden. Details unter Konten.', false, true);
       });
     },
     deactivate() {
@@ -407,10 +442,14 @@
       automaticStarted = false;
       running = false;
       lifecycle += 1;
+      manualRefresh = null;
+      const compact = document.getElementById('cockpit-bank-refresh');
+      if (compact) compact.hidden = true;
       const host = document.getElementById(hostId);
       if (!host) return;
       host.dataset.rendered = 'false';
       host.replaceChildren();
     },
   };
+  document.querySelector('form.logout')?.addEventListener('submit', () => window.financeBankRefresh.deactivate(), {once: true});
 })();

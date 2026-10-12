@@ -30,10 +30,85 @@ def digest(value):
 
 def stage_metadata_digest(staged):
     """Bind every staged import decision to the archived source review."""
-    return digest({key: staged.get(key) for key in (
-        'source_sha256', 'rows', 'blockers', 'split_summary', 'split_row_count',
-        'excluded_split_children',
-    )})
+    keys = ('source_sha256', 'rows', 'blockers', 'split_summary', 'split_row_count',
+            'excluded_split_children')
+    if staged.get('version', 1) >= 3:
+        keys += ('row_metadata',)
+    return digest({key: staged.get(key) for key in keys})
+
+
+_CADENCE_MONTHS = {'monatlich': 1, 'vierteljaehrlich': 3,
+                   'halbjaehrlich': 6, 'jaehrlich': 12}
+
+
+def _optional_source_text(row, column, maximum):
+    value = row.get(column)
+    if value is None or not str(value).strip():
+        return None
+    value = str(value).strip()
+    if len(value) > maximum:
+        raise ValueError('source_text_too_long')
+    return value
+
+
+def _source_row_metadata(row, *, reference, external_id, booked_on):
+    """Retain only explicit source balance and contract marker fields."""
+    raw_balance = row.get('Kontostand')
+    if raw_balance is None or (isinstance(raw_balance, str) and not raw_balance.strip()):
+        balance = None
+    else:
+        balance = format(_amount(raw_balance), '.2f')
+    contract_id = _optional_source_text(row, 'Analyse-Vertrags-ID', 240)
+    contract_label = _optional_source_text(row, 'Analyse-Vertrag', 240)
+    cadence_raw = _optional_source_text(row, 'Analyse-Vertragsturnus', 120)
+    marker_present = contract_id is not None or contract_label is not None
+    if balance is None and not marker_present:
+        return None
+    cadence_key = cadence_raw.casefold() if cadence_raw is not None else None
+    return {
+        'source_reference': reference,
+        'source_account': row['Referenzkonto'],
+        'external_id': external_id,
+        'booked_on': booked_on,
+        'currency': ('EUR' if row.get('Waehrung') in (None, '', '€')
+                     else row.get('Waehrung')),
+        'balance_amount': balance,
+        'contract_id': contract_id if marker_present else None,
+        'contract_label': contract_label if marker_present else None,
+        'cadence_raw': cadence_raw if marker_present else None,
+        'interval_months': _CADENCE_MONTHS.get(cadence_key) if marker_present else None,
+    }
+
+
+def _mapped_row_metadata(staged, mapping, *, excluded_sources=(), date_to=None):
+    excluded_sources = set(excluded_sources)
+    result = []
+    for row in staged.get('row_metadata', []):
+        source = row['source_account']
+        if (source not in mapping or source in excluded_sources
+                or (date_to is not None and row['booked_on'] > date_to)):
+            continue
+        result.append(row | {'account_id': mapping[source]})
+    return result
+
+
+def _persist_row_metadata(store, rows, source_sha256):
+    for row in rows:
+        store.db.execute(
+            'INSERT INTO finanzguru_row_metadata('
+            'source_sha256,source_account,source_reference,account_id,external_id,booked_on,'
+            'currency,balance_amount,contract_id,contract_label,cadence_raw,interval_months) '
+            'VALUES (?,?,?,?,?,?,?,?,?,?,?,?) '
+            'ON CONFLICT(source_sha256,source_account,source_reference) DO UPDATE SET '
+            'account_id=excluded.account_id,external_id=excluded.external_id,'
+            'booked_on=excluded.booked_on,currency=excluded.currency,'
+            'balance_amount=excluded.balance_amount,contract_id=excluded.contract_id,'
+            'contract_label=excluded.contract_label,cadence_raw=excluded.cadence_raw,'
+            'interval_months=excluded.interval_months',
+            (source_sha256, row['source_account'], row['source_reference'], row['account_id'],
+             row['external_id'], row['booked_on'], row['currency'], row['balance_amount'],
+             row['contract_id'], row['contract_label'], row['cadence_raw'],
+             row['interval_months']))
 
 
 def private_directory(root):
@@ -87,6 +162,7 @@ def stage_workbook(raw, root):
         if sheet['issue_count']:
             blockers.append('invalid_source_rows')
     rows = []
+    row_metadata = []
     split_rows = []
     excluded_split_children = 0
     split_date_mismatches = 0
@@ -112,6 +188,20 @@ def stage_workbook(raw, root):
                             or not isinstance(identifier, str) or not identifier.strip()):
                         blockers.append('source_ids_must_be_text')
                         continue
+                    try:
+                        booked_on = _day(row['Buchungstag'])
+                    except (ValueError, TypeError, KeyError):
+                        blockers.append('invalid_source_rows')
+                        continue
+                    external_id = 'fg:' + digest(account) + ':' + digest(identifier)
+                    try:
+                        metadata = _source_row_metadata(
+                            row, reference=f'{index}:{number}', external_id=external_id,
+                            booked_on=booked_on)
+                        if metadata is not None:
+                            row_metadata.append(metadata)
+                    except (ValueError, TypeError, KeyError, ArithmeticError):
+                        blockers.append('invalid_source_metadata')
                     kind = row.get('Split-Typ')
                     source_id_kinds.setdefault((account, identifier), []).append(kind)
                     if kind:
@@ -130,9 +220,8 @@ def stage_workbook(raw, root):
                     try:
                         rows.append({'reference': f'{index}:{number}', 'source_account': account,
                                      'source_name': str(row.get('Name Referenzkonto') or ''),
-                                     'source_id': identifier,
-                                     'external_id': 'fg:' + digest(account) + ':' + digest(identifier),
-                                     'date': _day(row['Buchungstag']),
+                                     'source_id': identifier, 'external_id': external_id,
+                                     'date': booked_on,
                                      'amount': format(_amount(row['Betrag']), '.2f'), 'currency': 'EUR',
                                      'category': source_category(row),
                                      'counterparty': source_text(
@@ -171,9 +260,11 @@ def stage_workbook(raw, root):
     # Do not leave a partially usable stage behind after a source or split validation failure.
     if blockers:
         rows = []
+        row_metadata = []
         excluded_split_children = 0
-    staged = {'version': 2, 'source_sha256': hashlib.sha256(raw).hexdigest(), 'rows_sha256': digest(rows),
-              'rows': rows, 'blockers': sorted(set(blockers)), 'format_report': report,
+    staged = {'version': 3, 'source_sha256': hashlib.sha256(raw).hexdigest(), 'rows_sha256': digest(rows),
+              'rows': rows, 'row_metadata': row_metadata,
+              'blockers': sorted(set(blockers)), 'format_report': report,
               'split_summary': split_summary, 'split_row_count': len(split_rows),
               'excluded_split_children': excluded_split_children}
     staged['metadata_sha256'] = stage_metadata_digest(staged)
@@ -183,6 +274,9 @@ def stage_workbook(raw, root):
             'issues': [{'sheet': s['sheet_index'], **issue} for s in supported for issue in s['issues']],
             'ignored_sheets': len(report['sheets']) - len(supported),
             'split_summary': split_summary, 'excluded_split_children': excluded_split_children,
+            'balance_rows': sum(row['balance_amount'] is not None for row in row_metadata),
+            'contract_marker_rows': sum(row['contract_id'] is not None or row['contract_label'] is not None
+                                         for row in row_metadata),
             'ledger_written': False}
 
 
@@ -198,6 +292,8 @@ def load_batch(root, batch):
         raise ValueError('source_changed')
     if digest(staged['rows']) != staged['rows_sha256']:
         raise ValueError('staged_rows_changed')
+    if staged.get('version', 1) >= 3 and not isinstance(staged.get('row_metadata'), list):
+        raise ValueError('staged_metadata_changed')
     if staged.get('version', 1) >= 2 and staged.get('metadata_sha256') != stage_metadata_digest(staged):
         raise ValueError('staged_metadata_changed')
     return folder, staged
@@ -387,8 +483,11 @@ def prepare(store, staged, choices):
                     'split_summary': staged.get('split_summary', {}),
                     'split_row_count': staged.get('split_row_count', 0),
                     'excluded_split_children': staged.get('excluded_split_children', 0),
+                    'metadata_sha256': staged.get('metadata_sha256'),
                     'accounts': list(accounts.values()), 'ledger': ledger})
-    return summary | {'review_token': token}, text.getvalue(), import_rows
+    persisted_metadata = _mapped_row_metadata(
+        staged, mapping, excluded_sources=direct_sources, date_to=date_to)
+    return summary | {'review_token': token}, text.getvalue(), import_rows, persisted_metadata
 
 
 def preview_batch(store, root, batch, choices):
@@ -411,10 +510,13 @@ def commit_batch(store, root, batch, choices, review_token):
     # Serialize review revalidation with all writes, including other local processes.
     store.db.execute('BEGIN IMMEDIATE')
     try:
-        report, source, import_rows = prepare(store, staged, choices)
+        report, source, import_rows, metadata_rows = prepare(store, staged, choices)
         if not report['ready'] or report['review_token'] != review_token:
             raise ValueError('review_stale_or_blocked')
         if report['no_op']:
+            # Keep the path safe if a no-op selection still carries eligible
+            # metadata for already-imported ledger rows.
+            _persist_row_metadata(store, metadata_rows, staged['source_sha256'])
             store.db.commit()
             return {'inserted': 0, 'auto_classified': 0,
                     'auto_transfers': {'status': 'skipped', 'confirmed': 0, 'pair_ids': []},
@@ -423,11 +525,13 @@ def commit_batch(store, root, batch, choices, review_token):
                     'no_op': True}
         receipt = {'source_sha256': staged['source_sha256'], 'choices': choices,
                    'recorded_at': datetime.now(UTC).isoformat(),
-                   'review_token': review_token, 'csv_sha256': hashlib.sha256(source.encode()).hexdigest()}
+                   'review_token': review_token, 'csv_sha256': hashlib.sha256(source.encode()).hexdigest(),
+                   'metadata_sha256': staged.get('metadata_sha256')}
         # Durable source/decision before ledger commit; the imports table archives this exact CSV.
         with (folder / ('decision-' + secrets.token_hex(8) + '.json')).open('x', encoding='utf-8') as stream:
             json.dump(receipt, stream, ensure_ascii=False, indent=2)
         inserted = store.import_csv(source, manage_transaction=False)
+        _persist_row_metadata(store, metadata_rows, staged['source_sha256'])
         auto_classified = 0
         for row, account_id, record in import_rows:
             counterparty, description = row.get('counterparty', ''), row.get('description', '')

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.50
+
+- Start in the current calendar month; show compact multi-account balances and a direct mobile Finanzguru/Finanzblick switch.
+- Refresh configured own bank connections on cockpit opening, with one shared status across navigation.
+- Recognize recurring net payments from existing decisions and booking history, show provenance, and project continuous dated balances while respecting known contract ends.
+- Preserve explicit Finanzguru balances and contract markers; direct bank sources remain authoritative.
+
 ## 0.2.49
 
 - Keep confirmed contract documents without payment terms visible in Contracts.
