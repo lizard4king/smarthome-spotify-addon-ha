@@ -14,7 +14,7 @@
     && Number.isFinite(Number(value)) ? Number(value) : null;
   const money = (value, currency) => {
     const parsed = amount(value);
-    if (parsed === null || typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) return 'Stand unbekannt';
+    if (parsed === null || typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency) || currency === 'XXX') return 'Stand unbekannt';
     try { return new Intl.NumberFormat('de-DE', {style: 'currency', currency}).format(parsed); }
     catch (_) { return 'Stand unbekannt'; }
   };
@@ -37,21 +37,26 @@
     const accounts = result.value.accounts;
     if (!accounts.length) { status(parent, 'Keine PayPal-Wallet-Stände gespeichert.'); return; }
     const labels = {CLBD: 'Gebuchter Abschlussstand', ITBD: 'Gebucht · untertägig',
-      CLAV: 'Verfügbarer Abschlussstand', ITAV: 'Verfügbar · untertägig'};
+      CLAV: 'Verfügbarer Abschlussstand', ITAV: 'Verfügbar · untertägig',
+      XPCD: 'Anbietersaldo · XPCD'};
     for (const account of accounts.slice(0, 3)) {
       const item = node('div', undefined, 'fc-home-paypal-item');
       item.append(node('strong', text(account?.name, 'Eigenes PayPal')));
       const balances = (Array.isArray(account?.balances) ? account.balances : [])
         .filter(balance => balance && Object.hasOwn(labels, balance.balance_type));
-      if (!balances.length) status(item, 'Stand unbekannt · kein gebuchter oder verfügbarer Stand geliefert.');
+      if (!balances.length) status(item, 'Stand unbekannt · kein unterstützter Wallet-Stand geliefert.');
       for (const balance of balances.slice(0, 4)) {
         const row = node('div', undefined, 'fc-home-paypal-balance');
         row.append(node('span', labels[balance.balance_type]),
           node('strong', money(balance.amount, balance.currency), 'fc-home-paypal-amount'));
+        if (balance.balance_type === 'XPCD') row.append(node('small',
+          'Momentansaldo des Anbieters; kein gebuchter Abschlussstand und keine Finance-Control-Prognose.',
+          'fc-home-paypal-meta muted'));
         const bankDate = date(balance.reference_date);
         row.append(node('small', `${bankDate ? 'Bankstichtag ' + bankDate : 'Bankstichtag nicht geliefert'}; abgerufen ${retrieved(balance.retrieved_at || result.value.retrieved_at)}`, 'fc-home-paypal-meta muted'));
         item.append(row);
       }
+      if (balances.length > 4) status(item, `Weitere ${balances.length - 4} Wallet-Salden unter PayPal-Details.`);
       parent.append(item);
     }
     if (accounts.length > 3) status(parent, `Weitere ${accounts.length - 3} PayPal-Konten unter PayPal-Details.`);
