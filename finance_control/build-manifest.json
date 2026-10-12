@@ -458,7 +458,7 @@
     "static/purchases.css": "0efed6050aab0c156dd47895d67c4c194ba1bb597188b2f2f261494e88582b7d",
     "static/purchases.js": "3e5753837a6bac64d2c1367217986ec05ca22e802e7ee7f77946248123348089",
     "static/recurring.css": "b3d9d89dad400f48bead49d67eec0938344f6562d57f6e24397c2f46780d3280",
-    "static/recurring.js": "247bf809d83ff8a983893bae8762191eb3fd2c2499ad0baac21e40822011c6e7",
+    "static/recurring.js": "cbc35a50e775228294faa388cda569b0caeea97c461805679620193186a983be",
     "static/server-banking.css": "a693cdd1bba6e935b046deeff8663156d718455895a674e5067bc20301dbfc0e",
     "static/server-banking.js": "34c60977a37b2eceeb5d95235c9e5e6e6a68de75e06ea6c1778f58365ff4d42d",
     "static/simple-icons-LICENSE.txt": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
@@ -471,6 +471,6 @@
     "web.py": "8b34d37f24565a26aabc0e99e546af5336a8e283a9ced72e4deb7c4ac8213b16"
   },
   "schema_version": 1,
-  "source_commit": "6de02a1f91f2352b0eb8367bb3593619a37dbdb6",
-  "source_tree_sha256": "3595988c72219869f30ab8e3802f6b21230205a1f6752d6e388b20e6c8058b62"
+  "source_commit": "16f7daa8df008c0e946a141ccc1973a7da0e7cef",
+  "source_tree_sha256": "df8796c5c146cae306860deca13613fcb94212ea340b0e235ca8f8081a4f809d"
 }
