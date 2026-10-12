@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.52
+
+- Place account balances below account names on narrow screens, in both presentation styles.
+- Preserve complete navigation words and monthly analysis values with enlarged text.
+- Stack auxiliary overview task controls instead of widening the page; enlarge the Klarna disclosure touch target.
+- Check all 20 routes, expanded details and dialogs with synthetic browser data at mobile and desktop widths.
+
 ## 0.2.51
 
 - Keep recurring payment histories together when direct bank records add a valid German IBAN before the same counterparty name; original bank texts remain unchanged.

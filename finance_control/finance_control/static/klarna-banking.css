@@ -6,7 +6,7 @@
 .kb-info { margin: 0; min-width: 0; padding: 12px 14px; border: 1px solid #e3c97b; border-radius: 8px; background: #fff9e8; color: #59470e; line-height: 1.5; overflow-wrap: anywhere; }
 .kb-compact-hint { margin: 0; min-width: 0; padding: 9px 11px; border-left: 3px solid #e3c97b; background: #fff9e8; color: #59470e; line-height: 1.4; overflow-wrap: anywhere; }
 .kb-limits { min-width: 0; padding: 10px 12px; border: 1px solid #dbe5e9; border-radius: 8px; background: #fff; }
-.kb-limits summary { min-height: 24px; color: #173143; font-weight: 650; cursor: pointer; }
+.kb-limits summary { min-height: 44px; padding: 14px 0; color: #173143; font-weight: 650; cursor: pointer; }
 .kb-limits .kb-info { margin-top: 8px; }
 .kb-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .kb-form[hidden] { display: none; }
