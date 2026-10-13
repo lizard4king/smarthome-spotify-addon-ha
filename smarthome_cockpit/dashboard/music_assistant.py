@@ -19,6 +19,14 @@ class MusicAssistantError(Exception):
     """Safe user-facing error; upstream bodies and credentials never escape."""
 
 
+def validate_search_page(query, offset):
+    """Validate shared bounded library-search inputs without making an upstream call."""
+    if not isinstance(query, str) or len(query) > 200 or any(ord(c) < 32 for c in query):
+        raise ValueError("Ungültiger Suchtext.")
+    if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100000:
+        raise ValueError("Ungültiger Musik-Offset.")
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -98,6 +106,34 @@ class MusicAssistant:
             raise MusicAssistantError("Music Assistant hat die Anfrage abgelehnt.")
         return result
 
+    def call_library(self, command, **args):
+        """Read album/browse payloads for library consumers; never dispatch mutations.
+
+        Consumers validate query arguments and provider provenance of returned items.
+        This is an internal Python interface, not an unrestricted HTTP command proxy.
+        """
+        if not isinstance(command, str) or command not in {
+            "music/albums/library_items", "music/albums/album_tracks", "music/browse",
+        }:
+            raise ValueError("Ungültiger lesender Musikbibliotheksbefehl.")
+        return self._call(command, **args)
+
+    def local_uri(self, track, preferred=None):
+        """Return a validated local Track URI, bound to the configured provider.
+
+        This performs no upstream lookup. Full Track objects need local provider
+        mappings; browse ItemMapping payloads are validated by the browse consumer.
+        """
+        return self._local_uri(track, preferred=preferred, provider_filter=self.library_provider)
+
+    def resolve_local_track(self, uri):
+        """Read and validate a local track; return its full payload and playable URI.
+
+        Reuses the adapter's existing availability and provider checks without
+        changing playback, storing media, or exposing stream URLs.
+        """
+        return self._track(uri)
+
     def status(self):
         try:
             self.players()
@@ -138,10 +174,7 @@ class MusicAssistant:
         return None
 
     def tracks(self, query="", offset=0):
-        if not isinstance(query, str) or len(query) > 200 or any(ord(c) < 32 for c in query):
-            raise ValueError("Ungültiger Suchtext.")
-        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100000:
-            raise ValueError("Ungültiger Musik-Offset.")
+        validate_search_page(query, offset)
         args = {"search": query or None, "limit": PAGE_SIZE, "offset": offset, "summary": False}
         if self.library_provider:
             args["provider"] = self.library_provider

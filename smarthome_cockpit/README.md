@@ -7,6 +7,12 @@ Home-Assistant-Host-Port `8767` zeigen. HAL9000 ist kein Produktivbestandteil.
 
 ## Eigene Musik über Music Assistant
 
+Der neue Bibliotheksausbau umfasst Alben, Ordner und direkte Browserwiedergabe.
+Einrichtung, Grenzen und Freigaben stehen in
+[Musikbibliothek und Browseraudio](docs/music-library-browser.md). Dieser
+Entwicklungsschritt erhöht die produktive Versionsnummer noch nicht; ein
+abweichender installierter Stand muss vor der Veröffentlichung abgeglichen werden.
+
 Das Cockpit spricht serverseitig die offizielle [REST API](https://www.music-assistant.io/api/)
 an: `POST /api`, mit `Authorization: Bearer`. Add-on-Optionen sind
 `music_assistant_url` (Server-Ursprung, z. B. `http://music-assistant:8095`),

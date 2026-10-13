@@ -25,6 +25,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from smarthome.home_assistant import HomeAssistantAdapter, HomeAssistantConfig, HomeAssistantError
 from dashboard.music_assistant import MusicAssistant, MusicAssistantError
+from dashboard.music_library import MusicLibrary
+from dashboard.music_audio import BrowserAudio, serve_audio
 from dashboard.codex_control import handle as handle_codex_control
 from dashboard.spotify import SpotifyCockpit, SpotifyCockpitError
 
@@ -35,6 +37,19 @@ MAX_BODY = 16 * 1024
 
 def _json_bytes(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=True).encode("utf-8")
+
+
+def _same_origin(headers) -> bool:
+    if headers.get("Sec-Fetch-Site") == "cross-site":
+        return False
+    origin = headers.get("Origin")
+    if not origin:
+        return True
+    try:
+        parsed = urlsplit(origin)
+        return parsed.scheme in {"http", "https"} and parsed.netloc == headers.get("Host")
+    except ValueError:
+        return False
 
 
 class CockpitHandler(SimpleHTTPRequestHandler):
@@ -52,7 +67,8 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
-        self.wfile.write(encoded)
+        if getattr(self, "command", None) != "HEAD":
+            self.wfile.write(encoded)
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib API
         if urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/", "/api/spotify")):
@@ -66,10 +82,7 @@ class CockpitHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib API
         if urlsplit(self.path).path == "/api/spotify/status":
-            origin = self.headers.get("Origin")
-            if (self.headers.get("Sec-Fetch-Site") == "cross-site" or (origin and (
-                    urlsplit(origin).scheme not in {"http", "https"} or
-                    urlsplit(origin).netloc != self.headers.get("Host")))):
+            if not _same_origin(self.headers):
                 self._send_json(403, {"available": False, "error": "Cross-Origin-Spotifyzugriff ist nicht freigegeben."})
                 return
             try:
@@ -138,17 +151,10 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             return
         try:
             if self.path.startswith("/api/spotify"):
-                if self.headers.get("Sec-Fetch-Site") == "cross-site":
+                if not _same_origin(self.headers):
                     self._send_json(403, {"error": "Cross-Origin-Spotifyzugriff ist nicht freigegeben.",
                                          **({"outcome": "not_sent"} if self.path == "/api/spotify/control" else {})})
                     return
-                origin = self.headers.get("Origin")
-                if origin:
-                    parsed = urlsplit(origin)
-                    if parsed.scheme not in {"http", "https"} or parsed.netloc != self.headers.get("Host"):
-                        self._send_json(403, {"error": "Cross-Origin-Spotifyzugriff ist nicht freigegeben.",
-                                             **({"outcome": "not_sent"} if self.path == "/api/spotify/control" else {})})
-                        return
                 if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
                     raise ValueError("Spotify-Befehle benötigen application/json.")
             length = int(self.headers.get("Content-Length", "-1"))
@@ -175,18 +181,36 @@ class CockpitHandler(SimpleHTTPRequestHandler):
                 error["outcome"] = "not_sent"
             self._send_json(400, error)
 
-    def _handle_music_get(self) -> None:
-        origin = self.headers.get("Origin")
-        if (self.headers.get("Sec-Fetch-Site") == "cross-site" or (origin and (
-                urlsplit(origin).scheme not in {"http", "https"} or
-                urlsplit(origin).netloc != self.headers.get("Host")))):
+    def do_HEAD(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/music/"):
+            self._handle_music_get(head=True)
+            return
+        super().do_HEAD()
+
+    def _handle_music_get(self, *, head=False) -> None:
+        if not _same_origin(self.headers):
             self._send_json(403, {"available": False, "error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
             return
         client = MusicAssistant()
         parsed = urlsplit(self.path)
         query = parse_qs(parsed.query)
         try:
-            if parsed.path == "/api/music/status":
+            if head and parsed.path != "/api/music/audio":
+                self._send_json(405, {"error": "HEAD ist nur für Audio verfügbar."})
+                return
+            if parsed.path == "/api/music/browser-status":
+                result = BrowserAudio(client).status()
+            elif parsed.path == "/api/music/audio":
+                serve_audio(self, client, query.get("uri", [""])[0], head=head)
+                return
+            elif parsed.path == "/api/music/albums":
+                result = MusicLibrary(client).albums(query.get("q", [""])[0], int(query.get("offset", ["0"])[0]))
+            elif parsed.path == "/api/music/folders":
+                result = MusicLibrary(client).folders(query.get("path", [""])[0], query.get("q", [""])[0],
+                                                     int(query.get("offset", ["0"])[0]))
+            elif parsed.path == "/api/music/collection":
+                result = MusicLibrary(client).collection(query.get("uri", [""])[0])
+            elif parsed.path == "/api/music/status":
                 result = client.status()
             elif parsed.path == "/api/music/players":
                 result = {"players": client.players()}
@@ -215,15 +239,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
 
     def _handle_music_post(self, payload: dict[str, object]) -> None:
         # Reject browser cross-origin writes, including simple form requests.
-        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+        if not _same_origin(self.headers):
             self._send_json(403, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
             return
-        origin = self.headers.get("Origin")
-        if origin:
-            parsed = urlsplit(origin)
-            if parsed.scheme not in {"http", "https"} or parsed.netloc != self.headers.get("Host"):
-                self._send_json(403, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
-                return
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip() != "application/json":
             raise ValueError("Musikbefehle benötigen application/json.")
         client = MusicAssistant()

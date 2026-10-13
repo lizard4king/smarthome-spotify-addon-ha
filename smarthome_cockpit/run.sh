@@ -17,6 +17,8 @@ export MUSIC_ASSISTANT_URL="$(bashio::config 'music_assistant_url')"
 export MUSIC_ASSISTANT_TOKEN="$(bashio::config 'music_assistant_token')"
 export MUSIC_ASSISTANT_ALLOW_PLAYBACK="$(bashio::config 'music_assistant_allow_playback')"
 export MUSIC_ASSISTANT_LIBRARY_PROVIDER="$(bashio::config 'music_assistant_library_provider')"
+export MUSIC_BROWSER_ROOT="$(bashio::config 'music_browser_root')"
+export MUSIC_BROWSER_ALLOW_PLAYBACK="$(bashio::config 'music_browser_allow_playback')"
 
 bashio::log.info "Cockpit-Konfiguration: HA-Token=$([ -n "$HOME_ASSISTANT_TOKEN" ] && echo gesetzt || echo fehlt), Bridge-Secret=$([ -n "$SPOTIFY_BRIDGE_SECRET" ] && echo gesetzt || echo fehlt), Schreibzugriff=$HOME_ASSISTANT_ALLOW_WRITES"
 

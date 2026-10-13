@@ -15,6 +15,7 @@ ports_description:
 map:
   - config:rw
   - data:rw
+  - media:ro
 options:
   home_assistant_token: ""
   home_assistant_entities_json: ""
@@ -27,6 +28,8 @@ options:
   music_assistant_token: ""
   music_assistant_allow_playback: false
   music_assistant_library_provider: ""
+  music_browser_root: ""
+  music_browser_allow_playback: false
 schema:
   home_assistant_token: password
   home_assistant_entities_json: str
@@ -41,3 +44,5 @@ schema:
   music_assistant_token: password
   music_assistant_allow_playback: bool
   music_assistant_library_provider: str
+  music_browser_root: str
+  music_browser_allow_playback: bool

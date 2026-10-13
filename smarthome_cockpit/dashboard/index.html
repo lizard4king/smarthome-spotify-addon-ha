@@ -213,6 +213,9 @@
     @media (max-width:620px) { .spotify-sessions { grid-template-columns:1fr; } .section-title { gap:10px; flex-wrap:wrap; } .spotify-search button { min-height:44px; } }
     @media (max-width:620px) { .header-actions { flex-wrap:wrap; min-width:0; } .header-actions .pill { max-width:100%; white-space:normal; overflow-wrap:anywhere; } .header-actions .dot { flex-shrink:0; } }
   </style>
+  <link rel="stylesheet" href="music-library.css">
+  <script src="music-library.js"></script>
+  <style>@media (max-width:620px) { .music-workspace > .music-library { order:-1; } }</style>
 </head>
 <body>
   <main class="shell">
@@ -276,7 +279,8 @@
         <div class="music-seek"><input id="musicSeek" type="range" min="0" max="1" value="0" disabled aria-label="Position im aktuellen eigenen Titel"><div class="music-seek-times meta"><span id="musicElapsed">–:–</span><span id="musicDuration">–:–</span></div></div>
         <div class="music-queue"><h3>Warteschlange</h3><div id="musicQueue" class="music-queue-list"><div class="meta">Warteschlange wird geprüft …</div></div></div>
       </div>
-      <div class="music-library"><h3>Musik auswählen</h3>
+      <div class="music-library"><div id="musicLibraryBrowser"></div>
+      <div id="musicLegacyLibrary" hidden><h3>Musik auswählen</h3>
       <form id="musicSearchForm" class="music-search" role="search">
         <label class="spotify-track-hidden" for="musicQuery">Eigene Musik suchen</label>
         <input id="musicQuery" type="search" placeholder="Titel, Album oder Interpret suchen …" aria-label="Eigene Musik suchen" autocomplete="off">
@@ -284,6 +288,7 @@
       </form>
       <div class="music-library-actions"><button id="musicLibrary" type="button" disabled>Bibliothek anzeigen</button></div>
       <div id="musicResults" class="music-results" aria-live="polite"><div class="meta">Bibliothek anzeigen oder nach Musik suchen.</div></div>
+      </div>
       <div id="musicSelected" class="music-selected" hidden>
         <span class="music-art-slot"><img id="musicSelectedArt" class="music-art" alt="" hidden></span>
         <div><div class="music-selection-label">Für den nächsten Start</div><div id="musicSelectedTitle" class="music-result-title"></div><div id="musicSelectedSubtitle" class="music-result-subtitle"></div></div>
@@ -1017,6 +1022,21 @@
           ? 'Ziel für die eigene Musik wählen.' : 'Alle gemeldeten Player sind derzeit nicht verfügbar.';
         updateControls();
       }
+      function selectTrack(track, selectedButton = null) {
+        if (commandPending) return;
+        selectedTrack = track;
+        document.getElementById('musicSelected').hidden = false;
+        const selectedArt = document.getElementById('musicSelectedArt');
+        selectedArt.hidden = !(typeof track.artwork_url === 'string' && track.artwork_url && typeof track.uri === 'string' && track.uri);
+        selectedArt.removeAttribute('src');
+        if (!selectedArt.hidden) selectedArt.src = '/api/music/artwork?uri=' + encodeURIComponent(track.uri);
+        selectedArt.onerror = () => { selectedArt.hidden = true; };
+        document.getElementById('musicSelectedTitle').textContent = track.title || 'Titel ohne Namen';
+        document.getElementById('musicSelectedSubtitle').textContent = [track.artist, track.album].filter(value => typeof value === 'string' && value).join(' · ');
+        results.querySelectorAll('.music-result').forEach(item => item.setAttribute('aria-pressed', String(item === selectedButton)));
+        setMessage('Für den Lautsprecher ausgewählt. Du kannst den Titel starten oder zur Warteschlange hinzufügen.');
+        updateControls();
+      }
       function renderTrack(track) {
         const button = document.createElement('button');
         button.type = 'button';
@@ -1045,21 +1065,7 @@
         const seconds = Number(track.duration);
         duration.textContent = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds / 60) + ':' + String(Math.floor(seconds % 60)).padStart(2, '0') : '';
         button.append(artSlot, metadata, duration);
-        button.addEventListener('click', () => {
-          if (commandPending) return;
-          selectedTrack = track;
-          document.getElementById('musicSelected').hidden = false;
-          const selectedArt = document.getElementById('musicSelectedArt');
-          selectedArt.hidden = !(typeof track.artwork_url === 'string' && track.artwork_url && typeof track.uri === 'string' && track.uri);
-          selectedArt.removeAttribute('src');
-          if (!selectedArt.hidden) selectedArt.src = '/api/music/artwork?uri=' + encodeURIComponent(track.uri);
-          selectedArt.onerror = () => { selectedArt.hidden = true; };
-          document.getElementById('musicSelectedTitle').textContent = title.textContent;
-          document.getElementById('musicSelectedSubtitle').textContent = subtitle.textContent;
-          results.querySelectorAll('.music-result').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-          setMessage('Titel ausgewählt. Du kannst ihn starten oder zur Warteschlange hinzufügen.');
-          updateControls();
-        });
+        button.addEventListener('click', () => selectTrack(track, button));
         results.append(button);
       }
       async function search(append = false) {
@@ -1301,6 +1307,13 @@
           clearQueue('Wiedergabestatus nicht verfügbar.');
         }
         updateControls();
+      }
+      const libraryRoot = document.getElementById('musicLibraryBrowser');
+      if (libraryRoot && typeof initMusicLibrary === 'function') {
+        initMusicLibrary(libraryRoot, {onSelectTrack: selectTrack});
+      } else {
+        const legacy = document.getElementById('musicLegacyLibrary');
+        if (legacy) legacy.hidden = false;
       }
       initialize();
       return { search, refresh:refreshQueue };
