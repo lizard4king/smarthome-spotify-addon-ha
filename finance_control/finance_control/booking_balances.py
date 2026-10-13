@@ -151,3 +151,47 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
 
     for booking in bookings:
         booking['account_day_balance'] = results[booking['account_id']][booking['date']]
+    _attach_movement_balances(store, bookings)
+
+
+def _attach_movement_balances(store, bookings):
+    """Calculate a logical per-movement path, never assert bank intraday order.
+
+    Use the full ledger, irrespective of presentation filters. The recorded
+    day end is retained; only the explicitly assumed same-day sequence changes
+    intermediate values. Unknown or conflicting day controls stay unknown.
+    """
+    days = defaultdict(set)
+    for booking in bookings:
+        days[booking['account_id']].add(booking['date'])
+    paths = {}
+    for account_id, selected_days in days.items():
+        rows_by_day = defaultdict(list)
+        for row in store.db.execute(
+                'SELECT date,external_id,amount,currency FROM transactions '
+                'WHERE account_id=? AND date BETWEEN ? AND ? '
+                'ORDER BY date,external_id',
+                (account_id, min(selected_days), max(selected_days))):
+            if row['date'] in selected_days:
+                rows_by_day[row['date']].append(row)
+        for day, rows in rows_by_day.items():
+            total = sum((money(row['amount']) for row in rows), Decimal('0.00'))
+            prefix = Decimal('0.00')
+            for index, row in enumerate(rows, 1):
+                prefix += money(row['amount'])
+                paths[(account_id, row['external_id'])] = (prefix-total, index, len(rows))
+    for booking in bookings:
+        day_balance = booking['account_day_balance']
+        offset, index, count = paths.get((booking['account_id'], booking['external_id']), (None, None, 0))
+        warnings = list(day_balance['warnings'])
+        if count > 1:
+            warnings.append('same_day_order_assumed')
+        value = None
+        if (offset is not None and day_balance['amount'] is not None
+                and day_balance['currency'] == booking['currency']):
+            value = format(money(day_balance['amount']) + offset, '.2f')
+        booking['account_movement_balance'] = {
+            **day_balance, 'amount': value, 'warnings': warnings,
+            'sequence_basis': 'external_id_order', 'sequence_index': index,
+            'sequence_count': count,
+        }

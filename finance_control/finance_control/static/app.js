@@ -398,6 +398,10 @@ document.addEventListener('finance-bank-refreshed', () => {
   void run(refresh);
 });
 
+document.addEventListener('finance-booking-contract-changed', () => {
+  void run(refresh);
+});
+
 document.addEventListener('finance-dashboard-edit', event => {
   const key = event.detail;
   void run(async () => {

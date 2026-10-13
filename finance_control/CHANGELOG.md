@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.55
+
+- Start the chronological booking timeline at Today and extend future grayscale virtual contract payments while scrolling, with an accessible manual fallback.
+- Select multiple accounts without combining currencies or account balances; display each movement with its own calculated or projected balance.
+- Confirm recurring-contract membership and a signed planning amount directly from the booking, preserving original transactions and authoritative contract phases.
+- Open linked receipts, invoices and contracts from the timeline; preserve confirmed membership through proven import/source adoption.
+- Keep mobile controls readable and finger-accessible, including enlarged text, and explicitly identify assumed same-day sequence and unknown balances.
+
 ## 0.2.54
 
 - Display PayPal XPCD instant provider balances separately from booked closing balances and Finance Control forecasts.

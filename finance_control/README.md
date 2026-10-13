@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.55` starts the chronological booking timeline at Today, with past
+bookings above and grayscale virtual contract payments below. Multiple accounts
+retain their own currencies and balances. Every calculated movement balance
+uses an explicitly assumed same-day order; forecasts remain conditional.
+Contract membership, planning amounts and linked documents can be handled
+directly from a booking without changing its original bank transaction.
+
 Version `0.2.54` also displays PayPal instant provider balances (XPCD) and
 explicit currencies for multi-currency accounts marked XXX. These balances
 remain separate from booked closing controls, forecasts and installment liabilities.

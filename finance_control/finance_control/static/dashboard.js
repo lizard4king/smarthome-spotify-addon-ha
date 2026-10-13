@@ -4,6 +4,15 @@
   const key = 'finance-control-dashboard-view';
   let snapshot = null;
   let selected = null;
+  const selectedAccounts = new Set();
+  let selectionInitialized = false;
+  const accountPickerState = {mobile:null,desktop:null};
+  let forecastOverviewOpen = false;
+  let timelineObserver = null;
+  let timelinePositioned = '';
+  let pendingTimelineAnchor = null;
+  let extensionArmed = false;
+  let lastTimelineScroll = 0;
   let query = '';
   const filters = {category:'', direction:'', status:''};
   const forecast = {enabled:true, until:'', asOf:'', key:'', data:null,
@@ -29,6 +38,12 @@
   const mobileQuery = window.matchMedia('(max-width: 700px)');
   mobileQuery.addEventListener('change', event => {
     if (filterLayout) filterLayout();
+    const picker = activeRoot()?.querySelector('.fd-account-picker');
+    if (picker) {
+      accountPickerState[picker.dataset.viewport] = picker.open;
+      picker.dataset.viewport = event.matches ? 'mobile' : 'desktop';
+      picker.open = accountPickerState[picker.dataset.viewport] ?? !event.matches;
+    }
   });
   let view = (() => { try { return localStorage.getItem(key) === 'guru' ? 'guru' : 'blick'; } catch { return 'blick'; } })();
   const el = (tag, className, value) => {
@@ -192,9 +207,11 @@
     parsed.setUTCDate(parsed.getUTCDate() + days);
     return parsed.toISOString().slice(0,10);
   };
-  const forecastKey = () => JSON.stringify([selected, snapshot?.as_of, forecast.until]);
+  const selectedIDs = () => [...selectedAccounts].sort();
+  const includesAccount = id => area === 'dashboard' ? selectedAccounts.has(String(id)) : String(id) === selected;
+  const forecastKey = () => JSON.stringify([selectedIDs(), snapshot?.as_of, forecast.until]);
   function ensureForecast() {
-    if (area !== 'dashboard' || !forecast.enabled || !current()) return;
+    if (area !== 'dashboard' || !forecast.enabled || !selectedAccounts.size) return;
     const key = forecastKey();
     if (forecast.key === key && (forecast.loading || forecast.data || forecast.error)) return;
     forecast.key = key; forecast.data = null; forecast.error = ''; forecast.loading = false;
@@ -204,7 +221,7 @@
       refreshForecastDisplay(); return;
     }
     forecast.loading = true; refreshForecastDisplay();
-    const requestData = {as_of:snapshot.as_of, until:forecast.until, account_id:current().id};
+    const requestData = {as_of:snapshot.as_of, until:forecast.until, account_id:selectedAccounts.size === 1 ? selectedIDs()[0] : ''};
     Promise.resolve().then(() => api('/api/recurring-view', requestData)).then(data => {
       if (request !== forecast.request || key !== forecastKey() || area !== 'dashboard') return;
       forecast.data = data; forecast.error = ''; forecast.loading = false; refreshForecastDisplay();
@@ -228,6 +245,27 @@
     const rows = section.querySelector('.fd-booking-rows');
     if (rows) populateBookings(rows);
   }
+  function invalidateForecast() {
+    ++forecast.request; forecast.key = ''; forecast.data = null; forecast.error = ''; forecast.loading = false;
+    timelineObserver?.disconnect(); extensionArmed = false;
+  }
+  function extendTimeline() {
+    if (area !== 'dashboard' || !forecast.enabled || forecast.loading || !selectedAccounts.size) return;
+    const limit = shiftDate(snapshot.as_of,366);
+    const next = shiftDate(forecast.until,30);
+    if (!next || forecast.until >= limit) return;
+    forecast.until = next > limit ? limit : next;
+    extensionArmed = false; invalidateForecast();
+    const until = activeRoot()?.querySelector('.fd-forecast-until'); if (until) until.value = forecast.until;
+    ensureForecast();
+  }
+  function jumpTimeline(target) {
+    if (!target) return;
+    const scroller = target.closest('.fd-table-scroll');
+    if (scroller) scroller.scrollTo({top:Math.max(0,scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top),behavior:'instant'});
+    target.tabIndex = -1; target.focus({preventScroll:true});
+  }
+  document.addEventListener('finance-booking-contract-changed', invalidateForecast);
   const currentBalanceText = account => {
     const balance = account?.current_balance;
     if (!balance || typeof balance !== 'object' || balance.amount === null || balance.amount === undefined) {
@@ -271,8 +309,9 @@
       || a[0].localeCompare(b[0], "de")));
   };
   function pick(id) {
-    if (selected === id) return;
+    if (selected === id && (area !== 'dashboard' || selectedAccounts.size === 1 && selectedAccounts.has(id))) return;
     selected = id;
+    if (area === 'dashboard') {selectedAccounts.clear(); selectedAccounts.add(id); invalidateForecast();}
     drilldown = null;
     const root = activeRoot();
     root?.querySelectorAll('.fd-account').forEach(card => {
@@ -282,16 +321,17 @@
     });
     const main = root?.querySelector('.fd-main');
     if (main) populateMain(main);
-    if (mobileQuery.matches) main?.scrollIntoView({block:'start', behavior:'smooth'});
+    if (area === 'dashboard') paint();
+    else if (mobileQuery.matches) main?.scrollIntoView({block:'start', behavior:'smooth'});
   }
   function accountButton(account, className, count) {
     const id = accountKey(account);
-    const card = el('details', `${className}${selected === id ? ' is-selected' : ''}`);
+    const card = el('details', `${className}${includesAccount(id) ? ' is-selected' : ''}`);
     card.dataset.accountId = id;
     card.open = expandedAccounts.has(id);
     const isSavings = String(account.kind || '').toUpperCase() === 'SAVINGS';
     const summary = add(card, 'summary', `fd-account-summary${isSavings ? ' fd-account-summary-savings' : ''}`);
-    summary.setAttribute('aria-current', selected === id ? 'true' : 'false');
+    summary.setAttribute('aria-current', includesAccount(id) ? 'true' : 'false');
     const name = add(summary, 'span', 'fd-account-name');
     name.append(window.financeAccountIcon(account));
     name.append(document.createTextNode(accountName(account)));
@@ -305,9 +345,20 @@
     add(body, 'p', 'fd-account-freshness', `Letzte erfasste Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
     body.append(metrics(account));
     if (account.note) add(body, 'p', 'fd-account-note', account.note);
-    summary.addEventListener('click', () => pick(id));
+    if (area === 'category-outflows') summary.addEventListener('click', () => pick(id));
     card.addEventListener('toggle', () => { if (card.open) expandedAccounts.add(id); else expandedAccounts.delete(id); });
-    return card;
+    if (area !== 'dashboard') return card;
+    const choice = el('div', 'fd-account-choice');
+    const label = add(choice, 'label', 'fd-account-select');
+    const checkbox = add(label, 'input'); checkbox.type = 'checkbox'; checkbox.checked = selectedAccounts.has(id);
+    checkbox.dataset.accountId = id; checkbox.setAttribute('aria-label', `${accountName(account)} auswählen`);
+    add(label, 'span', '', 'Auswählen');
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedAccounts.add(id); else selectedAccounts.delete(id);
+      invalidateForecast(); paint();
+      activeRoot()?.querySelector(`.fd-account-select input[data-account-id="${CSS.escape(id)}"]`)?.focus({preventScroll:true});
+    });
+    choice.append(card); return choice;
   }
   function accountList(className) {
     const wrap = el('div', className);
@@ -352,7 +403,7 @@
   function filteredBookings() {
     const account = current();
     const term = query.trim().toLocaleLowerCase('de-DE');
-    return bookings().filter(item => String(item.account_id) === selected)
+    return bookings().filter(item => includesAccount(item.account_id))
       .filter(item => !filters.direction || direction(item) === filters.direction)
       .filter(item => !filters.status || (item.category_status || 'open') === filters.status)
       .filter(item => !filters.category || categoryLabel(item) === filters.category)
@@ -403,7 +454,7 @@
       if (mobileQuery.matches && !open.closest('[hidden]')) open.focus({preventScroll:true});
     });
     const categories = [...new Set([
-      ...bookings().filter(item => String(item.account_id) === selected).map(categoryLabel),
+      ...bookings().filter(item => includesAccount(item.account_id)).map(categoryLabel),
       ...(filters.category ? [filters.category] : []),
     ])].sort((a,b) => a.localeCompare(b,'de'));
     for (const [key,labelText,choices] of [
@@ -536,10 +587,10 @@
   }
   function bookingList() {
     const section = el('section', 'fd-bookings');
-    const account = current();
-    if (account) {
+    const balances = add(section, 'div', 'fd-selected-balances');
+    for (const account of accounts().filter(account => selectedAccounts.has(accountKey(account)))) {
       const balance = currentBalanceText(account);
-      const currentBalance = add(section, 'div', 'fd-selected-balance');
+      const currentBalance = add(balances, 'div', 'fd-selected-balance');
       add(currentBalance, 'span', '', `${accountName(account)} · Kontostand`);
       add(currentBalance, 'strong', `fd-current-balance ${tone(account.current_balance?.amount)}`, balance.amount);
       add(currentBalance, 'small', '', balance.stand);
@@ -554,6 +605,11 @@
       forecast.until = shiftDate(snapshot.as_of, 30);
       forecast.key = ''; forecast.data = null; forecast.error = '';
       ++forecast.request;
+    }
+    const navigation = add(section, 'nav', 'fd-timeline-navigation'); navigation.setAttribute('aria-label', 'Buchungszeitraum');
+    for (const [label,selector] of [['Vergangenheit','.fd-booking'],['Heute','.fd-today'],['Zukunft','.fd-forecast-row']]) {
+      const button = add(navigation, 'button', '', label); button.type = 'button';
+      button.addEventListener('click', () => jumpTimeline(section.querySelector(selector)));
     }
     const controls = add(section, 'div', 'fd-forecast-controls');
     const toggleLabel = add(controls, 'label');
@@ -583,7 +639,11 @@
     });
     const status = add(section, 'p', 'fd-forecast-status');
     status.setAttribute('role', 'status');
-    const balance = add(section, 'div', 'fd-forecast-balance');
+    const overview = add(section, 'details', 'fd-forecast-overview');
+    overview.open = forecastOverviewOpen;
+    add(overview, 'summary', '', 'Saldoübersicht und Datengrundlage');
+    overview.addEventListener('toggle', () => {if (overview.isConnected) forecastOverviewOpen = overview.open;});
+    const balance = add(overview, 'div', 'fd-forecast-balance');
     const rows = add(section, 'div', 'fd-booking-rows');
     rows.setAttribute('aria-live', 'polite');
     status.textContent = !forecast.enabled ? 'Prognose ausgeblendet.' : forecast.error ||
@@ -595,9 +655,20 @@
     return section;
   }
   function updateBookings(section) { refreshForecastDisplay(); }
-  const bookingDateOrder = (a, b) => String(b.date || '').localeCompare(String(a.date || ''))
+  const stringOrder = (a,b) => String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
+  const timelineOrder = (a,b) => {
+    const dayAndAccount = stringOrder(a.day,b.day) || stringOrder(a.item.account_id,b.item.account_id);
+    if (dayAndAccount) return dayAndAccount;
+    if (a.kind !== b.kind) return a.kind === 'booking' ? -1 : 1;
+    const left = a.item.account_movement_balance?.sequence_index;
+    const right = b.item.account_movement_balance?.sequence_index;
+    if (a.kind === 'booking' && Number.isInteger(left) && Number.isInteger(right)) return left - right;
+    return stringOrder(a.item.external_id || a.item.id,b.item.external_id || b.item.id);
+  };
+  const bookingDateOrder = (a, b) => String(a.date || '').localeCompare(String(b.date || ''))
     || String(a.external_id || '').localeCompare(String(b.external_id || ''));
   const forecastWarnings = {
+    same_day_projection_order_assumed:'Die Reihenfolge virtueller Zahlungen am selben Tag ist anhand der Regel-ID angenommen.',
     stale_recorded_balance:'Der belegte Kontostand ist älter als sieben Tage.',
     recorded_balance_missing:'Kein belegter Kontostand vorhanden.',
     recorded_balance_ambiguous:'Widersprüchliche Kontostände; Projektion unbekannt.',
@@ -610,45 +681,52 @@
   function renderForecastBalance(target) {
     target.replaceChildren();
     if (!forecast.enabled || !forecast.data || forecast.key !== forecastKey()) return;
-    const account = (forecast.data.accounts || []).find(item =>
-      String(item.account_id) === selected && item.currency === current()?.currency);
-    if (!account) { add(target, 'p', 'fd-forecast-warning', 'Kontoprognose für dieses Konto nicht verfügbar.'); return; }
-    add(target, 'strong', '', `Kontoprognose am ${date(forecast.until)}: ${money(account.projected_balance, account.currency)}`);
-    add(target, 'p', '', 'Teilprognose · alle erwarteten Zahlungen; unabhängig von Buchungsfiltern.');
-    const evidence = add(target, 'details', 'fd-forecast-evidence');
-    add(evidence, 'summary', '', 'Datengrundlage & Grenzen');
-    add(evidence, 'p', '', account.recorded_balance
-      ? `Saldoanker: ${money(account.recorded_balance.amount, account.currency)} am ${date(account.recorded_balance.booked_on)}`
-      : 'Saldoanker fehlt; kein belegter Kontostand.');
-    for (const warning of [...(forecast.data.warnings || []), ...(account.warnings || [])])
-      add(evidence, 'p', 'fd-forecast-warning', forecastWarnings[warning] || 'Die Datenbasis muss geprüft werden.');
+    for (const account of forecast.data.accounts || []) {
+      if (!selectedAccounts.has(String(account.account_id))) continue;
+      const supplied = accounts().find(item => accountKey(item) === String(account.account_id));
+      if (!supplied || supplied.currency !== account.currency) continue;
+      const card = add(target, 'div', 'fd-account-projection');
+      add(card, 'strong', '', `${accountName(supplied)} · Kontoprognose am ${date(forecast.until)}: ${money(account.projected_balance, account.currency)}`);
+      add(card, 'p', '', 'Teilprognose · alle erwarteten Zahlungen; unabhängig von Buchungsfiltern.');
+      const evidence = add(card, 'details', 'fd-forecast-evidence');
+      add(evidence, 'summary', '', 'Datengrundlage & Grenzen');
+      add(evidence, 'p', '', account.recorded_balance
+        ? `Saldoanker: ${money(account.recorded_balance.amount, account.currency)} am ${date(account.recorded_balance.booked_on)}`
+        : 'Saldoanker fehlt; kein belegter Kontostand.');
+      for (const warning of [...(forecast.data.warnings || []), ...(account.warnings || [])])
+        add(evidence, 'p', 'fd-forecast-warning', forecastWarnings[warning] || 'Die Datenbasis muss geprüft werden.');
+    }
   }
   function forecastEvents() {
-    if (area !== 'dashboard' || !forecast.enabled || !forecast.data || forecast.key !== forecastKey() || !current()) return [];
+    if (area !== 'dashboard' || !forecast.enabled || !forecast.data || forecast.key !== forecastKey() || !selectedAccounts.size) return [];
     if (filters.category || filters.status || filters.direction === 'transfer') return [];
     const term = query.trim().toLocaleLowerCase('de-DE');
     return (forecast.data.events || []).filter(item => item.status === 'expected'
-      && String(item.account_id) === selected && item.currency === current().currency
+      && selectedAccounts.has(String(item.account_id)) && item.currency === accounts().find(account => accountKey(account) === String(item.account_id))?.currency
       && item.expected_date > snapshot.as_of && item.expected_date <= forecast.until)
       .filter(item => !filters.direction || (String(item.amount).startsWith('-') ? 'expense' : 'income') === filters.direction)
       .filter(item => !term || [item.label,item.amount,item.expected_date,date(item.expected_date),
         money(item.amount,item.currency)].some(value => String(value || '').toLocaleLowerCase('de-DE').includes(term)))
-      .sort((a,b) => String(b.expected_date).localeCompare(String(a.expected_date)) || String(a.id).localeCompare(String(b.id)));
+      .sort((a,b) => String(a.expected_date).localeCompare(String(b.expected_date)) || stringOrder(a.id,b.id));
   }
   function forecastRow(parent, event) {
     const row = add(parent, 'tr', 'fd-forecast-row');
     add(row, 'td', 'fd-forecast-date', date(event.expected_date));
-    add(row, 'td', 'fd-forecast-name', event.label || 'Erwartete Zahlung');
-    add(row, 'td', 'fd-forecast-status-label', 'Erwartet · Prognose');
+    row.dataset.timelineKey = `forecast:${event.account_id}:${event.id}:${event.expected_date}`;
+    const name = add(row, 'td', 'fd-forecast-name', event.label || 'Erwartete Zahlung');
+    const ownAccount = accounts().find(item => accountKey(item) === String(event.account_id));
+    add(name, 'small', 'fd-row-account', `${accountName(ownAccount || {})} · ${event.currency}`);
+    add(row, 'td', 'fd-forecast-status-label', 'Virtuell · Erwartet');
     add(row, 'td', 'fd-forecast-origin', event.basis === 'auto_detected'
       ? 'Automatisch erkannt · geschätzt' : event.document_id ? 'Bestätigter Vertrag' : 'Bestätigte Regel');
     add(row, 'td', 'fd-forecast-amount', money(event.amount,event.currency,true));
     const account = (forecast.data.accounts || []).find(item =>
-      String(item.account_id) === selected && item.currency === event.currency);
+      String(item.account_id) === String(event.account_id) && item.currency === event.currency);
     const point = account?.points?.find(item => item.date === event.expected_date);
-    const knownPoint = point && cents(point.amount) !== null;
-    const running = add(row, 'td', 'fd-forecast-running-balance', knownPoint ? money(point.amount,event.currency) : '—');
-    running.title = 'Prognose für diesen Tag · alle erwarteten Zahlungen, unabhängig von Filtern';
+    const suppliedBalance = Object.hasOwn(event, 'projected_balance') ? event.projected_balance : point?.amount;
+    const knownPoint = cents(suppliedBalance) !== null;
+    const running = add(row, 'td', 'fd-forecast-running-balance', knownPoint ? money(suppliedBalance,event.currency) : '—');
+    running.title = Object.hasOwn(event, 'projected_balance') ? 'Prognose nach dieser virtuellen Zahlung · Reihenfolge am selben Tag angenommen; unabhängig von Filtern' : 'Prognose als Tagespunkt · unabhängig von Filtern';
     if (knownPoint) add(running, 'small', '', 'Prognose');
     const action = add(row, 'td', 'fd-forecast-action');
     const details = add(action, 'details', 'fd-forecast-details');
@@ -656,7 +734,10 @@
     const body = add(details, 'div', 'fd-forecast-detail-body');
     add(body, 'p', '', `Erwarteter Termin: ${date(event.expected_date)}${event.date_estimated ? ' · geschätzt' : ''}`);
     add(body, 'p', '', `Betrag: ${money(event.amount,event.currency,true)}${event.amount_estimated ? ' · geschätzt' : ''}`);
-    if (point) add(body, 'p', '', `Gelieferter Kontoprognosepunkt am ${date(point.date)}: ${money(point.amount,event.currency)}`);
+    add(body, 'p', '', 'Prognose je Zahlung; die Reihenfolge am selben Tag wird anhand der Regel-ID angenommen. Unabhängig von Buchungsfiltern.');
+    if (event.document_id && window.financeBookingContracts?.documentButton) window.financeBookingContracts.documentButton(body,event.document_id,'Vertragsdokument öffnen');
+    if (Object.hasOwn(event, 'projected_balance')) add(body, 'p', '', `Prognose nach dieser Zahlung: ${money(event.projected_balance,event.currency)}`);
+    else if (point) add(body, 'p', '', `Gelieferter Kontoprognosepunkt am ${date(point.date)}: ${money(point.amount,event.currency)}`);
     const candidate = (forecast.data.candidates || []).find(item => item.id === event.rule_id);
     const budgetRef = candidate?.source_refs?.find(ref => ref.type === 'budget_item');
     add(body, 'p', '', budgetRef ? 'Aus Budgetposition abgeleitet.' : 'Plan-Zuordnung nicht belegt.');
@@ -666,11 +747,14 @@
   }
   function bookingRow(parent, item, account, index) {
     const row = add(parent, 'tr', 'fd-booking');
+    row.dataset.timelineKey = `booking:${item.account_id}:${item.external_id}`;
     add(row, 'td', 'fd-booking-date', date(item.date));
     const counterparty = add(row, 'td', 'fd-booking-counterparty');
     if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), {...item,counterparty:recipientDisplay(item.counterparty)},
       {fallbackIcon: () => icon(categoryIcon(item.category))});
     else counterparty.textContent = recipientDisplay(item.counterparty) || item.description || 'Ohne Gegenpartei';
+    add(counterparty, 'small', 'fd-row-account', `${accountName(account)} · ${item.currency || account.currency}`);
+    window.financeBookingContracts?.decorate(counterparty,item);
     const description = add(row, 'td', 'fd-booking-description');
     add(description, 'span', '', item.description || '—');
     const components = componentRows(item,account.currency);
@@ -685,13 +769,14 @@
     category.dataset.categoryStatus = item.category_status || '';
     iconLabel(category, 'fd-category-name', categoryIcon(item.category), categoryLabel(item));
     add(row, 'td', `fd-booking-amount ${tone(item.amount)}`, money(item.amount, item.currency || account.currency, true));
-    const balance = item.account_day_balance;
+    const balance = item.account_movement_balance || item.account_day_balance;
+    const movement = Boolean(item.account_movement_balance);
     const knownBalance = balance && cents(balance.amount) !== null && balance.date === item.date
       && balance.currency === (item.currency || account.currency);
     const running = add(row, 'td', 'fd-booking-balance', knownBalance ? money(balance.amount,balance.currency) : '—');
-    running.title = knownBalance ? 'Berechneter Tagesstand · aus belegtem Stand und importierten Buchungen'
+    running.title = knownBalance ? movement ? 'Berechnet je Buchung · Reihenfolge innerhalb eines Tages angenommen' : 'Berechneter Tagesstand · aus belegtem Stand und importierten Buchungen'
       : 'Kein belegter Tagesstand';
-    if (knownBalance) add(running, 'small', '', 'Tagesstand');
+    if (knownBalance) add(running, 'small', '', movement ? 'Berechnet' : 'Tagesstand');
     const action = add(row, 'td', 'fd-booking-action');
     const button = add(action, 'button', 'fd-booking-toggle', 'Details');
     button.type = 'button';
@@ -714,11 +799,12 @@
     if (status) detailFields.push(['Kategoriestatus', status]);
     if (item.source_category && item.source_category !== item.category) detailFields.push(['Quellangabe', item.source_category]);
     detailFields.push(['Datum', date(item.date)]);
-    if (knownBalance) detailFields.push(['Berechneter Tagesstand', `${money(balance.amount,balance.currency)} · Basis ${date(balance.anchor_booked_on)}`]);
+    if (knownBalance) detailFields.push([movement ? 'Berechnet je Buchung' : 'Berechneter Tagesstand', `${money(balance.amount,balance.currency)} · Basis ${date(balance.anchor_booked_on)}`]);
     for (const [label, value] of detailFields) {
       const row = add(body, 'div'); add(row, 'span', '', label); add(row, 'p', '', value || '—');
     }
-    add(body, 'p', 'fd-booking-balance-note', 'Kontostand je Buchungstag, keine belegte Reihenfolge innerhalb eines Tages. Die Berechnung setzt vollständige importierte Buchungen voraus. Ein aktueller Bankstand kann sich im Tagesverlauf noch ändern.');
+    add(body, 'p', 'fd-booking-balance-note', movement ? 'Berechnet je Buchung. Die Reihenfolge innerhalb eines Tages ist anhand der external_id angenommen, nicht von der Bank bestätigt. Die Berechnung setzt vollständige importierte Buchungen voraus und bleibt unabhängig von Buchungsfiltern.' : 'Tagesstand; keine belegte Reihenfolge innerhalb eines Tages. Die Berechnung setzt vollständige importierte Buchungen voraus.');
+    window.financeBookingContracts?.mount(body,item);
     if (!knownBalance) add(body, 'p', 'fd-booking-balance-note', 'Der Tagesstand ist ohne eindeutige Saldenbasis oder bei bekannten Datenlücken nicht verfügbar.');
     const originalAmount = add(body, 'div', 'fd-booking-original-amount');
     add(originalAmount, 'span', '', 'Originalbetrag');
@@ -744,41 +830,92 @@
     }
   }
   function populateBookings(rows, supplied = null) {
+    const savedScroll = rows.querySelector('.fd-table-scroll')?.scrollTop || pendingTimelineAnchor?.scroll || 0;
+    const oldScroller = rows.querySelector('.fd-table-scroll');
+    const oldAnchor = [...rows.querySelectorAll('[data-timeline-key]')].find(node => node.getBoundingClientRect().bottom > (oldScroller?.getBoundingClientRect().top || 0));
+    const anchorKey = oldAnchor?.dataset.timelineKey || pendingTimelineAnchor?.key;
+    const anchorTop = oldAnchor ? oldAnchor.getBoundingClientRect().top - oldScroller.getBoundingClientRect().top : pendingTimelineAnchor?.top;
+    pendingTimelineAnchor = null;
+    timelineObserver?.disconnect();
     rows.replaceChildren();
     const account = current();
-    if (!account) {add(rows,'p','fd-empty','Kein Konto ausgewählt.'); return;}
+    if (area === 'dashboard' ? !selectedAccounts.size : !account) {add(rows,'p','fd-empty','Kein Konto ausgewählt.'); return;}
     const term = query.trim();
     const list = supplied || filteredBookings();
     const expected = supplied ? [] : forecastEvents();
     add(rows, 'p', 'fd-result-count', `${list.length} Buchung${list.length === 1 ? '' : 'en'} · ${expected.length} Erwartung${expected.length === 1 ? '' : 'en'}`);
-    if (!list.length && !expected.length) { add(rows, 'p', 'fd-empty', term ? 'Keine Buchung oder Erwartung zum Suchtext.' : 'Keine Buchungen oder Erwartungen für diese Auswahl.'); return; }
+    if (!list.length && !expected.length) add(rows, 'p', 'fd-empty', term ? 'Keine Buchung oder Erwartung zum Suchtext.' : 'Keine Buchungen oder Erwartungen für diese Auswahl.');
     const scroller = add(rows, 'div', 'fd-table-scroll');
     scroller.tabIndex = 0;
     scroller.setAttribute('role', 'region');
     scroller.setAttribute('aria-label', 'Buchungstabelle');
     const table = add(scroller, 'table', 'fd-booking-table');
-    add(table, 'caption', 'fd-table-caption', `${account.owner_label || account.owner || 'Konto'} · ${accountName(account)}`);
+    add(table, 'caption', 'fd-table-caption', area === 'dashboard' ? `${selectedAccounts.size} Konto${selectedAccounts.size === 1 ? '' : 'en'} · Kontostände getrennt je Konto und Währung` : `${account.owner_label || account.owner || 'Konto'} · ${accountName(account)}`);
     const head = add(table, 'thead');
     const header = add(head, 'tr');
-    for (const name of ['Datum', 'Gegenpartei', 'Verwendungszweck', 'Kategorie', 'Betrag', 'Kontostand', 'Details']) {
+    for (const name of ['Datum', 'Gegenpartei', 'Zweck', 'Kategorie', 'Betrag', 'Kontostand', 'Details']) {
       const cell = add(header, 'th', '', name); cell.scope = 'col';
-      if (name === 'Kontostand') cell.title = 'Berechneter Tagesstand; bei erwarteten Zahlungen eine Teilprognose';
+      if (name === 'Zweck') cell.title = 'Verwendungszweck';
+      if (name === 'Kontostand') cell.title = 'Berechneter Kontostand je Buchung; ältere Daten ausdrücklich als Tagesstand, virtuelle Zahlungen als Prognose gekennzeichnet';
     }
     const body = add(table, 'tbody');
     let priorDay = null;
     const merged = [...list.map((item,index) => ({kind:'booking', item, index, day:item.date})),
       ...expected.map(item => ({kind:'forecast', item, day:item.expected_date}))]
-      .sort((a,b) => String(b.day).localeCompare(String(a.day)) || (a.kind === b.kind ? 0 : a.kind === 'booking' ? -1 : 1));
+      .sort(timelineOrder);
+    let today = null;
+    const addToday = () => {
+      if (supplied || today) return;
+      today = add(body, 'tr', 'fd-today'); today.tabIndex = -1; today.dataset.timelineKey = `today:${snapshot.as_of}`;
+      const cell = add(today, 'th', '', `Heute · ${date(snapshot.as_of)}`); cell.colSpan = 7; cell.scope = 'row';
+    };
     merged.forEach(({kind,item,index,day:dayValue}) => {
+      if (dayValue > snapshot.as_of) addToday();
       if (dayValue !== priorDay) {
         const day = add(body, 'tr', 'fd-booking-day');
         const heading = add(day, 'th', '', date(dayValue));
         heading.colSpan = 7; heading.scope = 'row';
         priorDay = dayValue;
       }
-      if (kind === 'booking') bookingRow(body, item, account, index);
+      if (kind === 'booking') bookingRow(body, item, accounts().find(account => accountKey(account) === String(item.account_id)) || account, index);
       else forecastRow(body, item);
     });
+    addToday();
+    if (!supplied) {
+      const more = add(rows, 'button', 'fd-timeline-more', 'Weitere 30 Tage'); more.type = 'button';
+      more.disabled = forecast.loading || !forecast.enabled || forecast.until >= shiftDate(snapshot.as_of,366);
+      if (forecast.until >= shiftDate(snapshot.as_of,366)) more.textContent = 'Prognosegrenze erreicht · 366 Tage';
+      more.addEventListener('click', () => extendTimeline());
+      let userScroll = false; let touchY = null;
+      scroller.addEventListener('pointerdown', event => {if (event.target === scroller) userScroll = true;});
+      scroller.addEventListener('wheel', event => {if (event.deltaY > 0) userScroll = true;}, {passive:true});
+      scroller.addEventListener('touchstart', event => {touchY = event.touches[0]?.clientY ?? null;}, {passive:true});
+      scroller.addEventListener('touchmove', event => {if (touchY !== null && event.touches[0]?.clientY < touchY - 8) userScroll = true;}, {passive:true});
+      scroller.addEventListener('keydown', event => {if (['ArrowDown','PageDown','End',' '].includes(event.key)) userScroll = true;});
+      scroller.addEventListener('scroll', () => {if (userScroll && scroller.scrollTop > lastTimelineScroll + 8) extensionArmed = true; lastTimelineScroll = scroller.scrollTop;}, {passive:true});
+      const positionKey = JSON.stringify([snapshot.as_of,selectedIDs()]);
+      requestAnimationFrame(() => {
+        if (!rows.isConnected || !scroller.isConnected || area !== 'dashboard') return;
+        const anchor = [...rows.querySelectorAll('[data-timeline-key]')].find(node => node.dataset.timelineKey === anchorKey);
+        if (timelinePositioned !== positionKey && today) {
+          scroller.scrollTop = Math.max(0,scroller.scrollTop + today.getBoundingClientRect().top - scroller.getBoundingClientRect().top);
+          if (!forecast.enabled || forecast.data || forecast.error) timelinePositioned = positionKey;
+        } else if (anchor && anchorTop !== undefined) scroller.scrollTop = scroller.scrollTop + anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchorTop;
+        else scroller.scrollTop = savedScroll;
+        lastTimelineScroll = scroller.scrollTop; extensionArmed = false;
+      });
+      if ('IntersectionObserver' in window) {
+        const key = forecastKey(); const request = forecast.request;
+        timelineObserver = new IntersectionObserver(entries => {
+          if (entries.some(entry => entry.isIntersecting) && extensionArmed && rows.isConnected
+              && area === 'dashboard' && visibleArea === 'dashboard' && key === forecastKey() && request === forecast.request
+              && !filters.category && !filters.status && filters.direction !== 'transfer'
+              && scroller.scrollHeight > scroller.clientHeight + 24) extendTimeline();
+        }, {root:scroller});
+        const sentinel = add(body, 'tr', 'fd-timeline-sentinel'); const cell = add(sentinel,'td'); cell.colSpan = 7;
+        timelineObserver.observe(sentinel);
+      }
+    }
   }
   function populateMain(main) {
     main.replaceChildren();
@@ -791,6 +928,18 @@
       const first = relevantAccounts()[0];
       selected = first ? accountKey(first) : null;
     }
+    const previouslySelected = selectedAccounts.size;
+    const available = new Set(accounts().map(accountKey));
+    for (const id of selectedAccounts) if (!available.has(id)) selectedAccounts.delete(id);
+    if (previouslySelected && !selectedAccounts.size) selectionInitialized = false;
+    if (!selectionInitialized && selected) {selectedAccounts.add(selected); selectionInitialized = true;}
+    const oldPicker = root.querySelector('.fd-account-picker');
+    if (oldPicker) accountPickerState[oldPicker.dataset.viewport] = oldPicker.open;
+    const oldOverview = root.querySelector('.fd-forecast-overview');
+    if (oldOverview) forecastOverviewOpen = oldOverview.open;
+    const oldScroller = root.querySelector('.fd-table-scroll');
+    const oldAnchor = oldScroller && [...oldScroller.querySelectorAll('[data-timeline-key]')].find(node => node.getBoundingClientRect().bottom > oldScroller.getBoundingClientRect().top);
+    pendingTimelineAnchor = oldScroller ? {scroll:oldScroller.scrollTop,key:oldAnchor?.dataset.timelineKey,top:oldAnchor ? oldAnchor.getBoundingClientRect().top - oldScroller.getBoundingClientRect().top : undefined} : null;
     document.body.dataset.financeView = view;
     root.replaceChildren(); root.className = `fd-root fd-${view}`;
     const hero = add(root, 'header', 'fd-hero');
@@ -820,10 +969,18 @@
     const layout = add(root, 'div', 'fd-layout');
     const side = add(layout, 'aside', 'fd-sidebar');
     const picker = add(side, 'details', 'fd-account-picker');
-    picker.open = true;
+    picker.dataset.viewport = mobileQuery.matches ? 'mobile' : 'desktop';
+    picker.open = accountPickerState[picker.dataset.viewport] ?? !mobileQuery.matches;
+    picker.addEventListener('toggle', () => {if (picker.isConnected) accountPickerState[picker.dataset.viewport] = picker.open;});
     const sideHead = add(picker, 'summary', 'fd-side-head');
     add(sideHead, 'h2', '', 'Konten wählen');
-    add(sideHead, 'span', '', String(accounts().length));
+    add(sideHead, 'span', 'fd-picker-count', area === 'dashboard' ? `${selectedAccounts.size} ausgewählt` : String(accounts().length));
+    if (area === 'dashboard') {
+      const choices = add(picker,'div','fd-account-selection-controls');
+      const all = add(choices,'button','','Alle Konten wählen'); all.type = 'button';
+      all.addEventListener('click', () => {for (const account of accounts()) selectedAccounts.add(accountKey(account)); invalidateForecast(); paint();});
+      add(choices,'span','fd-selected-count',`${selectedAccounts.size} ausgewählt`);
+    }
     picker.append(accountList('fd-account-list'));
     const main = add(layout, 'div', 'fd-main');
     populateMain(main);
@@ -880,6 +1037,7 @@
   };
   window.financeDashboardSelectAccount = id => {
     selected = String(id);
+    selectedAccounts.clear(); selectedAccounts.add(selected); selectionInitialized = true; invalidateForecast();
     drilldown = null;
     if (typeof window.cockpitNavigate === 'function') window.cockpitNavigate('dashboard');
     else if (typeof cockpitNavigate === 'function') cockpitNavigate('dashboard');

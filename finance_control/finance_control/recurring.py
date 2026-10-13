@@ -36,6 +36,18 @@ def save(store, data):
     Document-bound rules require current document_revision and amount=None;
     their contract's phases control amounts, cadence and inclusive validity.
     """
+    store.db.execute('BEGIN IMMEDIATE')
+    try:
+        result = _save_within_transaction(store, data)
+        store.db.commit()
+        return result
+    except Exception:
+        store.db.rollback()
+        raise
+
+
+def _save_within_transaction(store, data):
+    """Validate/save inside the caller's atomic transaction; never commit here."""
     if not isinstance(data, dict) or set(data) != _FIELDS or data['confirmed'] is not True:
         raise ValueError('explicit_recurring_confirmation_required')
     rid, revision = data['id'], contracts._revision(data['revision'])
@@ -62,51 +74,49 @@ def save(store, data):
         payload['amount'] = format(amount, '.2f')
     elif data['amount'] is not None:
         raise ValueError('contract_phase_amount_authoritative')
-    store.db.execute('BEGIN IMMEDIATE')
-    try:
-        previous = None
-        if rid is not None:
-            previous_row = store.db.execute('SELECT * FROM recurring_rules WHERE id=?', (rid,)).fetchone()
-            if previous_row is None or previous_row['revision'] != revision:
-                raise ValueError('stale_recurring_revision')
-            previous = _row(previous_row)
-            if previous['document_id'] != data['document_id']:
-                raise ValueError('recurring_document_immutable')
-        elif revision != 0:
+    previous = None
+    if rid is not None:
+        previous_row = store.db.execute('SELECT * FROM recurring_rules WHERE id=?', (rid,)).fetchone()
+        if previous_row is None or previous_row['revision'] != revision:
             raise ValueError('stale_recurring_revision')
-        if data['document_id'] is not None:
-            document = contracts._document(store, data['document_id'])
-            if document['status'] != 'confirmed' or not contracts._load(store, document)['configured']:
-                raise ValueError('confirmed_contract_required')
-            contract = contracts._load(store, document)
-            if data['currency'] != 'EUR':
-                raise ValueError('contract_phase_currency_eur_required')
-            if start < contract['valid_from'] or (contract['valid_to'] is not None and (end is None or end > contract['valid_to'])):
-                raise ValueError('recurring_setting_outside_contract')
-            if document['revision'] != contracts._revision(data['document_revision']):
-                raise ValueError('stale_document_revision')
-            if set(json.loads(document['warnings'])) & contracts._EXCLUDED_DOCUMENT_WARNINGS:
-                raise ValueError('contract_document_not_eligible')
-        if data['document_id'] is None:
-            keys = ('account_id', 'currency', 'amount', 'valid_from', 'valid_to', 'day_of_month', 'interval_months', 'reference')
-            for other in store.db.execute('SELECT * FROM recurring_rules WHERE active=1 AND document_id IS NULL'):
-                if other['id'] != rid and all(json.loads(other['payload'])[k] == payload[k] for k in keys):
-                    raise ValueError('duplicate_recurring_schedule')
-        now = _now()
-        if rid is None:
-            rid = store.db.execute(
-                'INSERT INTO recurring_rules(revision,document_id,payload,active,created_at,updated_at) '
-                'VALUES (1,?,?,1,?,?)', (data['document_id'], json.dumps(payload), now, now)).lastrowid
-        else:
-            store.db.execute('UPDATE recurring_rules SET revision=revision+1,payload=?,active=1,updated_at=? '
-                             'WHERE id=?', (json.dumps(payload), now, rid))
-        result = _row(store.db.execute('SELECT * FROM recurring_rules WHERE id=?', (rid,)).fetchone())
-        _audit(store, 'recurring_saved', result, previous=previous)
-        store.db.commit()
-        return result
-    except Exception:
-        store.db.rollback()
-        raise
+        previous = _row(previous_row)
+        if previous['document_id'] != data['document_id']:
+            raise ValueError('recurring_document_immutable')
+    elif revision != 0:
+        raise ValueError('stale_recurring_revision')
+    if data['document_id'] is not None:
+        document = contracts._document(store, data['document_id'])
+        if document['status'] != 'confirmed' or not contracts._load(store, document)['configured']:
+            raise ValueError('confirmed_contract_required')
+        contract = contracts._load(store, document)
+        if data['currency'] != 'EUR':
+            raise ValueError('contract_phase_currency_eur_required')
+        if start < contract['valid_from'] or (contract['valid_to'] is not None and (end is None or end > contract['valid_to'])):
+            raise ValueError('recurring_setting_outside_contract')
+        if document['revision'] != contracts._revision(data['document_revision']):
+            raise ValueError('stale_document_revision')
+        if set(json.loads(document['warnings'])) & contracts._EXCLUDED_DOCUMENT_WARNINGS:
+            raise ValueError('contract_document_not_eligible')
+    if data['document_id'] is None:
+        keys = ('account_id', 'currency', 'amount', 'valid_from', 'valid_to', 'day_of_month', 'interval_months', 'reference')
+        for other in store.db.execute('SELECT * FROM recurring_rules WHERE active=1 AND document_id IS NULL'):
+            if other['id'] != rid and all(json.loads(other['payload'])[k] == payload[k] for k in keys):
+                raise ValueError('duplicate_recurring_schedule')
+    if data['document_id'] is not None and store.db.execute(
+            'SELECT 1 FROM recurring_rules WHERE document_id=? AND (? IS NULL OR id!=?)',
+            (data['document_id'], rid, rid)).fetchone():
+        raise ValueError('duplicate_recurring_schedule')
+    now = _now()
+    if rid is None:
+        rid = store.db.execute(
+            'INSERT INTO recurring_rules(revision,document_id,payload,active,created_at,updated_at) '
+            'VALUES (1,?,?,1,?,?)', (data['document_id'], json.dumps(payload), now, now)).lastrowid
+    else:
+        store.db.execute('UPDATE recurring_rules SET revision=revision+1,payload=?,active=1,updated_at=? '
+                         'WHERE id=?', (json.dumps(payload), now, rid))
+    result = _row(store.db.execute('SELECT * FROM recurring_rules WHERE id=?', (rid,)).fetchone())
+    _audit(store, 'recurring_saved', result, previous=previous)
+    return result
 
 
 def disable(store, data):
@@ -262,7 +272,20 @@ def view(store, data):
     schedules.extend(_doc_schedule(d, c, settings.get(d['id']), full_rows[d['id']])
                      if c['configured'] else _unconfigured_schedule(d)
                      for d, c in active_contracts)
+    membership = {(r['account_id'], r['external_id']): dict(r)
+                  for r in store.db.execute('SELECT * FROM booking_contract_links')}
     detected_candidates = recurring_detection.detect(store, as_of=cutoff, known_schedules=schedules)
+    # Explicit provenance covers the original evidence even when the chosen
+    # future amount/label differs. It must not spawn a second inferred plan.
+    for candidate in detected_candidates:
+        linked_rules = {membership[(b['account_id'], b['external_id'])]['rule_id']
+                        for b in candidate['bookings']
+                        if (b['account_id'], b['external_id']) in membership
+                        and membership[(b['account_id'], b['external_id'])]['decision'] == 'confirmed'}
+        if linked_rules:
+            candidate['status'] = 'covered'
+            candidate['covered_by'].extend({'type': 'booking_contract_rule', 'id': rid}
+                                           for rid in sorted(linked_rules))
     if data['account_id']:
         detected_candidates = [c for c in detected_candidates if c['account_id'] == data['account_id']]
     schedules.extend({'id': c['id'], 'revision': 0, 'document_id': None, 'document_revision': None,
@@ -292,6 +315,8 @@ def view(store, data):
         explicit = {(r['account_id'], r['external_id']) for r in full_rows.get(schedule['document_id'], [])}
         inferred_bookings = {(r['account_id'], r['external_id']) for r in schedule.get('bookings', [])}
         explicit |= inferred_bookings
+        explicit |= {key for key, link in membership.items()
+                     if link['decision'] == 'confirmed' and link['rule_id'] == schedule['id']}
         partial = linked_rows.get(schedule['document_id'], [])
         for phase in phases:
             end = min(value for value in (phase['valid_to'], schedule['valid_to'], matching_upper) if value is not None)
@@ -299,6 +324,9 @@ def view(store, data):
                 amount = -money(phase['amount']) if schedule['document_id'] else money(phase['amount'])
                 candidates = [b for b in bookings if b['account_id'] == schedule['account_id']
                               and b['currency'] == schedule['currency'] and not b['transfer_id']
+                              and ((b['account_id'], b['external_id']) not in membership or (
+                                  membership[(b['account_id'], b['external_id'])]['decision'] == 'confirmed'
+                                  and membership[(b['account_id'], b['external_id'])]['rule_id'] == schedule['id']))
                               and (not schedule['document_id'] or not is_rejected(b['account_id'], b['external_id'], schedule['document_id']))
                               and (money(b['amount']) == amount or (b['account_id'], b['external_id']) in inferred_bookings)
                               and (b['date'][:7] == expected[:7]
@@ -306,6 +334,9 @@ def view(store, data):
                               and ((b['account_id'], b['external_id']) in explicit or contracts._reference_present(
                                   schedule['reference'], b['counterparty']+' '+b['description']))]
                 linked_candidates = [b for b in partial if b['account_id'] == schedule['account_id']
+                                     and ((b['account_id'], b['external_id']) not in membership or (
+                                         membership[(b['account_id'], b['external_id'])]['decision'] == 'confirmed'
+                                         and membership[(b['account_id'], b['external_id'])]['rule_id'] == schedule['id']))
                                      and b['currency'] == schedule['currency']
                                      and (b['date'][:7] == expected[:7]
                                           or abs((date.fromisoformat(b['date'])-date.fromisoformat(expected)).days) <= 7)]
@@ -336,6 +367,7 @@ def view(store, data):
         for booking in event['_candidates']:
             key = (booking['account_id'], booking['external_id'])
             claims[key] = claims.get(key, 0)+1
+    ambiguous_bookings = set()
     for event in events:
         candidates = event.pop('_candidates')
         linked_candidates = event.pop('_linked_candidates')
@@ -352,11 +384,22 @@ def view(store, data):
                          observed_amount=format(money(booking['amount']), '.2f'), matched_bookings=[{
                 key: booking[key] for key in ('account_id', 'external_id', 'date', 'amount')}])
         elif candidates:
+            ambiguous_bookings.update((b['account_id'], b['external_id']) for b in candidates)
             event.update(status='unresolved', warnings=['ambiguous_booking_match'])
         elif event['status'] == 'unresolved':
             event['warnings'].append('past_payment_unresolved')
     events = [event for event in events if lower <= event['expected_date'] <= upper]
     events.sort(key=lambda e: (e['expected_date'], e['id']))
+    # A virtual intermediate balance uses this explicit logical event order,
+    # not a bank-reported collection time. Actual and unresolved events are
+    # never another projected movement.
+    future_counts = {}
+    for event in events:
+        event['projected_balance'] = None
+        event['projection_sequence_basis'] = 'rule_id_order'
+        if event['expected_date'] > cutoff and event['status'] == 'expected':
+            key = (event['account_id'], event['currency'], event['expected_date'])
+            future_counts[key] = future_counts.get(key, 0) + 1
     balances = latest_by_account(store, account_rows, as_of=cutoff)
     accounts = []
     for account in account_rows:
@@ -377,6 +420,9 @@ def view(store, data):
             for event in events:
                 if event['account_id'] == aid and event['expected_date'] > cutoff and event['status'] == 'expected' and event['currency'] == account['currency']:
                     projected += money(event['amount'])
+                    event['projected_balance'] = format(projected, '.2f')
+                    if future_counts[(aid, event['currency'], event['expected_date'])] > 1:
+                        event['warnings'].append('same_day_projection_order_assumed')
                     point = {'date': event['expected_date'], 'amount': format(projected, '.2f')}
                     if points[-1]['date'] == point['date']:
                         points[-1] = point
@@ -394,6 +440,7 @@ def view(store, data):
                          'as_of_balance': format(current, '.2f') if current is not None else None,
                          'projected_balance': format(projected, '.2f') if projected is not None else None,
                          'points': points, 'warnings': warnings})
-    return {'as_of': cutoff, 'until': upper, 'schedules': schedules, 'events': events,
+    return {'ambiguous_bookings': [{'account_id': a, 'external_id': e} for a, e in sorted(ambiguous_bookings)],
+            'as_of': cutoff, 'until': upper, 'schedules': schedules, 'events': events,
             'accounts': accounts, 'candidates': detected_candidates, 'warnings': ['projection_conditional_on_imported_ledger',
                                               'transfers_not_inferred', 'budgets_not_payment_events']}
