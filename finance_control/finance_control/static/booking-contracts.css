@@ -1,0 +1,35 @@
+.bc-marker,.bc-document,.bc-open {min-height:44px;max-width:100%;white-space:normal;overflow-wrap:break-word;word-break:normal;font-size:inherit;}
+.bc-marker {padding:.35rem .65rem;border:1px solid currentColor;border-radius:.55rem;background:transparent;color:inherit;text-align:left;}
+.bc-document-links,.bc-documents {display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;}
+.bc-document {background:transparent;color:inherit;border:1px solid currentColor;border-radius:.5rem;padding:.35rem .65rem;text-align:left;}
+.bc-inline {display:flex;flex-wrap:wrap;align-items:center;gap:.75rem;margin-block:1rem;}
+.bc-dialog {box-sizing:border-box;width:min(46rem,calc(100vw - 1.5rem));max-width:100%;max-height:calc(100dvh - 1.5rem);overflow-y:auto;padding:1.4rem;border:1px solid #aab4bd;border-radius:1rem;background:#fff;color:#172a35;font-size:1rem;}
+.bc-dialog::backdrop {background:rgb(0 0 0 / .55);}
+.bc-header {display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;}
+.bc-header h2 {font-size:1.3rem;line-height:1.4;margin:0 0 1rem;min-width:0;overflow-wrap:break-word;}
+.bc-dialog .bc-close {flex-shrink:0;}
+.bc-original {padding:.75rem;background:#eef2f4;border-radius:.5rem;line-height:1.6;}
+.bc-form {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.9rem 1rem;margin-block:1rem;}
+.bc-field {display:flex;flex-direction:column;gap:.35rem;min-width:0;line-height:1.4;font-size:1rem;}
+.bc-dialog input,.bc-dialog select,.bc-dialog button {box-sizing:border-box;max-width:100%;min-width:0;font:inherit;min-height:44px;}
+.bc-dialog input:not([type=checkbox]),.bc-dialog select {width:100%;padding:.65rem;border:1px solid #8d9ba5;border-radius:.4rem;background:#fff;color:#172a35;}
+.bc-dialog input:disabled {background:#eef1f3;color:#47545d;opacity:1;}
+.bc-confirm,.bc-help,.bc-actions,.bc-status,.bc-reject-confirm {grid-column:1/-1;}
+.bc-reject-confirm {display:flex;flex-wrap:wrap;gap:.65rem;padding:1rem;border:1px solid #aab4bd;border-radius:.5rem;}
+.bc-reject-confirm p {flex-basis:100%;line-height:1.5;}
+.bc-confirm {display:flex;gap:.6rem;align-items:flex-start;min-height:44px;line-height:1.5;padding:.35rem 0;font-size:1rem;}
+.bc-confirm input {width:24px;height:24px;min-height:24px;flex-shrink:0;}
+.bc-help {font-size:.95rem;line-height:1.5;color:#465862;margin:.2rem 0;}
+.bc-actions {display:flex;flex-wrap:wrap;gap:.65rem;}
+.bc-actions button {padding:.7rem 1rem;white-space:normal;overflow-wrap:break-word;word-break:normal;}
+.bc-status,.bc-error {line-height:1.5;overflow-wrap:break-word;color:#8a2030;}
+.bc-status:empty {display:none;}
+@media(max-width:700px) {
+  .bc-dialog {padding:1rem;width:calc(100vw - 1rem);max-height:calc(100dvh - 1rem);}
+  .bc-form {grid-template-columns:minmax(0,1fr);}
+  .bc-actions {display:grid;grid-template-columns:minmax(0,1fr);}
+  .bc-actions button {width:100%;}
+  .bc-header {flex-direction:column;gap:.25rem;}
+  .bc-header .bc-close {align-self:flex-end;}
+  .bc-document-links {flex-direction:column;align-items:stretch;}
+}

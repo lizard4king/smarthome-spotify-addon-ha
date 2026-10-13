@@ -174,6 +174,8 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                             "category_path": category_path(cash_id, cash_label)}]
                     )
             bookings.append(booking)
+    from .booking_contracts import attach_context
+    attach_context(store, bookings, day.isoformat())
     attach_day_balances(store, bookings, account_rows, current_balances)
     # Account movements are deliberately gross: a transfer appears on both
     # accounts. Never present this as household consumption or net wealth.

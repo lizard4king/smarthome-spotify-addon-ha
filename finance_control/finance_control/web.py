@@ -392,6 +392,14 @@ class Cockpit:
                 if action not in actions:
                     raise ValueError('unknown_budget_action')
                 return actions[action](store, data)
+            if route.startswith('/api/booking-contract-'):
+                from . import booking_contracts
+                actions = {'view': booking_contracts.view, 'save': booking_contracts.save,
+                           'reject': booking_contracts.reject}
+                action = route.removeprefix('/api/booking-contract-')
+                if action not in actions:
+                    raise ValueError('unknown_booking_contract_action')
+                return actions[action](store, data)
             if route.startswith('/api/recurring-'):
                 from . import recurring
                 actions = {'view': recurring.view, 'save': recurring.save,
@@ -1356,6 +1364,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/classification.js': ('classification.js', 'text/javascript; charset=utf-8'),
                       '/booking_editor.js': ('booking_editor.js', 'text/javascript; charset=utf-8'),
                       '/booking_editor.css': ('booking_editor.css', 'text/css; charset=utf-8'),
+                      '/booking-contracts.js': ('booking-contracts.js', 'text/javascript; charset=utf-8'),
+                      '/booking-contracts.css': ('booking-contracts.css', 'text/css; charset=utf-8'),
                       '/classification_mobile.css': ('classification_mobile.css', 'text/css; charset=utf-8'),
                       '/bonsy.js': ('bonsy.js', 'text/javascript; charset=utf-8'),
                       '/budget.js': ('budget.js', 'text/javascript; charset=utf-8'),
@@ -1471,6 +1481,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 if (urlsplit(self.path).path == '/api/fg-commit' and
                         isinstance(error, ValueError) and str(error) == 'review_stale_or_blocked'):
                     return self.reply(409, {'error': 'review_stale_or_blocked'})
+                if urlsplit(self.path).path.startswith('/api/booking-contract-'):
+                    if isinstance(error, ValueError) and str(error) in {
+                            'stale_booking_contract_revision', 'stale_recurring_revision',
+                            'stale_document_revision', 'duplicate_recurring_schedule'}:
+                        return self.reply(409, {'error': str(error)})
+                    return self.reply(400, {'error': str(error)})
                 if urlsplit(self.path).path.startswith('/api/recurring-'):
                     if isinstance(error, ValueError) and str(error) in {
                             'stale_recurring_revision', 'stale_document_revision'}:
