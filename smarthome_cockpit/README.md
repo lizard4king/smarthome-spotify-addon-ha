@@ -7,6 +7,20 @@ Der interne Dienst nutzt Port `8767`. Der Host-Port ist standardmäßig gesperrt
 sich mit dem internen Add-on-Dienst. Ein Update darf keinen Host-Port öffnen.
 HAL9000 ist kein Produktivbestandteil.
 
+## Aktualisierung 0.1.20
+
+Version `0.1.20` verhindert, dass ein Browser nach einem Update die neue
+Startseite mit älteren Musikskripten und Stylesheets kombiniert. Alle vier
+Musikassets verwenden denselben Versionsparameter; statisches HTML wird vor
+Wiederverwendung beim Server geprüft. API-, Audio- und Cover-Cacheregeln bleiben
+unverändert. Spotify Bridge bleibt bei `0.1.20`.
+
+Zur Abnahme nach dem Update eine bestehende Browsersitzung erneut öffnen:
+„Eigene Musik“ muss die Filter „Alle“, „Künstler“, „Alben“, „Titel“, „Ordner“ und
+nach explizitem Play den kompakten Browserplayer zeigen. Ein erneutes Laden darf
+nicht zur alten nativen Audioleiste zurückführen. Die automatischen Tests prüfen
+Assetversionen, HTML-Antworten einschließlich `304` und getrennte Cacheregeln.
+
 ## Eigene Musik über Music Assistant
 
 Version `0.1.19` vereinfacht die Oberfläche: Die Musik-Startseite bietet drei
