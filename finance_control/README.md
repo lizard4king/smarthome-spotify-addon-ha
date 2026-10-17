@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.57` refreshes the shared account snapshot immediately after an
+explicit balance assignment. Moving from administration to accounts therefore
+shows the newly saved balance without a full-page reload or another bank read.
+A failed display refresh does not misreport a successful save as a failed save.
+
 Version `0.2.56` adds a confirmed-contract source inventory with explicit missing
 payment fields and interprets Finanzguru contract flags without treating ja/nein
 as contract names. Successful additional bank balances can be explicitly assigned

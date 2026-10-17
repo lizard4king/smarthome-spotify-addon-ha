@@ -107,6 +107,16 @@
       window.financeServerBanking.render(scopedHost, data.connections, () => {
         if (credentialsRenderSequence !== credentialsGeneration || !administrationState?.enabled || !scopedHost.isConnected) return;
         return load();
+      }, async result => {
+        if (credentialsRenderSequence !== credentialsGeneration || !administrationState?.enabled || !scopedHost.isConnected) return;
+        // A confirmed balance changes the shared snapshot used on navigation.
+        // The global refresh reads local state; it never initiates a bank read.
+        try {
+          await refresh();
+          status(`${result.saved} Kontostände übernommen. Die Anzeige wurde aktualisiert. Es wurden keine Buchungen angelegt.`);
+        } catch (_) {
+          status(`${result.saved} Kontostände wurden übernommen. Die Anzeige konnte nicht aktualisiert werden. Bitte lade die Seite neu.`, true);
+        }
       });
     }
     const paypalHost = byId('adm-paypal-banking');
