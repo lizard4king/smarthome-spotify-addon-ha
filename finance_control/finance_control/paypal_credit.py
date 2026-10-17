@@ -168,6 +168,10 @@ class PayPalCredit:
         self.administration = administration
 
     def dispatch(self, actor, action, data):
+        if action in {'paypal-credit-forecast-view', 'paypal-credit-forecast-save',
+                      'paypal-credit-forecast-remove'}:
+            from .paypal_credit_forecast import dispatch
+            return dispatch(self.administration, actor, action, data)
         if action == 'paypal-credit-list':
             if type(data) is not dict or data:
                 _invalid()

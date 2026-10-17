@@ -320,6 +320,14 @@ def _accepted_metadata_source(store, staged, source, target, head):
         return False
     try:
         manifest = json.loads(imported['source'])
+    except (TypeError, ValueError):
+        return False
+    return _accepted_metadata_manifest(manifest, staged, source, target, head)
+
+
+def _accepted_metadata_manifest(manifest, staged, source, target, head):
+    """Validate decoded receipt facts after the caller verifies its exact digest."""
+    try:
         prior_choices = manifest['choices']
         prior_rows = manifest['rows']
         eligible = {row['reference']: row for row in prior_rows

@@ -203,11 +203,28 @@ def detect(store, *, as_of, known_schedules):
             if schedule.get('requires_contract_setup') and _party_key(schedule['label']) == party:
                 refs.append({'type': 'document', 'document_id': schedule['document_id']})
         covered = []
+        blocked_credit_warnings = []
         effective_marker_label = (marker['contract_label'] if marker and marker.get('_label_kind') == 'descriptive'
                                   else None)
         for row in evidence:
             covered.extend({'type': 'document', 'document_id': did} for did in links.get((aid, row['external_id']), set()))
         for schedule in known_schedules:
+            # A published exact loan schedule owns reference-identical evidence
+            # beyond its final rate too. Do not turn its past regular rates into
+            # a second, unbounded inferred monthly plan after the known term.
+            # Deliberately also cover an unusable/stale publication: its visible
+            # source/account warning requires renewed owner approval, not an
+            # automatic fallback that bypasses that approval with guessed rates.
+            if (schedule.get('basis') == 'confirmed_paypal_credit'
+                    and schedule.get('account_id') == aid and schedule.get('currency') == currency
+                    and any(contracts._reference_present(schedule.get('reference', ''),
+                            (row['counterparty'] or '')+' '+(row['description'] or '')) for row in evidence)):
+                requires_confirmation = bool(schedule.get('missing_fields'))
+                covered.append({'type': 'paypal_credit', 'id': schedule['id'],
+                                'active': schedule['active'], 'requires_confirmation': requires_confirmation})
+                if requires_confirmation:
+                    blocked_credit_warnings.extend(schedule.get('warnings', []))
+                continue
             if (schedule.get('document_id') and not schedule.get('requires_contract_setup')
                     and schedule.get('account_id') in (None, aid) and schedule.get('currency') in (None, currency)
                     and _party_key(schedule['label']) == party):
@@ -228,6 +245,7 @@ def detect(store, *, as_of, known_schedules):
             if same_label or same_ref or same_payment:
                 covered.append({'type': 'rule', 'id': schedule['id'], 'active': schedule['active']})
         warnings = ['large_amount_variation'] if spread else []
+        warnings.extend(dict.fromkeys(blocked_credit_warnings))
         if not item or item['end_month'] is None:
             warnings.append('end_date_unknown')
         source_review = False
@@ -247,7 +265,8 @@ def detect(store, *, as_of, known_schedules):
         overdue = interval is not None and _next_date(dates[-1], day, interval) < cutoff-timedelta(days=min(7, cutoff.toordinal()-1))
         if overdue:
             warnings.append('missing_recurring_period')
-        status = 'covered' if covered else 'needs_review' if overdue or source_review else 'stable'
+        blocked_credit = any(ref.get('requires_confirmation') for ref in covered)
+        status = 'blocked' if blocked_credit else 'covered' if covered else 'needs_review' if overdue or source_review else 'stable'
         stable_id = 'auto:' + hashlib.sha256('|'.join(str(v) for v in identity).encode()).hexdigest()[:20]
         candidates.append({'id': stable_id, 'label': item['label'] if item else effective_marker_label or recent[-1]['counterparty'],
                            'account_id': aid, 'currency': currency, 'amount': format(amount, '.2f'),
@@ -269,6 +288,9 @@ def detect(store, *, as_of, known_schedules):
         row = row_by_key[(candidate['account_id'], candidate['bookings'][-1]['external_id'])]
         key = (candidate['account_id'], candidate['currency'], money(candidate['amount']) > 0, row['party'])
         if candidate['source'] == 'booking_history' and key in preferred:
-            candidate['status'] = 'covered'
+            # A preferred budget candidate cannot remove the explicit need to
+            # reconfirm a stale or ineligible published credit schedule.
+            if candidate['status'] != 'blocked':
+                candidate['status'] = 'covered'
             candidate['covered_by'].append({'type': 'candidate', 'id': preferred[key]})
     return candidates

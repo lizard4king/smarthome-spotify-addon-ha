@@ -39,6 +39,13 @@
     const message = typeof error?.message === 'string' ? error.message.trim() : '';
     return message && message.length <= 240 ? message : fallback;
   };
+  const validForecastReference = value => {
+    if (typeof value !== 'string' || /\p{C}/u.test(value)) return false;
+    const reference = value.trim();
+    if (reference.length < 4 || reference.length > 240 || !/\d/.test(reference)) return false;
+    if (/^[\d\s.,+\-€]+(?:EUR)?$/i.test(reference)) return false;
+    return /\p{L}/u.test(reference.replace(/\bEUR\b|€/gi, ''));
+  };
 
   function rowGroup(title, fields, onRemove) {
     const row = node('fieldset', '', 'pc-row-group');
@@ -273,6 +280,158 @@
     const current = {loanId: null, revision: null};
     let formControl;
     const isMounted = () => host.isConnected && host.contains(section) && section.isConnected;
+    const forecastView = (loanId) => window.api('/api/administration/paypal-credit-forecast-view', {loan_id: loanId});
+    const attachForecastControl = (card, entry) => {
+      const area = node('div', '', 'pc-forecast');
+      const toggle = node('button', 'Mit Kontoprognose verknüpfen', 'pb-secondary');
+      toggle.type = 'button';
+      const panel = node('div', '', 'pc-forecast-panel'); panel.hidden = true;
+      const feedback = node('p', '', 'pb-action-status'); feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
+      area.append(toggle, panel); card.append(area);
+      let open = false;
+      let view = null;
+      let displayedSourceRevision = entry.revision;
+      let panelGeneration = 0;
+      const showMessage = (text, error = false) => {
+        feedback.textContent = text; feedback.classList.toggle('pb-error', error);
+      };
+      const isCurrentPanel = generation => isMounted() && open && generation === panelGeneration;
+      const renderPanel = nextView => {
+        view = nextView;
+        panel.replaceChildren();
+        panel.hidden = false; open = true;
+        const link = view?.link && typeof view.link === 'object' ? view.link : null;
+        const sourceChanged = Number.isInteger(view?.source_revision) && view.source_revision !== displayedSourceRevision;
+        const currentSourcePlan = view?.plan && typeof view.plan === 'object' ? view.plan : null;
+        toggle.textContent = link?.active ? 'Kontozuordnung ändern' : 'Mit Kontoprognose verknüpfen';
+        if (link?.stale === true || sourceChanged) {
+          panel.append(node('p', 'Planstand geändert – Kontozuordnung erneut bestätigen.', 'pc-forecast-stale'));
+        } else if (link?.active === true) {
+          const account = (view.accounts || []).find(item => item.id === link.account_id);
+          panel.append(node('p', `Aktuelle Zuordnung: ${safe(account?.label, 180) || safe(link.account_id, 180)} · ${safe(link.reference, 240)}`, 'pc-forecast-current'));
+        }
+        const accountLabel = node('label', 'EUR-Girokonto');
+        const accountSelect = document.createElement('select'); accountSelect.required = true;
+        const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Bitte Konto auswählen'; accountSelect.append(placeholder);
+        const accounts = Array.isArray(view?.accounts) ? view.accounts.filter(account => account &&
+          typeof account.id === 'string' && account.id && account.currency === 'EUR') : [];
+        for (const account of accounts) {
+          const option = document.createElement('option'); option.value = account.id;
+          const label = safe(account.label, 180) || account.id;
+          option.textContent = `${label}${safe(account.owner, 120) ? ` · ${safe(account.owner, 120)}` : ''}`;
+          accountSelect.append(option);
+        }
+        accountSelect.value = accounts.some(account => account.id === link?.account_id) ? link.account_id : '';
+        accountLabel.append(accountSelect); panel.append(accountLabel);
+        if (!accounts.length) panel.append(node('p', 'Kein eigenes EUR-Girokonto für die Kontoprognose verfügbar.', 'pb-note'));
+        const referenceLabel = node('label', 'Erkennbarer Buchungstext');
+        const reference = document.createElement('input'); reference.type = 'text'; reference.minLength = 4; reference.maxLength = 240;
+        reference.autocomplete = 'off'; reference.required = true; reference.value = safe(link?.reference, 240);
+        reference.placeholder = 'Zum Beispiel RATEN1234'; referenceLabel.append(reference); panel.append(referenceLabel);
+        panel.append(node('small', 'Eindeutige Kennung aus dem Buchungstext, mit Buchstaben und Ziffern (z. B. RATEN1234); Betrag oder „PayPal“ allein reichen nicht.', 'pc-forecast-help'));
+        if (currentSourcePlan) {
+          panel.append(node('p', `„${safe(currentSourcePlan.label, 120) || 'Manueller PayPal-Kredit'}“, Kennung und diese Raten werden für die gemeinsame Kontoprognose freigegeben und sind für alle Haushaltsmitglieder sichtbar. Kreditsumme und Jahreszins bleiben privat; Termine und Schlussrate unverändert.`, 'pb-note'));
+        } else {
+          panel.append(node('p', 'Der aktuelle Planstand konnte nicht geladen werden. Bitte schließe diese Zuordnung und lade den Kreditplan neu, bevor du sie bestätigst.', 'pc-forecast-stale'));
+        }
+        const schedule = Array.isArray(currentSourcePlan?.schedule) ? currentSourcePlan.schedule : [];
+        const scheduleList = node('ul', '', 'pc-forecast-schedule');
+        if (schedule.length) {
+          schedule.forEach((payment, index) => scheduleList.append(node('li',
+            `${safe(payment?.date, 10) || 'Datum nicht erfasst'} · ${currencyAmount(payment?.amount)}${index === schedule.length - 1 ? ' · Schlussrate' : ''}`)));
+          panel.append(scheduleList);
+        } else if (currentSourcePlan) panel.append(node('p', 'Im geprüften Plan sind keine künftigen Termine erfasst.', 'pb-note'));
+        const confirmWrap = node('label', '', 'pb-check pc-forecast-confirm');
+        const confirm = document.createElement('input'); confirm.type = 'checkbox';
+        confirmWrap.append(confirm, node('span', 'Ich bestätige die Freigabe für die gemeinsame Kontoprognose.'));
+        const removeConfirmWrap = node('label', '', 'pb-check pc-forecast-confirm');
+        const removeConfirm = document.createElement('input'); removeConfirm.type = 'checkbox';
+        removeConfirmWrap.append(removeConfirm, node('span', 'Ich bestätige, dass diese Kontozuordnung entfernt wird.'));
+        removeConfirmWrap.hidden = !link?.active;
+        panel.append(confirmWrap, removeConfirmWrap, feedback);
+        const save = node('button', link?.active ? 'Zuordnung speichern' : 'Zuordnung bestätigen'); save.type = 'button'; save.disabled = true;
+        const remove = node('button', 'Zuordnung entfernen', 'pb-secondary'); remove.type = 'button';
+        remove.hidden = !link?.active; remove.disabled = true;
+        const close = node('button', 'Schließen', 'pb-secondary'); close.type = 'button';
+        const updateSave = () => {
+          save.disabled = !currentSourcePlan || !confirm.checked || !accountSelect.value || !validForecastReference(reference.value);
+        };
+        confirm.addEventListener('change', updateSave);
+        accountSelect.addEventListener('change', () => { confirm.checked = false; updateSave(); });
+        reference.addEventListener('input', () => { confirm.checked = false; updateSave(); });
+        removeConfirm.addEventListener('change', () => { remove.disabled = !removeConfirm.checked; });
+        save.addEventListener('click', async () => {
+          updateSave(); if (save.disabled) return;
+          const generation = panelGeneration;
+          save.disabled = true; remove.disabled = true;
+          const payload = {loan_id: entry.loan_id, source_revision: view.source_revision,
+            revision: link?.revision ?? 0, account_id: accountSelect.value,
+            reference: reference.value.trim(), confirmed: true};
+          try {
+            await window.api('/api/administration/paypal-credit-forecast-save', payload);
+            if (!isCurrentPanel(generation)) return;
+            displayedSourceRevision = payload.source_revision;
+            showMessage('Kontozuordnung wurde bestätigt.');
+            try {
+              const latest = await forecastView(entry.loan_id);
+              if (isCurrentPanel(generation)) renderPanel(latest);
+              } catch (_) { if (isCurrentPanel(generation)) showMessage('Die Zuordnung ist gespeichert. Der aktuelle Stand konnte aber nicht neu geladen werden.', true); }
+          } catch (error) {
+            if (!isCurrentPanel(generation)) return;
+            if (error?.code === 'paypal_credit_forecast_stale') {
+              showMessage('Der Kreditplan wurde geändert. Bitte prüfe die aktuelle Zuordnung und bestätige sie erneut.', true);
+              confirm.checked = false; updateSave();
+              try { const latest = await forecastView(entry.loan_id); if (isCurrentPanel(generation)) { renderPanel(latest); showMessage('Planstand geändert – Kontozuordnung erneut bestätigen.', true); } }
+              catch (_) { if (isCurrentPanel(generation)) showMessage('Der Planstand ist veraltet. Bitte Zuordnung schließen und erneut öffnen.', true); }
+            } else showMessage(safeError(error, 'Die Kontozuordnung konnte nicht gespeichert werden.'), true);
+          } finally { if (isCurrentPanel(generation)) { updateSave(); remove.disabled = !removeConfirm.checked; } }
+        });
+        remove.addEventListener('click', async () => {
+          if (!removeConfirm.checked || !link) return;
+          const generation = panelGeneration;
+          save.disabled = true; remove.disabled = true;
+          try {
+            await window.api('/api/administration/paypal-credit-forecast-remove', {
+              loan_id: entry.loan_id, source_revision: view.source_revision,
+              revision: link.revision, confirmed: true});
+            if (!isCurrentPanel(generation)) return;
+            showMessage('Kontozuordnung wurde entfernt.');
+            try {
+              const latest = await forecastView(entry.loan_id);
+              if (isCurrentPanel(generation)) renderPanel(latest);
+            } catch (_) { if (isCurrentPanel(generation)) showMessage('Die Zuordnung ist entfernt. Der aktuelle Stand konnte aber nicht neu geladen werden.', true); }
+          } catch (error) {
+            if (!isCurrentPanel(generation)) return;
+            if (error?.code === 'paypal_credit_forecast_stale') {
+              showMessage('Der Kreditplan oder die Zuordnung wurde geändert. Bitte erneut laden und bestätigen.', true);
+              removeConfirm.checked = false;
+              try { const latest = await forecastView(entry.loan_id); if (isCurrentPanel(generation)) { renderPanel(latest); showMessage('Planstand geändert – Kontozuordnung erneut bestätigen.', true); } }
+              catch (_) { if (isCurrentPanel(generation)) showMessage('Der Planstand ist veraltet. Bitte Zuordnung schließen und erneut öffnen.', true); }
+            } else showMessage(safeError(error, 'Die Kontozuordnung konnte nicht entfernt werden.'), true);
+          } finally { if (isCurrentPanel(generation)) remove.disabled = !removeConfirm.checked; }
+        });
+        close.addEventListener('click', () => { panelGeneration++; panel.hidden = true; open = false; });
+        panel.append(save, remove, close);
+      };
+      toggle.addEventListener('click', async () => {
+        if (open) { panelGeneration++; panel.hidden = true; open = false; return; }
+        const generation = ++panelGeneration;
+        open = true;
+        toggle.disabled = true; toggle.textContent = 'Zuordnung wird geladen …';
+        try {
+          const latest = await forecastView(entry.loan_id);
+          if (isCurrentPanel(generation)) renderPanel(latest);
+        } catch (error) {
+          if (!isCurrentPanel(generation)) return;
+          panel.replaceChildren(); panel.hidden = false; open = true;
+          showMessage(safeError(error, 'Die Kontozuordnung konnte nicht geladen werden.'), true);
+          panel.append(feedback);
+        } finally {
+          toggle.disabled = false;
+          toggle.textContent = view?.link?.active ? 'Kontozuordnung ändern' : 'Mit Kontoprognose verknüpfen';
+        }
+      });
+    };
     const reload = async result => {
       if (!result) result = await window.api('/api/administration/paypal-credit-list', {});
       if (!isMounted()) return;
@@ -281,6 +440,7 @@
       for (const entry of entries) {
         const card = renderPlan(entry);
         if (!card) continue;
+        attachForecastControl(card, entry);
         const update = node('button', 'Stand aktualisieren', 'pb-secondary'); update.type = 'button';
         update.addEventListener('click', () => {
           formControl.fill(entry); formControl.form.hidden = false;

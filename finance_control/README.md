@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.62` bounds repeated day-end proof work without caching current ledger
+decisions. Existing private PayPal installment plans can be linked individually
+to an explicitly selected account and shared household forecast. Exact dates,
+the final installment and source revisions remain authoritative; ambiguous or
+conflicting payments stay unresolved. This does not retrieve credit plans from
+the PayPal API and does not initiate payments.
+
 Version `0.2.61` adds immutable booking history, dated bank reconciliation,
 reversible classification rules, accounting reserve pots and a readable light/dark
 interface. Saved budget versions are labelled “Planstand”. No payments are initiated.
