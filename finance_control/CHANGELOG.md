@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.61
+
+- Preserve booking originals and decision history; reconcile the ledger against dated bank evidence.
+- Add dated, reversible classification rules and a single document review cutoff.
+- Plan accounting reserve pots, savings and safety thresholds without initiating payments.
+- Use Planstand labels, readable responsive charts and central light/dark contrast roles with larger touch targets.
+
 ## 0.2.60
 
 - Prove a file-based day-end balance from every posting and recorded following balance in one intact, accepted full snapshot.

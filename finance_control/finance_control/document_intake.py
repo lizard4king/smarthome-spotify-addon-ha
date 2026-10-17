@@ -7,6 +7,7 @@ import sqlite3
 from html.parser import HTMLParser
 from pathlib import Path
 
+from .audit import import_operation
 from .classification import auto_confirm_documents, auto_link_documents, register_document
 from .import_preview import outside_repository
 
@@ -250,6 +251,7 @@ def cache_document_source(database, document_id, text):
     _cache(root, document_id, text)
 
 
+@import_operation
 def import_documents(store, database, documents):
     """Register and cache each new candidate before its database commit.
 

@@ -235,7 +235,7 @@ function renderOverview(overview) {
   $('overview-primary-action-detail').textContent=primaryAction?.detail||'Der aktuelle Stand enthält keine vorrangige Entscheidung.';
   primaryOpen.hidden=!primaryAction;
   primaryOpen.dataset.target=primaryAction?.target||'';
-  $('overview-plan-revision').textContent=plan?`Revision ${plan.revision}`:'Noch ohne Plan';
+  $('overview-plan-revision').textContent=plan?`Planstand ${plan.revision}`:'Noch kein Planstand';
   $('overview-plan-title').textContent=plan?`${plan.title} · ${plan.start_month} bis ${plan.end_period}`:'Speichere unter Planung einen Budgetentwurf.';
   values.hidden=!plan;
   if(plan){
@@ -247,6 +247,16 @@ function renderOverview(overview) {
     $('overview-plan-unconfirmed-expenses').textContent=plan.unconfirmed_expenses===null?'—':eur(plan.unconfirmed_expenses);
   }
   $('overview-plan-note').textContent=plan?.connection_reason||'Noch keine gespeicherte Vorschau vorhanden.';
+  const reserveNote=$('overview-reserve-note');
+  if(reserveNote){
+    const reserves=plan?.reserves; reserveNote.hidden=!reserves;
+    if(reserves){
+      reserveNote.textContent=reserves.minimum_free_available==null
+        ? 'Frei verfügbarer Betrag unbekannt. Prüfe unter Planung den Anfangsbestand der Rücklagentöpfe und den Anschluss an einen Kontostand.'
+        : `Niedrigster frei verfügbarer Betrag nach Rücklagen: ${eur(reserves.minimum_free_available)} · ${reserves.minimum_period}.`;
+      if(Number(reserves.maximum_safety_shortfall)>0)reserveNote.textContent+=` Sicherheitsreserve unterschritten um ${eur(reserves.maximum_safety_shortfall)} · ${reserves.maximum_shortfall_period}.`;
+    }
+  }
   const tasks=overview?.tasks||[], list=$('overview-task-list'); list.replaceChildren();
   $('overview-task-count').textContent=tasks.length===1?'1 Bereich offen':`${tasks.length} Bereiche offen`;
   if(!tasks.length){const done=document.createElement('p');done.className='overview-done';done.textContent='Für diesen Stand sind keine nächsten Schritte offen.';list.append(done);return;}
@@ -294,7 +304,7 @@ async function refresh() {
   const kinds={CHECKING:'Girokonto',SAVINGS:'Sparkonto',CREDIT_CARD:'Kreditkarte',DEPOT:'Depot'};
   $('account-rows').replaceChildren();
   $('account-config-rows').replaceChildren();
-  for(const a of state.accounts){const tr=document.createElement('tr');cell(tr,a.id);cell(tr,a.display_name||'Noch nicht bezeichnet');const ownerText=a.owner==='JOINT'?'Gemeinsam · '+Object.entries(a.shares).map(([person,share])=>`${profilePersonLabel(person)} ${(Number(share)*100).toLocaleString('de-DE',{maximumFractionDigits:2})} %`).join(' / '):(a.owner_label||profilePersonLabel(a.owner));cell(tr,ownerText);cell(tr,kinds[a.kind]);cell(tr,accountBalanceLabel(a.current_balance),true);$('account-rows').append(tr);const config=document.createElement('tr');cell(config,a.id);const edit=cell(config,'');const input=document.createElement('input');input.value=a.display_name||'';input.maxLength=120;input.placeholder='z. B. Haushaltskonto';input.setAttribute('aria-label',`Bezeichnung für ${a.id}`);const save=document.createElement('button');save.type='button';save.textContent='Speichern';save.disabled=true;const status=document.createElement('span');status.className='account-save-status muted';status.setAttribute('role','status');status.textContent=accountSaveMessages.get(a.id)||'';input.addEventListener('input',()=>{save.disabled=!input.value.trim()||input.value.trim()===(a.display_name||'');status.textContent=save.disabled?'':'Ungespeichert';});save.addEventListener('click',()=>run(async()=>{const value=input.value.trim();save.disabled=true;status.textContent='Wird gespeichert …';try{await api('/api/account-display-name',{id:a.id,display_name:value,revision:a.display_name_revision,confirmed:true});accountSaveMessages.set(a.id,'Gespeichert');await refresh();message(`Bezeichnung für ${a.id} gespeichert.`);}catch(error){status.textContent='Nicht gespeichert';save.disabled=false;throw error;}}));edit.append(input,save,status);$('account-config-rows').append(config);}
+  for(const a of state.accounts){const tr=document.createElement('tr');cell(tr,a.id);cell(tr,a.display_name||'Noch nicht bezeichnet');const ownerText=a.owner==='JOINT'?'Gemeinsam · '+Object.entries(a.shares).map(([person,share])=>`${profilePersonLabel(person)} ${(Number(share)*100).toLocaleString('de-DE',{maximumFractionDigits:2})} %`).join(' / '):(a.owner_label||profilePersonLabel(a.owner));cell(tr,ownerText);cell(tr,kinds[a.kind]);const balanceCell=cell(tr,accountBalanceLabel(a.current_balance),true);if(window.financeReconciliation)window.financeReconciliation(balanceCell,a.reconciliation);if(a.current_balance?.amount==null){const next=document.createElement('div');button(next,'Konto prüfen',()=>cockpitNavigate('wealth'));balanceCell.append(next);}$('account-rows').append(tr);const config=document.createElement('tr');cell(config,a.id);const edit=cell(config,'');const input=document.createElement('input');input.value=a.display_name||'';input.maxLength=120;input.placeholder='z. B. Haushaltskonto';input.setAttribute('aria-label',`Bezeichnung für ${a.id}`);const save=document.createElement('button');save.type='button';save.textContent='Speichern';save.disabled=true;const status=document.createElement('span');status.className='account-save-status muted';status.setAttribute('role','status');status.textContent=accountSaveMessages.get(a.id)||'';input.addEventListener('input',()=>{save.disabled=!input.value.trim()||input.value.trim()===(a.display_name||'');status.textContent=save.disabled?'':'Ungespeichert';});save.addEventListener('click',()=>run(async()=>{const value=input.value.trim();save.disabled=true;status.textContent='Wird gespeichert …';try{await api('/api/account-display-name',{id:a.id,display_name:value,revision:a.display_name_revision,confirmed:true});accountSaveMessages.set(a.id,'Gespeichert');await refresh();message(`Bezeichnung für ${a.id} gespeichert.`);}catch(error){status.textContent='Nicht gespeichert';save.disabled=false;throw error;}}));edit.append(input,save,status);$('account-config-rows').append(config);}
   for (const [index, account] of state.accounts.entries()) {
     const edit = cell($('account-config-rows').rows[index], '');
     const lifecycle = document.createElement('div');
@@ -356,17 +366,76 @@ async function refresh() {
 function planInput(){const f=$('plan-form');if(!f.reportValidity())throw new Error('Bitte alle Planbeträge angeben.');const one_offs=[];for(const line of f.elements.one_offs.value.split('\n').filter(x=>x.trim())){const parts=line.split(';');if(parts.length!==2||!/^\s*\d+\s*$/.test(parts[0]))throw new Error('Einmalzahlungen: je Zeile Planmonat; Betrag.');one_offs.push({month:Number(parts[0]),amount:parts[1].trim()});}return {as_of:$('cutoff').value,plan:{income:f.elements.income.value,expenses:f.elements.expenses.value,reserve:f.elements.reserve.value,one_offs}};}
 const ns='http://www.w3.org/2000/svg';
 function svgNode(parent, tag, attrs, text){const node=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))node.setAttribute(k,v);if(text!==undefined)node.textContent=text;parent.append(node);return node;}
+// Keep this observer local: Analytics also supports isolated controller pages and
+// retains its own category selection; sharing an initialization dependency adds no value.
+const chartInputs = new WeakMap();
+const chartResizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+  for (const {target} of entries) {
+    const saved = chartInputs.get(target);
+    if (saved && Math.abs(target.clientWidth - saved.width) > 1)
+      chart(saved.id, saved.series, saved.labels, saved.reserve);
+  }
+}) : null;
 function chart(id, series, labels, reserve) {
-  const svg=$(id);svg.replaceChildren();const values=series.flatMap(s=>s.values.map(Number));if(reserve!==undefined)values.push(Number(reserve));
-  let lo=Math.min(0,...values),hi=Math.max(0,...values);if(lo===hi)hi=lo+1;const padding=(hi-lo)*.12;lo-=padding;hi+=padding;
-  const x=i=>100+i*740/Math.max(1,labels.length-1), y=v=>220-(Number(v)-lo)/(hi-lo)*175;
-  for(let i=0;i<5;i++){const v=lo+(hi-lo)*i/4;svgNode(svg,'line',{x1:100,x2:850,y1:y(v),y2:y(v),stroke:'#e2e9ed'});svgNode(svg,'text',{x:90,y:y(v)+4,'text-anchor':'end'},Math.round(v).toLocaleString('de-DE'));}
-  svgNode(svg,'text',{x:18,y:22},'EUR');
-  const labelStep = Math.max(2, Math.ceil((labels.length - 1) / 6));
-  labels.forEach((label,i)=>{if(i===0||i===labels.length-1||(i%labelStep===0&&i<=labels.length-1-labelStep/2))svgNode(svg,'text',{x:x(i),y:248,'text-anchor':'middle'},label);});
-  if(reserve!==undefined)svgNode(svg,'line',{x1:100,x2:850,y1:y(reserve),y2:y(reserve),class:'chart-reserve'});
-  series.forEach((s,index)=>{svgNode(svg,'polyline',{points:s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' '),class:index?'chart-line chart-alt':'chart-line'});svgNode(svg,'text',{x:120+index*340,y:22},s.name.length>38?s.name.slice(0,35)+'…':s.name);});
-  if(reserve!==undefined)svgNode(svg,'text',{x:650,y:22},'Gestrichelt: Mindestreserve');
+  const svg=$(id);
+  const width=svg.clientWidth;
+  const previous=chartInputs.has(svg);
+  chartInputs.set(svg,{id,series,labels,reserve,width});
+  if(!previous)chartResizeObserver?.observe(svg);
+  svg.replaceChildren();
+  // Hidden panels have no measurable SVG text box in all browsers. Retain the
+  // input and let the observer draw when navigation gives the panel a width.
+  if(!width||!svg.getClientRects().length){
+    // Reset a previous observation so a same-frame hide/show at the old width
+    // still receives the initial notification for the retained input.
+    chartResizeObserver?.unobserve(svg);chartResizeObserver?.observe(svg);return;
+  }
+  const legends=series.map(s=>s.name);
+  if(reserve!==undefined)legends.push('Gestrichelt: Mindestreserve');
+  const fontSize=parseFloat(getComputedStyle(svg).fontSize) || 16;
+  const legendLine=Math.max(24,fontSize*1.5);
+  const top=44+legends.length*legendLine, bottom=top+175, height=bottom+48;
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  const values=series.flatMap(s=>s.values.map(Number));
+  if(reserve!==undefined)values.push(Number(reserve));
+  if(!values.length){svgNode(svg,'text',{x:12,y:24},'Noch keine Diagrammdaten');return;}
+  let lo=Math.min(0,...values),hi=Math.max(0,...values);
+  if(lo===hi)hi=lo+1;
+  const padding=(hi-lo)*.12;lo-=padding;hi+=padding;
+  const left=Math.min(100, Math.max(74,width*.18)), right=width-20;
+  const x=i=>left+i*(right-left)/Math.max(1,labels.length-1);
+  const y=v=>bottom-(Number(v)-lo)/(hi-lo)*175;
+  const axisFormat=new Intl.NumberFormat('de-DE',{notation:Math.max(Math.abs(lo),Math.abs(hi))>=10000?'compact':'standard',maximumFractionDigits:0});
+  for(let i=0;i<5;i++){
+    const v=lo+(hi-lo)*i/4;
+    svgNode(svg,'line',{x1:left,x2:right,y1:y(v),y2:y(v),stroke:'var(--fc-chart-grid)'});
+    svgNode(svg,'text',{x:left-8,y:y(v)+4,'text-anchor':'end'},axisFormat.format(v));
+  }
+  svgNode(svg,'text',{x:12,y:20},'EUR');
+  if(labels.length){
+    const last=labels.length-1;
+    const lastTick=svgNode(svg,'text',{x:x(last),y:bottom+28,'text-anchor':last?'end':'start'},labels[last]);
+    const lastLeft=lastTick.getBBox().x;
+    let previousRight=-Infinity;
+    labels.forEach((label,i)=>{
+      if(i===last)return;
+      const node=svgNode(svg,'text',{x:x(i),y:bottom+28,'text-anchor':i?'middle':'start'},label);
+      const box=node.getBBox();
+      if(box.x<previousRight+12||box.x+box.width+12>lastLeft){node.remove();return;}
+      previousRight=box.x+box.width;
+    });
+  }
+  if(reserve!==undefined)svgNode(svg,'line',{x1:left,x2:right,y1:y(reserve),y2:y(reserve),class:'chart-reserve'});
+  series.forEach((s,index)=>svgNode(svg,'polyline',{points:s.values.map((v,i)=>`${x(i)},${y(v)}`).join(' '),class:index?'chart-line chart-alt':'chart-line'}));
+  const maxCharacters=Math.max(12,Math.floor((width-24)/8));
+  legends.forEach((name,index)=>{
+    const node=svgNode(svg,'text',{x:12,y:44+index*legendLine},name.length>maxCharacters?name.slice(0,maxCharacters-1)+'…':name);
+    const letters=Array.from(node.textContent.replace(/…$/, ''));
+    while(letters.length>1&&node.getComputedTextLength()>width-24){
+      letters.pop();node.textContent=letters.join('')+'…';
+    }
+    svgNode(node,'title',{},name);
+  });
 }
 function renderProjection(result){$('projection').hidden=false;const rows=result.rows;$('closing').textContent=eur(rows.at(-1).liquidity);$('minimum').textContent=eur(Math.min(...rows.map(r=>Number(r.liquidity))));$('reserve-months').textContent=rows.filter(r=>r.below_reserve).length+' / 12';$('calculated-for').textContent=`Berechnet ab ${result.as_of}, Anfangsbestand ${eur(result.opening)}. Alle Tabellenwerte in EUR.`;$('forecast-rows').replaceChildren();for(const r of rows){const tr=document.createElement('tr');if(r.below_reserve)tr.className='warning';cell(tr,r.period);for(const key of ['opening','income','expenses','one_offs','cashflow','liquidity','reserve'])cell(tr,amount(r[key]),true);$('forecast-rows').append(tr);}chart('forecast-chart',[{name:'Liquidität zum Monatsende',values:rows.map(r=>r.liquidity)}],rows.map(r=>r.period),rows[0].reserve);}
 $('cutoff-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{invalidate();$('comparison').hidden=true;await refresh();message('Stichtag aktualisiert.');});});

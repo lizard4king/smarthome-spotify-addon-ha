@@ -12,7 +12,7 @@ from decimal import Decimal
 from .core import money
 
 
-def _statement_anchors(store, account_id, currency):
+def statement_anchors(store, account_id, currency):
     """Read qualified closing controls using the current account bindings."""
     queries = (
         'SELECT p.as_of,p.closing_balance,p.currency FROM ing_period_imports p '
@@ -38,6 +38,43 @@ def _statement_anchors(store, account_id, currency):
             except (TypeError, ValueError):
                 continue
     return anchors
+
+
+_statement_anchors = statement_anchors
+
+
+class LedgerBalanceUnavailable(ValueError):
+    """A dated ledger cannot be compared without inventing financial facts."""
+
+
+def ledger_balance_at(store, account, as_of):
+    """Sum the opening anchor and active movements in the account's currency.
+
+    The opening value is the balance at its date; valid imported movements
+    start after it. This computes the recorded ledger, not bank completeness.
+    """
+    try:
+        cutoff = date.fromisoformat(as_of)
+        opening = date.fromisoformat(account['opening_date'])
+        if cutoff.isoformat() != as_of or opening.isoformat() != account['opening_date']:
+            raise ValueError
+        if cutoff < opening:
+            raise LedgerBalanceUnavailable('control_predates_opening')
+        balance = money(account['opening'])
+        for row in store.db.execute(
+                'SELECT date,amount,currency FROM active_transactions '
+                'WHERE account_id=? AND date<=?', (account['id'], as_of)):
+            if row['currency'] != account['currency']:
+                raise LedgerBalanceUnavailable('currency_conflict')
+            day = date.fromisoformat(row['date'])
+            if day.isoformat() != row['date'] or day <= opening:
+                raise ValueError
+            balance += money(row['amount'])
+        return money(balance)
+    except LedgerBalanceUnavailable:
+        raise
+    except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+        raise LedgerBalanceUnavailable('invalid_ledger') from exc
 
 
 def _statement_conflict(store, account_id, currency, day, chosen_amount):
@@ -118,7 +155,7 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
         currency_conflicts = set()
         anchor_day_count = 0
         for row in store.db.execute(
-                'SELECT date,amount,currency FROM transactions '
+                'SELECT date,amount,currency FROM active_transactions '
                 'WHERE account_id=? AND date BETWEEN ? AND ?', (account_id, first, last)):
             if row['date'] == anchor_day:
                 anchor_day_count += 1
@@ -169,7 +206,7 @@ def _attach_movement_balances(store, bookings):
     for account_id, selected_days in days.items():
         rows_by_day = defaultdict(list)
         for row in store.db.execute(
-                'SELECT date,external_id,amount,currency FROM transactions '
+                'SELECT date,external_id,amount,currency FROM active_transactions '
                 'WHERE account_id=? AND date BETWEEN ? AND ? '
                 'ORDER BY date,external_id',
                 (account_id, min(selected_days), max(selected_days))):

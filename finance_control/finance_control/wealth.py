@@ -6,7 +6,9 @@ import re
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
+from .audit import actor_for
 from .core import money, parse_money_input
+from .reconciliation import reconciliation_differences
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z", re.ASCII)
 _KINDS = {"asset", "liability", "investment"}
@@ -199,13 +201,20 @@ def _canonical_payload(store, data, *, goals, people):
     if not isinstance(data, dict):
         raise TypeError("wealth request must be an object")
     required = {"as_of", "manual_positions", "goal_progress"}
-    if set(data) - (required | {"latest_revision", "confirmed", "review_token"}) or not required <= set(data):
+    if set(data) - (required | {
+            "latest_revision", "confirmed", "review_token", "differences_confirmed"
+    }) or not required <= set(data):
         raise ValueError("wealth request has invalid fields")
+    if "differences_confirmed" in data and type(data["differences_confirmed"]) is not bool:
+        raise ValueError("differences_confirmed must be a boolean")
     as_of = _calendar_day(data["as_of"], "as_of")
     owners = _known_people(store, people)
     manual = _manual_positions(data["manual_positions"], as_of=as_of, owners=owners)
     progress = _goal_progress(data["goal_progress"], as_of=as_of, goals=goals)
     ledger, excluded = _ledger_positions(store, as_of, owners=owners)
+    comparisons = reconciliation_differences(
+        store, [entry["account_id"] for entry in ledger], as_of.isoformat())
+    reconciliation = [comparisons[entry["account_id"]] for entry in ledger]
     positions = ledger + manual
     return {
         "version": 1,
@@ -216,6 +225,9 @@ def _canonical_payload(store, data, *, goals, people):
         "goal_progress": progress,
         "totals": _totals(positions),
         "excluded_depots": excluded,
+        "reconciliation": reconciliation,
+        "differences_confirmation_required": any(
+            entry["status"] == "different" for entry in reconciliation),
     }
 
 
@@ -265,6 +277,10 @@ def _stored(row):
         "created_at": row["created_at"],
         "source_digest": row["source_digest"],
         **json.loads(row["payload"]),
+        "differences_confirmed": (
+            None if row["differences_confirmed"] is None else bool(row["differences_confirmed"])),
+        "differences_confirmed_by": row["differences_confirmed_by"],
+        "differences_confirmed_at": row["differences_confirmed_at"],
     }
 
 
@@ -314,6 +330,9 @@ def save(store, data, *, goals=(), people=None):
         current = _preview(store, data, goals=goals, people=people)
         if data["review_token"] != current["review_token"]:
             raise ValueError("wealth review token is stale")
+        if (current["differences_confirmation_required"]
+                and data.get("differences_confirmed") is not True):
+            raise ValueError("explicit differences confirmation is required")
         if latest is not None and latest["source_digest"] == current["source_digest"]:
             store.db.rollback()
             return {**_stored(latest), "saved": False, "unchanged": True}
@@ -321,13 +340,18 @@ def save(store, data, *, goals=(), people=None):
             raise ValueError("wealth revision is stale")
         revision = latest_revision + 1
         created_at = datetime.now(UTC).isoformat()
+        differences_confirmed = data.get("differences_confirmed", False)
+        differences_confirmed_by = actor_for(store) if differences_confirmed else None
+        differences_confirmed_at = created_at if differences_confirmed else None
         payload = {key: value for key, value in current.items() if key not in {
             "latest_revision", "next_revision", "source_digest", "review_token"}}
         row_id = store.db.execute(
-            "INSERT INTO wealth_snapshots(revision,as_of,created_at,source_digest,payload) "
-            "VALUES (?,?,?,?,?)",
+            "INSERT INTO wealth_snapshots(revision,as_of,created_at,source_digest,payload,"
+            "differences_confirmed,differences_confirmed_by,differences_confirmed_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
             (revision, payload["as_of"], created_at, current["source_digest"],
-             json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)),
+             json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
+             int(differences_confirmed), differences_confirmed_by, differences_confirmed_at),
         ).lastrowid
         store.db.commit()
     except Exception:
@@ -340,6 +364,9 @@ def save(store, data, *, goals=(), people=None):
         "created_at": created_at,
         "source_digest": current["source_digest"],
         **payload,
+        "differences_confirmed": differences_confirmed,
+        "differences_confirmed_by": differences_confirmed_by,
+        "differences_confirmed_at": differences_confirmed_at,
         "saved": True,
         "unchanged": False,
     }

@@ -65,6 +65,7 @@ LOGIN_PAGE = (
     '<!doctype html><html lang="de"><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1">'
     '<title>Anmeldung · Finance Control</title>'
+    '<link rel="stylesheet" href="/tokens.css">'
     '<link rel="stylesheet" href="/login.css"></head><body>'
     '<main class="login-shell">'
     '<section class="login-intro" aria-labelledby="login-title">'
@@ -278,10 +279,17 @@ class Cockpit:
         from .backup_package import backup_sync_status
         store = Store(self.database)
         try:
+            # One read snapshot for bank controls, ledger and all account views.
+            # A concurrent import becomes visible on the next request as a whole.
+            store.db.execute('BEGIN')
             accounts = store.accounts()
             from .current_balances import latest_by_account
+            from .reconciliation import reconciliation_differences
             current_balances = latest_by_account(store, accounts)
-            accounts = [account | {'current_balance': current_balances.get(account['id'])}
+            reconciliations = reconciliation_differences(
+                store, [account['id'] for account in accounts], as_of)
+            accounts = [account | {'current_balance': current_balances.get(account['id']),
+                                   'reconciliation': reconciliations[account['id']]}
                         for account in accounts]
             status = store.status(as_of) if accounts else None
             if self.profile is not None:
@@ -296,7 +304,7 @@ class Cockpit:
             try:
                 dashboard_data = dashboard.build(
                     store, as_of, accounts, reporting_history=self.reporting_history,
-                    current_balances=current_balances)
+                    current_balances=current_balances, reconciliations=reconciliations)
             except dashboard.DashboardConfigurationError:
                 dashboard_data = {
                     'as_of': as_of, 'month': as_of[:7], 'accounts': [],
@@ -307,7 +315,8 @@ class Cockpit:
             result = {'demo': self.demo, 'csrf': self.token, 'as_of': as_of,
                     'accounts': accounts, 'status': status, 'scenarios': store.scenario_records(),
                     'monthly_reviews': monthly_review.records(store),
-                    'overview': overview.build(store, as_of, status),
+                    'overview': overview.build(store, as_of, status,
+                                               reporting_history=self.reporting_history),
                     'dashboard': dashboard_data,
                     'backup_sync': backup_status,
                     'drive_backup_configured': (backup_status['configured']
@@ -323,12 +332,21 @@ class Cockpit:
                 result['profile_goals'] = []
             return result
         finally:
+            if store.db.in_transaction:
+                store.db.rollback()
             store.close()
 
-    def action(self, route, data):
-        store = Store(self.database)
+    def action(self, route, data, *, actor='system:local'):
+        store = Store(self.database, actor=actor)
         initial_changes = store.db.total_changes
         try:
+            if route == '/api/account-reconciliation':
+                from .reconciliation import view
+                return view(store, data)
+            if route in {'/api/booking-history', '/api/booking-history-inactive'}:
+                from . import booking_history
+                return (booking_history.view if route == '/api/booking-history'
+                        else booking_history.inactive)(store, data)
             if route == '/api/purchases':
                 from .purchases import list_purchases
                 return list_purchases(store, data)
@@ -420,7 +438,7 @@ class Cockpit:
                     raise ValueError('unknown_contract_action')
                 return actions[action](store, data)
             if route.startswith('/api/classification-'):
-                from . import classification
+                from . import classification, classification_rules
                 if route == '/api/classification-local-suggestion':
                     from .local_model import suggest
                     return suggest(store, data)
@@ -437,6 +455,10 @@ class Cockpit:
                     'model-reject': classification.reject_model_suggestion,
                     'reset': classification.reset_classification,
                     'rule': classification.create_rule,
+                    'rules': classification_rules.list_rules,
+                    'rule-update': classification_rules.update_rule,
+                    'rule-effects': classification_rules.effects_preview,
+                    'rule-revoke': classification_rules.revoke_effects,
                     'suggestions': classification.suggestions,
                     'matches': classification.match_suggestions,
                     'document-matches': classification.document_match_suggestions,
@@ -755,7 +777,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
     ``access_token=None`` keeps the historic behaviour (Host/Origin/CSRF checks only),
     suitable for loopback use or a front-end that already authenticates users.
     A token of at least ``MIN_ACCESS_TOKEN`` characters enables application-level
-    authentication for every route except ``/health``.
+    authentication for application routes. ``/health`` and the generic login
+    styles remain available without a session; they expose no financial data.
     """
     if access_token is not None and len(access_token) < MIN_ACCESS_TOKEN:
         raise ValueError('Zugriffstoken zu kurz.')
@@ -1061,8 +1084,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 return self.reply(200, {'status': 'ok'})
             if not self.trusted_host():
                 return self.reply(403, {'error': 'Lokaler Zugriff erforderlich.'})
-            if urlsplit(self.path).path == '/login.css':
-                return self.reply(200, files('finance_control').joinpath('static', 'login.css').read_bytes(),
+            if urlsplit(self.path).path in {'/login.css', '/tokens.css'}:
+                filename = urlsplit(self.path).path[1:]
+                return self.reply(200, files('finance_control').joinpath('static', filename).read_bytes(),
                                   'text/css; charset=utf-8')
             if not self.authorized():
                 return self.login_required()
@@ -1374,6 +1398,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/budget.js': ('budget.js', 'text/javascript; charset=utf-8'),
                       '/plan_actual.js': ('plan_actual.js', 'text/javascript; charset=utf-8'),
                       '/wealth.js': ('wealth.js', 'text/javascript; charset=utf-8'),
+                      '/reconciliation.js': ('reconciliation.js', 'text/javascript; charset=utf-8'),
                       '/budget.css': ('budget.css', 'text/css; charset=utf-8'),
                       '/intake.js': ('intake.js', 'text/javascript; charset=utf-8'),
                       '/style.css': ('style.css', 'text/css; charset=utf-8')}
@@ -1564,7 +1589,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     return self.reply(200, server_cards.dispatch(self.management_user, action, data))
                 result = administration.change(self.management_user, action, data)
                 return self.reply(200, result if result.get('removed') else {'enabled': True, **result})
-            return self.reply(200, app.action(urlsplit(self.path).path, data))
+            actor = self.management_user['id'] if self.management_user is not None else 'system:local'
+            return self.reply(200, app.action(urlsplit(self.path).path, data, actor=actor))
 
     server = BoundedHTTPServer((host, port), Handler)
     if port == 0:

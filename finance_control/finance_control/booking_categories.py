@@ -5,6 +5,8 @@ import re
 from collections import Counter, defaultdict
 from decimal import Decimal, InvalidOperation
 
+from .classification_rules import is_intermediary, rule_is_eligible
+
 
 _LEADING_DE_IBAN = re.compile(r'^\s*(DE(?:[ \t\u00a0]?\d){20})', re.IGNORECASE)
 _TECHNICAL_CATEGORY_PREFIXES = (
@@ -12,9 +14,6 @@ _TECHNICAL_CATEGORY_PREFIXES = (
     'onlinebanking', 'online banking', 'online-banking', 'kreditkartenabruf',
     'kartenabruf', 'bankimport', 'bank import', 'finanzabruf',
 )
-_HISTORY_INTERMEDIARY_TOKENS = frozenset({
-    'paypal', 'klarna', 'amazon', 'google', 'apple', 'sumup',
-})
 # Keep aligned with classification._GENERIC_COUNTERPARTIES; history is too weak
 # to turn these non-identifying source labels into a category suggestion.
 _GENERIC_COUNTERPARTIES = frozenset({
@@ -88,11 +87,11 @@ class CategoryResolver:
             row['alias_id']: row['canonical_id'] for row in store.db.execute(
                 'SELECT alias_id,canonical_id FROM category_aliases')
         }
-        self._rules = defaultdict(set)
+        self._rules = defaultdict(list)
         for row in store.db.execute(
-                'SELECT counterparty_normalized,direction,category_id FROM classification_rules'):
+                'SELECT * FROM classification_rules WHERE enabled=1'):
             party = _canonical_counterparty(row['counterparty_normalized'])
-            self._rules[(party, row['direction'])].add(row['category_id'])
+            self._rules[(party, row['direction'])].append(dict(row))
         self._overrides = {
             (row['account_id'], row['external_id']): dict(row)
             for row in store.db.execute(
@@ -140,7 +139,7 @@ class CategoryResolver:
             f"""SELECT t.account_id,t.external_id,t.amount,t.transfer_id,
                       c.counterparty,o.category_id,cat.transaction_type
                FROM classification_overrides o
-               JOIN transactions t USING(account_id,external_id)
+               JOIN active_transactions t USING(account_id,external_id)
                LEFT JOIN transaction_context c USING(account_id,external_id)
                JOIN category_catalog cat ON cat.id=o.category_id
                WHERE o.confirmed=1 AND o.category_id IS NOT NULL
@@ -194,7 +193,10 @@ class CategoryResolver:
             return self._open_result()
         party = _canonical_counterparty(_field(row, 'counterparty'))
 
-        rule_categories = self._rules.get((party, direction), set()) if party else set()
+        rule_categories = {
+            rule['category_id'] for rule in self._rules.get((party, direction), [])
+            if rule_is_eligible(rule, _field(row, 'date'))
+        } if party else set()
         if len(rule_categories) > 1:
             return self._open_result()
         if rule_categories:
@@ -213,9 +215,8 @@ class CategoryResolver:
                     and category['transaction_type'] == direction):
                 return self._category_result(category_id, 'proposal', 'model')
 
-        tokens = set(re.findall(r'[a-z0-9]+', party))
         if (not party or party in _GENERIC_COUNTERPARTIES
-                or tokens.intersection(_HISTORY_INTERMEDIARY_TOKENS)):
+                or is_intermediary(party, _field(row, 'description', ''))):
             return self._open_result()
 
         history = self._history.get((party, direction), Counter())

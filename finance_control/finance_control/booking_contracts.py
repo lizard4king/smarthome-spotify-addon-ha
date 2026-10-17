@@ -18,7 +18,7 @@ def _booking(store, identity):
     row = store.db.execute(
         "SELECT t.*,COALESCE(c.counterparty,'') AS counterparty,COALESCE(c.description,'') AS description,"
         f'COALESCE({sql_transfer_predicate(context_alias="c")},0) AS is_transfer '
-        'FROM transactions t LEFT JOIN transaction_context c USING(account_id,external_id) '
+        'FROM active_transactions t LEFT JOIN transaction_context c USING(account_id,external_id) '
         'WHERE t.account_id=? AND t.external_id=?', identity).fetchone()
     if row is None:
         raise ValueError('unknown_booking')

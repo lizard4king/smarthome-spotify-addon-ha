@@ -7,6 +7,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+from .audit import import_operation
 from .classification import refresh_document_candidate, register_document
 from .core import Store, money
 from .document_intake import MAX_TEXT_CHARS, cache_document_source
@@ -301,6 +302,7 @@ def _preferred_record(group):
     ))
 
 
+@import_operation
 def import_inventory_snapshot(store, inventory_directory, *, booking_driven=False, max_days=45):
     """Import validated invoice candidates; each candidate is independently resumable."""
     if type(booking_driven) is not bool:

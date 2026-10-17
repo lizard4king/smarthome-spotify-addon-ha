@@ -71,7 +71,7 @@ def _ledger_fingerprint(store, account_id, period_start, period_end):
 
     records = []
     for row in store.db.execute(
-            'SELECT * FROM transactions WHERE account_id=? AND date>=? AND date<=? '
+            'SELECT * FROM active_transactions WHERE account_id=? AND date>=? AND date<=? '
             'ORDER BY external_id', (account_id, period_start, period_end)):
         key = (row['account_id'], row['external_id'])
         records.append({'transaction': dict(row), 'dependencies': _dependent_state(store, key),
@@ -82,7 +82,7 @@ def _ledger_fingerprint(store, account_id, period_start, period_end):
 
 def _ledger_rows(store, account_id, period_start, period_end):
     return store.db.execute(
-        'SELECT date,amount,currency FROM transactions WHERE account_id=? AND date>=? AND date<=?',
+        'SELECT date,amount,currency FROM active_transactions WHERE account_id=? AND date>=? AND date<=?',
         (account_id, period_start, period_end)).fetchall()
 
 
@@ -145,7 +145,7 @@ def adopt_monthly_archive(store, path, account_id, confirmed_source_account, *, 
             context.prec = 40
             opening = money(account['opening'])
             for row in store.db.execute(
-                    'SELECT amount FROM transactions WHERE account_id=? AND date<?', (account_id, start)):
+                    'SELECT amount FROM active_transactions WHERE account_id=? AND date<?', (account_id, start)):
                 opening += money(row['amount'])
             ledger_rows = _ledger_rows(store, account_id, start, end)
             closing = opening + sum((money(row['amount']) for row in ledger_rows), Decimal('0'))

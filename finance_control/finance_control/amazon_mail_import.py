@@ -13,6 +13,7 @@ from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr, parsedate_to_datetime
 
+from .audit import import_operation
 from .classification import (
     confirm_document,
     link_document,
@@ -183,7 +184,7 @@ def _transaction_candidates(store, record):
     start = record['date']
     end = (date.fromisoformat(start) + timedelta(days=7)).isoformat()
     return [dict(row) for row in store.db.execute(
-        "SELECT t.account_id,t.external_id FROM transactions t LEFT JOIN transaction_context c ON c.account_id=t.account_id AND c.external_id=t.external_id WHERE t.date BETWEEN ? AND ? AND t.amount=? AND lower(COALESCE(c.counterparty,'') || ' ' || COALESCE(c.description,'')) LIKE '%amazon%' AND NOT EXISTS (SELECT 1 FROM classification_document_links l JOIN classification_documents d ON d.id=l.document_id WHERE l.account_id=t.account_id AND l.external_id=t.external_id AND d.kind='invoice')",
+        "SELECT t.account_id,t.external_id FROM active_transactions t LEFT JOIN transaction_context c ON c.account_id=t.account_id AND c.external_id=t.external_id WHERE t.date BETWEEN ? AND ? AND t.amount=? AND lower(COALESCE(c.counterparty,'') || ' ' || COALESCE(c.description,'')) LIKE '%amazon%' AND NOT EXISTS (SELECT 1 FROM classification_document_links l JOIN classification_documents d ON d.id=l.document_id WHERE l.account_id=t.account_id AND l.external_id=t.external_id AND d.kind='invoice')",
         (start, end, '-' + record['amount']))]
 
 
@@ -216,6 +217,7 @@ def _coverage_report(coverage):
     }
 
 
+@import_operation
 def import_amazon_orders(store, database, mail_database, *, from_date='2026-01-01'):
     """Import order evidence and auto-link only bidirectionally unique exact matches."""
     since = date.fromisoformat(from_date) if isinstance(from_date, str) else from_date

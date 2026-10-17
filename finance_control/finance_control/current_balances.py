@@ -1,6 +1,8 @@
 """Latest recorded bank or reconciled statement balance per account."""
 
 from datetime import date
+from hashlib import sha256
+import json
 from decimal import Decimal
 
 from .core import money
@@ -47,7 +49,7 @@ def summarize(account_rows, balances):
             for _, group in sorted(totals.items())]
 
 
-def _candidate(account_id, currency, amount, booked_on, retrieved_at, source):
+def _candidate(account_id, currency, amount, booked_on, retrieved_at, source, reference):
     try:
         if (type(booked_on) is not str or date.fromisoformat(booked_on).isoformat() != booked_on
                 or type(currency) is not str or not currency):
@@ -57,15 +59,18 @@ def _candidate(account_id, currency, amount, booked_on, retrieved_at, source):
         return None
     return (account_id, {'amount': amount, 'currency': currency,
                          'booked_on': booked_on, 'retrieved_at': retrieved_at,
-                         'source': source})
+                         'source': source, 'control_reference': reference})
 
 
-def latest_by_account(store, account_rows, *, as_of=None):
+def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False):
     """Use recorded controls only, optionally bounded by an inclusive ISO date.
 
     Without ``as_of`` the latest recorded control is returned regardless of the
     reporting month. The bound applies before selecting the latest candidate,
-    so an older eligible statement remains available behind a future balance.
+    so earlier bank observations and statements remain available behind a future
+    balance. ``include_evidence`` adds stable control references and all conflicting
+    highest-ranked controls. Conflicting amounts are ambiguous even without this
+    option; no amount is selected by query order.
     """
     if as_of is not None:
         try:
@@ -82,19 +87,30 @@ def latest_by_account(store, account_rows, *, as_of=None):
 
     # Explicit bank balances are accepted only while their original binding
     # still points at the same account.
-    for row in store.db.execute(
-            'SELECT b.account_id,b.amount,b.currency,b.booked_on,b.retrieved_at '
-            'FROM bank_account_balances b JOIN bank_source_accounts s '
-            'ON s.source_key=b.source_key AND s.account_id=b.account_id '
-            f'WHERE b.account_id IN ({placeholders})'
-            + (' AND b.booked_on<=?' if as_of is not None else ''), parameters):
-        candidates.append(_candidate(row['account_id'], row['currency'], row['amount'],
-                                     row['booked_on'], row['retrieved_at'], 'bank'))
+    for table, reference in [('bank_balance_observations', "'bank_observation:' || b.id"),
+                             ('bank_account_balances', "'bank_current:' || b.account_id")]:
+        # Read the current table too for legacy/raw fixtures, except an exact
+        # observation already represented by the immutable history.
+        legacy_only = (" AND NOT EXISTS (SELECT 1 FROM bank_balance_observations h "
+                       "WHERE h.account_id=b.account_id AND h.source_key=b.source_key "
+                       "AND h.amount=b.amount AND h.currency=b.currency "
+                       "AND h.booked_on=b.booked_on AND h.retrieved_at=b.retrieved_at)"
+                       if table == 'bank_account_balances' else '')
+        for row in store.db.execute(
+                'SELECT b.account_id,b.amount,b.currency,b.booked_on,b.retrieved_at,'
+                + reference + ' AS control_reference '
+                f'FROM {table} b JOIN bank_source_accounts s '
+                'ON s.source_key=b.source_key AND s.account_id=b.account_id '
+                f'WHERE b.account_id IN ({placeholders})' + legacy_only
+                + (' AND b.booked_on<=?' if as_of is not None else ''), parameters):
+            candidates.append(_candidate(row['account_id'], row['currency'], row['amount'],
+                                         row['booked_on'], row['retrieved_at'], 'bank',
+                                         row['control_reference']))
     # Additional balance-only confirmations never grant a transaction import.
     # Revalidate current ownership, registration, target metadata and existing
     # source bindings before exposing immutable observations as current balances.
     for row in store.db.execute(
-            'SELECT e.account_id,e.amount,e.currency,e.booked_on,e.retrieved_at,'
+            'SELECT e.id,e.account_id,e.amount,e.currency,e.booked_on,e.retrieved_at,'
             'e.bank_id,a.kind,a.institution '
             'FROM server_bank_balance_evidence e '
             'JOIN server_bank_balance_bindings b ON b.connection_id=e.connection_id '
@@ -114,46 +130,60 @@ def latest_by_account(store, account_rows, *, as_of=None):
             + (' AND e.booked_on<=?' if as_of is not None else ''), parameters):
         if target_compatible(row, row['bank_id']):
             candidates.append(_candidate(row['account_id'], row['currency'], row['amount'],
-                                         row['booked_on'], row['retrieved_at'], 'bank'))
+                                         row['booked_on'], row['retrieved_at'], 'bank',
+                                         f"balance_evidence:{row['id']}"))
     for row in store.db.execute(
-            'SELECT p.account_id,p.closing_balance,p.currency,p.as_of '
+            'SELECT p.period_key,p.account_id,p.closing_balance,p.currency,p.as_of '
             'FROM ing_period_imports p JOIN bank_source_accounts s '
             'ON s.source_key=p.source_key AND s.account_id=p.account_id '
             f'WHERE p.account_id IN ({placeholders})'
             + (' AND p.as_of<=?' if as_of is not None else ''), parameters):
         candidates.append(_candidate(row['account_id'], row['currency'],
-                                     row['closing_balance'], row['as_of'], None, 'statement'))
+                                     row['closing_balance'], row['as_of'], None, 'statement',
+                                     f"period_import:{row['period_key']}"))
     for row in store.db.execute(
-            'SELECT m.account_id,m.closing_balance,a.currency,m.period_end '
+            'SELECT m.period_start,m.account_id,m.closing_balance,a.currency,m.period_end '
             'FROM bank_monthly_adoptions m JOIN bank_source_accounts s '
             'ON s.source_key=m.source_key AND s.account_id=m.account_id '
             'JOIN accounts a ON a.id=m.account_id '
             f'WHERE m.account_id IN ({placeholders})'
             + (' AND m.period_end<=?' if as_of is not None else ''), parameters):
         candidates.append(_candidate(row['account_id'], row['currency'],
-                                     row['closing_balance'], row['period_end'], None, 'statement'))
+                                     row['closing_balance'], row['period_end'], None, 'statement',
+                                     f"adoption:{row['account_id']}:{row['period_start']}"))
     for row in store.db.execute(
-            'SELECT i.account_id,i.closing_balance,a.currency,i.period_end '
+            'SELECT i.statement_key,i.account_id,i.closing_balance,a.currency,i.period_end '
             'FROM bank_statement_imports i JOIN bank_statement_account_bindings b '
             'ON b.account_id=i.account_id JOIN accounts a ON a.id=i.account_id '
             f'WHERE i.account_id IN ({placeholders})'
             + (' AND i.period_end<=?' if as_of is not None else ''), parameters):
         candidates.append(_candidate(row['account_id'], row['currency'],
-                                     row['closing_balance'], row['period_end'], None, 'statement'))
+                                     row['closing_balance'], row['period_end'], None, 'statement',
+                                     f"statement_import:{row['statement_key']}"))
 
     result = {}
+    by_account = {}
     for candidate in candidates:
-        if candidate is None:
-            continue
-        account_id, balance = candidate
-        if balance['currency'] != wanted[account_id]:
-            continue
-        previous = result.get(account_id)
-        if (previous is None or (balance['booked_on'], balance['source'] == 'bank',
-                                 balance['retrieved_at'] or '')
-                > (previous['booked_on'], previous['source'] == 'bank',
-                   previous['retrieved_at'] or '')):
-            result[account_id] = balance
+        if candidate is not None and candidate[1]['currency'] == wanted[candidate[0]]:
+            by_account.setdefault(candidate[0], []).append(candidate[1])
+    for account_id, values in by_account.items():
+        def rank(value):
+            return (value['booked_on'], value['source'] == 'bank', value['retrieved_at'] or '')
+        highest = max(map(rank, values))
+        latest = sorted((value for value in values if rank(value) == highest),
+                        key=lambda value: value['control_reference'])
+        selected = dict(latest[0])
+        if len({value['amount'] for value in latest}) > 1:
+            selected.update(amount=None, status='ambiguous', warning='conflicting_controls')
+            selected['conflicting_controls'] = latest
+            # Bind the public reference to every conflicting fact, not only the
+            # arbitrary first candidate, so confirmation tokens detect changes.
+            facts = [{key: value[key] for key in (
+                'control_reference', 'amount', 'currency', 'booked_on', 'retrieved_at')}
+                for value in latest]
+            encoded = json.dumps(facts, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            selected['control_reference'] = 'conflicting:' + sha256(encoded).hexdigest()
+        result[account_id] = selected
 
     # File evidence is a fallback only. Any qualified bank or bound statement
     # candidate above retains the existing source/date priority.
@@ -163,8 +193,10 @@ def latest_by_account(store, account_rows, *, as_of=None):
         placeholders = ','.join('?' for _ in ids)
         file_parameters = (*ids, as_of) if as_of is not None else tuple(ids)
         file_rows = store.db.execute(
-            'SELECT m.account_id,m.balance_amount,m.currency,m.booked_on '
-            'FROM finanzguru_row_metadata m JOIN transactions t '
+            'SELECT m.account_id,m.balance_amount,m.currency,m.booked_on,'
+            'm.external_id,m.source_sha256,m.source_account,m.source_reference,'
+            't.amount AS transaction_amount '
+            'FROM finanzguru_row_metadata m JOIN active_transactions t '
             'ON t.account_id=m.account_id AND t.external_id=m.external_id '
             'AND t.date=m.booked_on AND t.currency=m.currency '
             'WHERE m.balance_amount IS NOT NULL '
@@ -174,8 +206,15 @@ def latest_by_account(store, account_rows, *, as_of=None):
         for row in file_rows:
             if row['currency'] != wanted[row['account_id']]:
                 continue
+            # Bind the source row's compound primary key and all facts used
+            # for comparison/day-end proof, including the matched ledger posting.
+            facts = {key: row[key] for key in (
+                'account_id', 'external_id', 'source_sha256', 'source_account',
+                'source_reference', 'balance_amount', 'booked_on', 'currency', 'transaction_amount')}
+            encoded = json.dumps(facts, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            row_reference = 'finanzguru_row:' + sha256(encoded).hexdigest()
             candidate = _candidate(row['account_id'], row['currency'], row['balance_amount'],
-                                   row['booked_on'], None, 'finanzguru_file')
+                                   row['booked_on'], None, 'finanzguru_file', row_reference)
             if candidate is not None:
                 by_account.setdefault(candidate[0], []).append(candidate[1])
         for account_id, values in by_account.items():
@@ -193,5 +232,17 @@ def latest_by_account(store, account_rows, *, as_of=None):
                     'warning': 'conflicting_finanzguru_balances_on_same_date',
                 }
             else:
-                result[account_id] = latest[0]
+                result[account_id] = dict(latest[0])
+            file_facts = {
+                'rows': sorted(value['control_reference'] for value in latest),
+                'amount': result[account_id]['amount'],
+                'day_end_proven': result[account_id].get('day_end_proven', False),
+                'status': result[account_id].get('status'),
+            }
+            encoded = json.dumps(file_facts, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            result[account_id]['control_reference'] = 'finanzguru_file:' + sha256(encoded).hexdigest()
+    if not include_evidence:
+        for value in result.values():
+            value.pop('control_reference', None)
+            value.pop('conflicting_controls', None)
     return result

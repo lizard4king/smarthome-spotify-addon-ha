@@ -2,6 +2,8 @@
 
 from datetime import UTC, date, datetime
 
+from .audit import actor_for
+
 
 def visible_on(account, as_of):
     """A closed account remains visible strictly before its closing date."""
@@ -39,7 +41,7 @@ def set_closed_on(store, account_id, closed_on, revision):
             if closed_on < current['opening_date']:
                 raise ValueError('closing_before_opening')
             last_booking = store.db.execute(
-                'SELECT MAX(date) FROM transactions WHERE account_id=?',
+                'SELECT MAX(date) FROM active_transactions WHERE account_id=?',
                 (account_id,)).fetchone()[0]
             if last_booking is not None and last_booking > closed_on:
                 raise ValueError('closing_before_last_booking')
@@ -52,9 +54,9 @@ def set_closed_on(store, account_id, closed_on, revision):
             raise ValueError('stale_lifecycle_revision')
         store.db.execute(
             'INSERT INTO account_lifecycle_audit '
-            '(account_id,revision,previous_closed_on,closed_on,changed_at) '
-            'VALUES (?,?,?,?,?)',
+            '(account_id,revision,previous_closed_on,closed_on,changed_at,actor) '
+            'VALUES (?,?,?,?,?,?)',
             (account_id, next_revision, current['closed_on'], closed_on,
-             datetime.now(UTC).isoformat()))
+             datetime.now(UTC).isoformat(), actor_for(store)))
     return {'id': account_id, 'closed_on': closed_on,
             'lifecycle_revision': next_revision}

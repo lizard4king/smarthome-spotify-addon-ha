@@ -161,7 +161,7 @@ def _dates(start, end, day, interval, lower, upper):
 
 def _linked(store, document_id, cutoff, *, full_only=True, is_rejected):
     return [dict(row) for row in store.db.execute(
-        'SELECT t.*,l.allocated_amount,l.allocation_type FROM transactions t '
+        'SELECT t.*,l.allocated_amount,l.allocation_type FROM active_transactions t '
         'LEFT JOIN transaction_context c USING(account_id,external_id) '
         'JOIN classification_document_links l USING(account_id,external_id) '
         'JOIN accounts a ON a.id=t.account_id AND a.currency=t.currency '
@@ -302,7 +302,7 @@ def view(store, data):
     matching_upper = (date.fromisoformat(upper)+timedelta(days=min(7, date.max.toordinal()-date.fromisoformat(upper).toordinal()))).isoformat()
     bookings = [dict(row) for row in store.db.execute(
         'SELECT t.*,COALESCE(c.counterparty,\'\') AS counterparty,COALESCE(c.description,\'\') AS description '
-        'FROM transactions t LEFT JOIN transaction_context c USING(account_id,external_id) WHERE t.date>=? AND t.date<=? '
+        'FROM active_transactions t LEFT JOIN transaction_context c USING(account_id,external_id) WHERE t.date>=? AND t.date<=? '
         f'AND NOT COALESCE({sql_transfer_predicate(context_alias="c")},0)',
         (matching_lower, cutoff))]
     events = []
@@ -409,7 +409,7 @@ def view(store, data):
         current = projected = None
         if recorded and recorded.get('status') != 'ambiguous' and recorded.get('amount') is not None:
             current = money(recorded['amount']) + sum((money(r['amount']) for r in store.db.execute(
-                'SELECT amount FROM transactions WHERE account_id=? AND currency=? AND date>? AND date<=?',
+                'SELECT amount FROM active_transactions WHERE account_id=? AND currency=? AND date>? AND date<=?',
                 (aid, account['currency'], recorded['booked_on'], cutoff))), Decimal('0'))
             projected = current
             points.append({'date': cutoff, 'amount': format(current, '.2f')})

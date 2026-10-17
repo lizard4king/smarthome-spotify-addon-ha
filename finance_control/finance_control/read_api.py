@@ -61,7 +61,7 @@ class FinanceReadApi:
                     balance_status = 'unavailable'
                 else:
                     transactions = store.db.execute(
-                        'SELECT amount FROM transactions WHERE account_id=? AND date<=?',
+                        'SELECT amount FROM active_transactions WHERE account_id=? AND date<=?',
                         (row['id'], cutoff))
                     balance = _amount(money(row['opening']) + sum(
                         (money(tx['amount']) for tx in transactions), Decimal('0.00')))

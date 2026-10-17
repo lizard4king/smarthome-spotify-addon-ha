@@ -1,56 +1,56 @@
 /* Account and booking workspace. The same surfaces are used on every screen. */
 :is(#dashboard,#category-outflows)[hidden]{display:none!important}
-:is(#dashboard,#category-outflows){padding:0;margin:0;border:0;min-width:0;background:var(--fc-bg,#f4f6fa)}
-.fd-root{--fd-ink:var(--fc-text,#172a37);--fd-muted:var(--fc-muted,#61717e);--fd-border:var(--fc-border,#dde5eb);--fd-accent:var(--fc-accent,#007f75);--fd-soft:#e9f5f2;color:var(--fd-ink);min-width:0;padding:24px;line-height:1.5}
+:is(#dashboard,#category-outflows){padding:0;margin:0;border:0;min-width:0;background:var(--fc-bg)}
+.fd-root{--fd-ink:var(--fc-text);--fd-muted:var(--fc-muted);--fd-border:var(--fc-border);--fd-accent:var(--fc-accent);--fd-soft:var(--fc-accent-soft);color:var(--fd-ink);min-width:0;padding:24px;line-height:1.5}
 .fd-root *,.fd-root *::before,.fd-root *::after{box-sizing:border-box}
 .fd-root :is(h1,h2,h3,p){margin:0}
 .fd-root :is(button,input,select,summary){font:inherit}
 .fd-root :is(button,summary){cursor:pointer;min-height:44px}
-.fd-root :is(button,input,select){border:1px solid var(--fd-border);border-radius:12px;background:var(--fc-surface,#fff);color:var(--fd-ink);padding:10px 12px;min-width:0;min-height:44px}
+.fd-root :is(button,input,select){border:1px solid var(--fd-border);border-radius:12px;background:var(--fc-surface);color:var(--fd-ink);padding:10px 12px;min-width:0;min-height:44px}
 .fd-root :is(button,summary,input,select):focus-visible{outline:3px solid var(--fd-accent);outline-offset:2px}
 .fd-root button:hover{background:var(--fd-soft)}
 .fd-hero{display:flex;justify-content:space-between;gap:24px;align-items:start;background:transparent!important;padding:0!important;border:0!important;margin-bottom:24px}
-.fd-hero{color:var(--fd-ink)}.fd-hero h1{font-size:clamp(1.6rem,3vw,2.2rem);color:var(--fd-ink)}.fd-hero .fd-hero-sub{color:var(--fd-muted)}
-.fd-kicker{font-size:.72rem;font-weight:700;letter-spacing:.1em;color:var(--fd-accent)}
+.fd-hero{color:var(--fd-ink)}.fd-hero p{color:var(--fd-muted)}.fd-hero h1{font-size:clamp(1.6rem,3vw,2.2rem);color:var(--fd-ink)}.fd-hero .fd-hero-sub{color:var(--fd-muted)}
+.fd-kicker{font-size:.8125rem;font-weight:700;letter-spacing:.1em;color:var(--fd-accent)}
 .fd-hero-sub{font-weight:600;margin-top:6px!important}
 .fd-data-basis,.fd-disclosure,.fd-category-account{font-size:.85rem;color:var(--fd-muted);margin-top:6px!important}
 .fd-controls{display:grid;gap:8px;min-width:0}
 .fd-cutoff-form{display:flex;gap:8px;align-items:end;margin:0}
-.fd-root label{display:grid;gap:5px;font-size:.8rem;color:var(--fd-muted);margin:0;min-width:0}
+.fd-root label{display:grid;gap:5px;font-size:.8125rem;color:var(--fd-muted);margin:0;min-width:0}
 .fd-root label input,.fd-root label select{width:100%;margin:0;font-size:1rem;color:var(--fd-ink)}
 .fd-view-options summary{font-size:.85rem;padding:10px 0;color:var(--fd-muted)}
 .fd-switch{display:flex;gap:8px}.fd-switch button[aria-pressed=true]{background:var(--fd-soft);border-color:var(--fd-accent)}
 .fd-layout{display:grid;grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:24px;align-items:start}
-.fd-sidebar{position:sticky;top:16px;min-width:0;background:var(--fc-surface,#fff);border:1px solid var(--fd-border);border-radius:var(--fc-radius,20px);overflow:hidden}
+.fd-sidebar{position:sticky;top:16px;min-width:0;background:var(--fc-surface);border:1px solid var(--fd-border);border-radius:var(--fc-radius);overflow:hidden}
 .fd-side-head{display:flex;align-items:center;justify-content:space-between;padding:16px;gap:12px;list-style:none}.fd-side-head h2{font-size:1rem}.fd-side-head span{color:var(--fd-muted)}
 .fd-account-list{display:grid;gap:0;padding:0 8px 8px}.fd-account{min-width:0;border-top:1px solid var(--fd-border);border-radius:12px}
 .fd-account.is-selected{background:var(--fd-soft)}
 .fd-account-summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;padding:14px 8px;list-style:none;min-width:0}
 .fd-account-summary::-webkit-details-marker{display:none}
 .fd-account-name{display:flex;align-items:center;gap:9px;font-size:1rem;font-weight:650;min-width:0;overflow-wrap:anywhere;grid-column:1/-1}
-.fd-bank-logo{width:24px;height:24px;object-fit:contain;flex-shrink:0}
-.fd-account-kind,.fd-account-last-booking{font-size:.75rem;color:var(--fd-muted);grid-column:1/-1;overflow-wrap:anywhere}
-.fd-account-balance{grid-column:1/-1;text-align:right;display:grid;gap:2px;min-width:0}.fd-account-amount{font-size:1.05rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.fd-account-balance-date{font-size:.75rem;color:var(--fd-muted)}
-.fd-account-body{padding:0 10px 12px;min-width:0}.fd-account-freshness,.fd-account-note{font-size:.8rem;color:var(--fd-muted);margin-bottom:8px!important}
-.fd-metrics{display:grid;gap:6px}.fd-metric{display:flex;justify-content:space-between;gap:8px;padding:8px;background:var(--fc-bg,#f4f6fa);border-radius:8px;font-size:.8rem}.fd-metric strong{white-space:nowrap;font-variant-numeric:tabular-nums}
-.fd-owner{padding:0!important;margin:0!important;border:0!important;background:transparent!important}.fd-owner-title{font-size:.8rem;color:var(--fd-muted);padding:12px 8px}
-.fd-main{display:grid;min-width:0;gap:16px}.fd-root :is(.fd-bookings,.fd-categories){margin:0;padding:20px;border:1px solid var(--fd-border);border-radius:var(--fc-radius,20px);background:var(--fc-surface,#fff);min-width:0}
-.fd-selected-balance{display:grid;gap:3px;padding-bottom:16px;border-bottom:1px solid var(--fd-border)}.fd-selected-balance>span,.fd-selected-balance>small{color:var(--fd-muted);font-size:.8rem}.fd-current-balance{font-size:1.8rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.fd-bank-logo{width:24px;height:24px;object-fit:contain;flex-shrink:0;background:var(--fc-logo-surface);border-radius:4px}
+.fd-account-kind,.fd-account-last-booking{font-size:.8125rem;color:var(--fd-muted);grid-column:1/-1;overflow-wrap:anywhere}
+.fd-account-balance{grid-column:1/-1;text-align:right;display:grid;gap:2px;min-width:0}.fd-account-amount{font-size:1.05rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.fd-account-balance-date{font-size:.8125rem;color:var(--fd-muted)}
+.fd-account-body{padding:0 10px 12px;min-width:0}.fd-account-freshness,.fd-account-note{font-size:.8125rem;color:var(--fd-muted);margin-bottom:8px!important}
+.fd-metrics{display:grid;gap:6px}.fd-metric{display:flex;justify-content:space-between;gap:8px;padding:8px;background:var(--fc-bg);border-radius:8px;font-size:.8125rem}.fd-metric strong{white-space:nowrap;font-variant-numeric:tabular-nums}
+.fd-owner{padding:0!important;margin:0!important;border:0!important;background:transparent!important}.fd-owner-title{font-size:.8125rem;color:var(--fd-muted);padding:12px 8px}
+.fd-main{display:grid;min-width:0;gap:16px}.fd-root :is(.fd-bookings,.fd-categories){margin:0;padding:20px;border:1px solid var(--fd-border);border-radius:var(--fc-radius);background:var(--fc-surface);min-width:0}
+.fd-selected-balance{display:grid;gap:3px;padding-bottom:16px;border-bottom:1px solid var(--fd-border)}.fd-selected-balance>span,.fd-selected-balance>small{color:var(--fd-muted);font-size:.8125rem}.fd-current-balance{font-size:1.8rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .fd-bookings-head{margin:16px 0 12px}.fd-bookings-head h2,.fd-categories h2{font-size:1.2rem}
 .fd-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}.fd-search-label{grid-column:1/-1}.fd-filter-reset{grid-column:1/-1;justify-self:start;font-size:.85rem!important}
 .fd-result-count{color:var(--fd-muted);font-size:.85rem;margin:12px 0!important}.fd-empty{padding:18px 0;color:var(--fd-muted)}
-.fd-table-scroll{min-width:0;overflow-x:auto}.fd-booking-table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0}.fd-booking-table caption{padding:0 0 12px;text-align:left;font-size:.8rem;color:var(--fd-muted)}
+.fd-table-scroll{min-width:0;overflow-x:auto}.fd-booking-table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0}.fd-booking-table caption{padding:0 0 12px;text-align:left;font-size:.8125rem;color:var(--fd-muted)}
 .fd-booking-table th,.fd-booking-table td{padding:12px 7px;text-align:left;vertical-align:top;border-bottom:1px solid var(--fd-border);overflow-wrap:anywhere}
-.fd-booking-table thead th{font-size:.75rem;color:var(--fd-muted)}.fd-booking-table thead th:nth-child(1){width:13%}.fd-booking-table thead th:nth-child(2){width:22%}.fd-booking-table thead th:nth-child(3){width:20%}.fd-booking-table thead th:nth-child(4){width:17%}.fd-booking-table thead th:nth-child(5){width:17%}.fd-booking-table thead th:nth-child(6){width:11%}
-.fd-booking-day th{padding:18px 7px 8px;background:var(--fc-bg,#f4f6fa);font-size:.85rem}.fd-booking-date{font-size:.8rem;color:var(--fd-muted)}.fd-booking-counterparty{font-size:1rem;font-weight:650}.fd-booking-description{font-size:.8rem;color:var(--fd-muted)}.fd-booking-description>span{display:block}.fd-booking-category{font-size:.8rem}.fd-booking-amount{font-size:.95rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:normal;text-align:right!important}.fd-booking-toggle{font-size:.8rem!important;padding:8px!important;width:100%}
-.fd-booking-detail{display:grid;gap:10px;padding:14px;border-radius:12px;background:var(--fc-bg,#f4f6fa)}.fd-booking-detail>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px}.fd-booking-detail span{font-size:.8rem;color:var(--fd-muted)}.fd-booking-detail p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.9rem;min-width:0}.fd-booking-components{display:grid;gap:5px}.fd-booking-component{display:flex;justify-content:space-between;gap:10px}.fd-booking-cash-split,.fd-booking-cash-review{margin-top:6px;font-size:.8rem}
+.fd-booking-table thead th{font-size:.8125rem;color:var(--fd-muted)}.fd-booking-table thead th:nth-child(1){width:13%}.fd-booking-table thead th:nth-child(2){width:22%}.fd-booking-table thead th:nth-child(3){width:20%}.fd-booking-table thead th:nth-child(4){width:17%}.fd-booking-table thead th:nth-child(5){width:17%}.fd-booking-table thead th:nth-child(6){width:11%}
+.fd-booking-day th{padding:18px 7px 8px;background:var(--fc-bg);font-size:.85rem}.fd-booking-date{font-size:.8125rem;color:var(--fd-muted)}.fd-booking-counterparty{font-size:1rem;font-weight:650}.fd-booking-description{font-size:.8125rem;color:var(--fd-muted)}.fd-booking-description>span{display:block}.fd-booking-category{font-size:.8125rem}.fd-booking-amount{font-size:.95rem;font-weight:700;font-variant-numeric:tabular-nums;white-space:normal;text-align:right!important}.fd-booking-toggle{font-size:.8125rem!important;padding:8px!important;width:100%}
+.fd-booking-detail{display:grid;gap:10px;padding:14px;border-radius:12px;background:var(--fc-bg)}.fd-booking-detail>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px}.fd-booking-detail span{font-size:.8125rem;color:var(--fd-muted)}.fd-booking-detail p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.9rem;min-width:0}.fd-booking-components{display:grid;gap:5px}.fd-booking-component{display:flex;justify-content:space-between;gap:10px}.fd-booking-cash-split,.fd-booking-cash-review{margin-top:6px;font-size:.8125rem}
 :is(#dashboard,#category-outflows) .fd-icon{width:20px;height:20px;min-width:20px;max-width:20px;flex:0 0 20px;margin:0;padding:0;border:0;background:transparent;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.fd-category-name{display:flex;align-items:center;gap:7px;min-width:0;overflow-wrap:anywhere}
 .fd-category-list{display:grid;gap:8px;margin-top:16px}.fd-category-branch{min-width:0}.fd-root .fd-category{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;padding:12px;font-size:.95rem}.fd-category strong{font-variant-numeric:tabular-nums;white-space:nowrap}.fd-category[aria-pressed=true]{border-color:var(--fd-accent);background:var(--fd-soft)}.fd-category-children{margin:6px 0 6px 16px;display:grid;gap:6px;border-left:2px solid var(--fd-border);padding-left:8px}.fd-category-children:empty{display:none}.fd-category-drilldown{border:0!important;padding:18px 0 0!important;margin:0!important;background:transparent!important}.fd-category-drilldown h3{font-size:1rem}
-.fd-root .positive{color:var(--fc-positive,#167347)}.fd-root .negative{color:var(--fc-negative,#b53c4b)}.fd-root .unknown{color:var(--fd-muted)}.fd-footer{font-size:.85rem;color:var(--fd-muted);margin-top:20px!important}.fd-footer a{color:var(--fd-accent)}
+.fd-root .positive{color:var(--fc-positive)}.fd-root .negative{color:var(--fc-negative)}.fd-root .unknown{color:var(--fd-muted)}.fd-footer{font-size:.85rem;color:var(--fd-muted);margin-top:20px!important}.fd-footer a{color:var(--fd-accent)}
 @media(max-width:1100px){.fd-layout{grid-template-columns:minmax(240px,280px) minmax(0,1fr)}.fd-hero{flex-direction:column}.fd-root{padding:16px}.fd-booking-table thead th:nth-child(3){width:15%}}
 @media(max-width:850px){.fd-layout{grid-template-columns:1fr}.fd-sidebar{position:static}.fd-account-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.fd-owner{grid-column:1/-1}.fd-account-summary{padding:12px}.fd-hero{margin-bottom:16px}.fd-controls{width:100%}.fd-cutoff-form label{flex:1}}
 @media(max-width:700px){
- .fd-root{padding:12px 0 24px}.fd-root :is(.fd-bookings,.fd-categories){padding:16px 12px}.fd-hero{padding:0 12px!important}.fd-account-list{grid-template-columns:1fr}.fd-account-summary{grid-template-columns:minmax(0,1fr) minmax(105px,.8fr)}.fd-account-name{grid-column:1;grid-row:1}.fd-account-kind{grid-column:1;grid-row:2}.fd-account-last-booking{grid-column:1/-1;grid-row:3}.fd-account-balance{grid-column:2;grid-row:1/3;align-self:center}.fd-account-name{font-size:.95rem}.fd-account-amount{font-size:1rem}.fd-account-balance-date{font-size:.72rem}
+ .fd-root{padding:12px 0 24px}.fd-root :is(.fd-bookings,.fd-categories){padding:16px 12px}.fd-hero{padding:0 12px!important}.fd-account-list{grid-template-columns:1fr}.fd-account-summary{grid-template-columns:minmax(0,1fr) minmax(105px,.8fr)}.fd-account-name{grid-column:1;grid-row:1}.fd-account-kind{grid-column:1;grid-row:2}.fd-account-last-booking{grid-column:1/-1;grid-row:3}.fd-account-balance{grid-column:2;grid-row:1/3;align-self:center}.fd-account-name{font-size:.95rem}.fd-account-amount{font-size:1rem}.fd-account-balance-date{font-size:.8125rem}
  .fd-filters{grid-template-columns:1fr 1fr}.fd-filters label:nth-child(2){grid-column:1/-1}.fd-table-scroll{overflow:visible}.fd-booking-table,.fd-booking-table tbody{display:block;width:100%}.fd-booking-table thead{display:none}.fd-booking-table caption{display:block}.fd-booking-day{display:block;margin-top:16px}.fd-booking-day th{display:block;border:0;padding:8px;border-radius:8px}.fd-booking{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;padding:14px 0;border-bottom:1px solid var(--fd-border)}.fd-booking-table .fd-booking td{display:block;padding:0;border:0;min-width:0}.fd-booking-table .fd-booking-date{display:none}.fd-booking-counterparty{grid-column:1;grid-row:1;font-size:1rem;line-height:1.45}.fd-booking-amount{grid-column:2;grid-row:1;max-width:130px;font-size:1rem;line-height:1.45}.fd-booking-description{grid-column:1/-1;grid-row:2;line-height:1.4}.fd-booking-description>span:first-child{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.fd-booking-category{grid-column:1;grid-row:3;align-self:center;font-size:.85rem}.fd-booking-action{grid-column:2;grid-row:3}.fd-booking-toggle{font-size:.9rem!important;min-width:70px}.fd-booking-expanded:not([hidden]){display:block}.fd-booking-expanded>td{display:block;padding:10px 0;border:0}.fd-booking-detail>div{grid-template-columns:1fr;gap:2px}.fd-root .fd-category{font-size:.9rem;padding:10px}.fd-category-children{margin-left:8px;padding-left:6px}.fd-category strong{white-space:normal;text-align:right}.fd-category-name{align-items:start}.fd-selected-balance{padding-bottom:12px}
 }
 @media(prefers-reduced-motion:reduce){.fd-root *{scroll-behavior:auto!important}}
@@ -62,22 +62,22 @@
 /* Advanced filters are inline on desktop and a native modal bottom sheet on mobile. */
 .fd-filter-advanced{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;grid-column:1/-1}
 .fd-root .fd-filter-open{display:none}
-.fd-filter-dialog{border:1px solid var(--fd-border);border-radius:20px;background:var(--fc-surface,#fff);color:var(--fd-ink);padding:24px;max-width:calc(100vw - 24px);width:480px}
-.fd-filter-dialog::backdrop{background:rgb(23 42 55 / 45%)}
-.fd-filter-dialog h2{font-size:1.2rem;margin-bottom:20px}.fd-filter-dialog .fd-filter-advanced{grid-template-columns:1fr;gap:16px}.fd-root .fd-filter-apply{margin-top:24px;width:100%;background:var(--fd-accent);color:#fff}
+.fd-filter-dialog{border:1px solid var(--fd-border);border-radius:20px;background:var(--fc-surface);color:var(--fd-ink);padding:24px;max-width:calc(100vw - 24px);width:480px}
+.fd-filter-dialog::backdrop{background:color-mix(in srgb, var(--fc-text) 25%, transparent)}
+.fd-filter-dialog h2{font-size:1.2rem;margin-bottom:20px}.fd-filter-dialog .fd-filter-advanced{grid-template-columns:1fr;gap:16px}.fd-root .fd-filter-apply{margin-top:24px;width:100%;background:var(--fd-accent);color:var(--fc-on-accent)}
 @media(max-width:700px){
  .fd-root .fd-filter-open{display:block;grid-column:1;justify-self:start;min-width:88px}
- .fd-filters .fd-filter-reset{grid-column:2;grid-row:2;justify-self:end;font-size:.8rem!important;padding:10px}
+ .fd-filters .fd-filter-reset{grid-column:2;grid-row:2;justify-self:end;font-size:.8125rem!important;padding:10px}
  .fd-filters>.fd-filter-advanced{display:none}
  .fd-filter-dialog{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:100%;max-height:85dvh;overflow:auto;border-radius:24px 24px 0 0;padding:24px 20px max(24px,env(safe-area-inset-bottom))}
  .fd-filter-dialog .fd-filter-advanced{display:grid}
 }
 @media(max-width:700px){.fd-filter-dialog .fd-filter-reset{grid-column:1/-1;grid-row:auto;justify-self:start}}
 /* Finanzblick uses compact rows; Finanzguru groups separate account cards by person. */
-.fd-guru{--fd-soft:#e7f6f3;--fd-accent:#007f75}.fd-guru .fd-account-list{gap:12px}.fd-guru .fd-owner{display:grid;gap:8px}.fd-guru .fd-owner-title{padding:8px}.fd-guru .fd-account{border:1px solid var(--fd-border);background:var(--fc-surface,#fff);border-radius:16px}.fd-guru .fd-account.is-selected{border-color:var(--fd-accent);background:var(--fd-soft)}
-.fd-blick .fd-account-summary{grid-template-columns:minmax(0,1fr)}.fd-blick .fd-account-name{grid-column:1;grid-row:1}.fd-blick .fd-account-kind{grid-column:1;grid-row:2;font-size:.7rem}.fd-blick .fd-account-balance{grid-column:1;grid-row:3;text-align:left}.fd-account-last-booking{display:none}
-.fd-data-basis summary{min-height:44px;font-size:.8rem}.fd-data-basis p{max-width:52ch}.fd-controls>.fc-view-switch{order:-1}.fd-side-head{padding:10px 16px}.fd-account-summary{padding:10px 8px}.fd-guru .fd-account-summary{padding:12px}.fd-guru .fd-account-kind{font-size:.72rem}
-@media(max-width:700px){.fd-hero h1{font-size:1.5rem}.fd-hero{gap:12px}.fd-hero-sub{font-size:.85rem}.fd-controls{gap:10px}.fd-root .fc-view-switch button{flex:1;font-size:.85rem}.fd-account-kind{line-height:1.35}.fd-guru .fd-account-list{padding:0 10px 10px}.fd-guru .fd-owner-title{padding:4px}.fd-root .fd-footer{font-size:.8rem}}
+.fd-guru{--fd-soft:var(--fc-accent-soft);--fd-accent:var(--fc-accent)}.fd-guru .fd-account-list{gap:12px}.fd-guru .fd-owner{display:grid;gap:8px}.fd-guru .fd-owner-title{padding:8px}.fd-guru .fd-account{border:1px solid var(--fd-border);background:var(--fc-surface);border-radius:16px}.fd-guru .fd-account.is-selected{border-color:var(--fd-accent);background:var(--fd-soft)}
+.fd-blick .fd-account-summary{grid-template-columns:minmax(0,1fr)}.fd-blick .fd-account-name{grid-column:1;grid-row:1}.fd-blick .fd-account-kind{grid-column:1;grid-row:2;font-size:.8125rem}.fd-blick .fd-account-balance{grid-column:1;grid-row:3;text-align:left}.fd-account-last-booking{display:none}
+.fd-data-basis summary{min-height:44px;font-size:.8125rem}.fd-data-basis p{max-width:52ch}.fd-controls>.fc-view-switch{order:-1}.fd-side-head{padding:10px 16px}.fd-account-summary{padding:10px 8px}.fd-guru .fd-account-summary{padding:12px}.fd-guru .fd-account-kind{font-size:.8125rem}
+@media(max-width:700px){.fd-hero h1{font-size:1.5rem}.fd-hero{gap:12px}.fd-hero-sub{font-size:.85rem}.fd-controls{gap:10px}.fd-root .fc-view-switch button{flex:1;font-size:.85rem}.fd-account-kind{line-height:1.35}.fd-guru .fd-account-list{padding:0 10px 10px}.fd-guru .fd-owner-title{padding:4px}.fd-root .fd-footer{font-size:.8125rem}}
 /* Keep account names readable when the balance column would leave only a few letters per line. */
 @media(max-width:480px){
  .fd-root .fd-account-summary{grid-template-columns:minmax(0,1fr)}
@@ -100,21 +100,21 @@
 .fd-root .fd-forecast-toggle{width:22px;height:22px;min-height:22px;flex:0 0 22px;margin:0;accent-color:var(--fd-accent)}
 .fd-forecast-controls>label:has(.fd-forecast-until){flex:0 1 180px}
 .fd-root .fd-forecast-reload{font-size:.85rem}
-.fd-forecast-status{font-size:.8rem;color:var(--fd-muted);padding:10px 0;overflow-wrap:break-word}
-.fd-forecast-balance:not(:empty){padding:14px;border-radius:12px;border:1px solid #b8dcd5;background:var(--fd-soft);margin:0 0 12px;font-size:.85rem}
+.fd-forecast-status{font-size:.8125rem;color:var(--fd-muted);padding:10px 0;overflow-wrap:break-word}
+.fd-forecast-balance:not(:empty){padding:14px;border-radius:12px;border:1px solid var(--fc-border);background:var(--fd-soft);margin:0 0 12px;font-size:.85rem}
 .fd-forecast-balance>strong{display:block;margin-bottom:6px;font-size:1rem}
 .fd-forecast-balance>p+p{margin-top:4px!important}
-.fd-forecast-warning{color:#80510a;font-size:.8rem}
-.fd-forecast-row{background:#f1f8f7}
+.fd-forecast-warning{color:var(--fc-warning);font-size:.8125rem}
+.fd-forecast-row{background:var(--fc-surface-alt)}
 .fd-forecast-row .fd-forecast-name{font-weight:650}
-.fd-forecast-row .fd-forecast-status-label{color:#00665f;font-size:.8rem;font-weight:700}
-.fd-forecast-row .fd-forecast-origin,.fd-forecast-row .fd-forecast-date{font-size:.8rem;color:var(--fd-muted)}
+.fd-forecast-row .fd-forecast-status-label{color:var(--fc-accent);font-size:.8125rem;font-weight:700}
+.fd-forecast-row .fd-forecast-origin,.fd-forecast-row .fd-forecast-date{font-size:.8125rem;color:var(--fd-muted)}
 .fd-forecast-row :is(.fd-forecast-amount,.fd-forecast-running-balance),.fd-booking-table .fd-booking-balance{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap!important}
 .fd-forecast-amount{font-weight:700}
 .fd-booking-balance,.fd-forecast-running-balance{font-size:.85rem;color:var(--fd-muted)}
-.fd-booking-balance>small,.fd-forecast-running-balance>small{display:block;font-size:.7rem;font-weight:400}
+.fd-booking-balance>small,.fd-forecast-running-balance>small{display:block;font-size:.8125rem;font-weight:400}
 .fd-forecast-details summary{font-size:.85rem;padding:8px;white-space:nowrap}
-.fd-forecast-detail-body{padding:12px;background:var(--fc-surface,#fff);border:1px solid var(--fd-border);border-radius:12px;font-size:.85rem;overflow-wrap:break-word;min-width:0}
+.fd-forecast-detail-body{padding:12px;background:var(--fc-surface);border:1px solid var(--fd-border);border-radius:12px;font-size:.85rem;overflow-wrap:break-word;min-width:0}
 .fd-forecast-detail-body p+p{margin-top:8px!important}
 .fd-forecast-detail-body a{display:inline-flex;align-items:center;min-height:44px;color:var(--fd-accent)}
 
@@ -129,30 +129,30 @@
 .fd-guru .fd-booking-table thead th:is(:nth-child(5),:nth-child(6)){text-align:right}
 .fd-guru .fd-booking-table,.fd-guru .fd-booking-table tbody{display:block;width:100%}
 .fd-guru .fd-booking-day{display:block;margin-top:16px}
-.fd-guru .fd-booking-day th{display:block;padding:10px 12px;border:0;border-radius:8px;background:#edf4f3;font-size:.8rem;letter-spacing:.02em}
+.fd-guru .fd-booking-day th{display:block;padding:10px 12px;border:0;border-radius:8px;background:var(--fc-surface-alt);font-size:.8125rem;letter-spacing:.02em}
 .fd-guru :is(.fd-booking,.fd-forecast-row){display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,auto) minmax(110px,auto) 76px;gap:3px 16px;padding:16px 4px;border-bottom:1px solid var(--fd-border);align-items:center;min-width:0}
 .fd-guru .fd-booking-table :is(.fd-booking,.fd-forecast-row)>td{display:block;border:0;padding:0;min-width:0;overflow-wrap:normal;word-break:normal}
 .fd-guru .fd-booking-table :is(.fd-booking-date,.fd-forecast-date){display:none}
 .fd-guru .fd-booking-counterparty,.fd-guru .fd-forecast-name{grid-column:1;grid-row:1;font-size:.95rem;line-height:1.4}
 .fd-guru .fc-counterparty{display:flex;gap:12px;max-width:100%;align-items:center}
 .fd-guru :is(.fc-counterparty-logo,.fc-counterparty-pictogram,.fc-counterparty-initials){width:44px;height:44px;flex:0 0 44px;border-radius:14px}
-.fd-guru .fc-counterparty-pictogram{background:#e7f3f0;color:#007568;border-color:#d4e8e2}
+.fd-guru .fc-counterparty-pictogram{background:var(--fc-positive-bg);color:var(--fc-accent);border-color:var(--fc-border)}
 .fd-guru .fc-counterparty-pictogram .fd-icon{width:26px;height:26px;min-width:26px;max-width:26px;flex:0 0 26px}
 .fd-guru .fc-counterparty-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:normal}
 .fd-guru .fd-booking-table .fd-booking-description{display:none}
-.fd-guru .fd-booking-table .fd-booking-description:has(:is(.fd-booking-cash-split,.fd-booking-cash-review)){display:block;grid-column:1;grid-row:3;margin-left:56px;font-size:.8rem!important}
+.fd-guru .fd-booking-table .fd-booking-description:has(:is(.fd-booking-cash-split,.fd-booking-cash-review)){display:block;grid-column:1;grid-row:3;margin-left:56px;font-size:.8125rem!important}
 .fd-guru .fd-booking-description>span:first-child{display:none}
-.fd-guru .fd-booking-category{grid-column:1;grid-row:2;margin-left:56px;color:var(--fd-muted);font-size:.75rem}
+.fd-guru .fd-booking-category{grid-column:1;grid-row:2;margin-left:56px;color:var(--fd-muted);font-size:.8125rem}
 .fd-guru .fd-booking-category .fd-icon{display:none}
 .fd-guru :is(.fd-booking-amount,.fd-forecast-amount){grid-column:2;grid-row:1;text-align:right!important;font-size:1rem;white-space:nowrap!important;max-width:none}
 .fd-guru :is(.fd-booking-balance,.fd-forecast-running-balance){grid-column:3;grid-row:1;text-align:right!important}
 .fd-guru :is(.fd-booking-action,.fd-forecast-action){grid-column:4;grid-row:1}
-.fd-guru .fd-booking-toggle,.fd-guru .fd-forecast-details summary{font-size:.8rem!important;color:var(--fd-accent);background:transparent;border:0}
+.fd-guru .fd-booking-toggle,.fd-guru .fd-forecast-details summary{font-size:.8125rem!important;color:var(--fd-accent);background:transparent;border:0}
 .fd-guru .fd-booking-expanded:not([hidden]){display:block}
 .fd-guru .fd-booking-expanded>td{display:block;padding:8px 0 16px;border:0}
-.fd-guru .fd-forecast-row{margin-top:4px;padding:14px 12px;border-left:3px solid #229b8a;border-radius:0 10px 10px 0}
+.fd-guru .fd-forecast-row{margin-top:4px;padding:14px 12px;border-left:3px solid var(--fc-border);border-radius:0 10px 10px 0}
 .fd-guru .fd-forecast-status-label{grid-column:1;grid-row:2}
-.fd-guru .fd-forecast-origin{grid-column:1;grid-row:3;font-size:.75rem}
+.fd-guru .fd-forecast-origin{grid-column:1;grid-row:3;font-size:.8125rem}
 .fd-guru .fd-forecast-action:has(details[open]){grid-column:1/-1;grid-row:4}
 .fd-guru .fd-forecast-details[open]>summary{text-align:right}
 
@@ -161,8 +161,8 @@
  .fd-forecast-controls{gap:8px}
  .fd-forecast-controls>label:has(.fd-forecast-toggle){flex-basis:100%}
  .fd-forecast-controls>label:has(.fd-forecast-until){flex:1 1 140px}
- .fd-root .fd-forecast-reload{flex:1 1 140px;font-size:.8rem}
- .fd-forecast-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;padding:14px 10px;margin-top:6px;border-left:3px solid #229b8a;border-radius:0 8px 8px 0}
+ .fd-root .fd-forecast-reload{flex:1 1 140px;font-size:.8125rem}
+ .fd-forecast-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;padding:14px 10px;margin-top:6px;border-left:3px solid var(--fc-border);border-radius:0 8px 8px 0}
  .fd-booking-table .fd-forecast-row>td{display:block;border:0;padding:0;min-width:0;overflow-wrap:normal;word-break:normal}
  .fd-booking-table .fd-forecast-date{display:none}
  .fd-forecast-name{grid-column:1/-1;grid-row:1}
@@ -178,7 +178,7 @@
  .fd-guru .fd-booking-counterparty,.fd-guru .fd-forecast-name{grid-column:1/-1;grid-row:1}
  .fd-guru :is(.fd-booking-amount,.fd-forecast-amount){grid-column:2;grid-row:2;text-align:right!important}
  .fd-guru .fd-booking-category{grid-column:1;grid-row:2;margin-left:56px}
- .fd-guru :is(.fd-booking-balance,.fd-forecast-running-balance){grid-column:1/-1;grid-row:3;text-align:right!important;font-size:.75rem}
+ .fd-guru :is(.fd-booking-balance,.fd-forecast-running-balance){grid-column:1/-1;grid-row:3;text-align:right!important;font-size:.8125rem}
  .fd-guru .fd-booking-table .fd-booking-description:has(:is(.fd-booking-cash-split,.fd-booking-cash-review)){grid-column:1/-1;grid-row:4;margin-left:56px}
  .fd-guru :is(.fd-booking-action,.fd-forecast-action){grid-column:2;grid-row:5;justify-self:end}
  .fd-guru .fd-forecast-status-label{grid-column:1;grid-row:2}
@@ -203,15 +203,15 @@
 .fd-root .fd-account-select input{width:22px;height:22px;min-height:22px;flex:0 0 22px;margin:0;accent-color:var(--fd-accent)}
 .fd-account-selection-controls,.fd-timeline-navigation{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px}
 .fd-timeline-navigation{padding:8px 0}.fd-root .fd-timeline-navigation button,.fd-root .fd-timeline-more,.fd-account-selection-controls button{min-height:44px}
-.fd-selected-count{font-size:.85rem}.fd-row-account{display:block;margin-top:4px;color:var(--fd-muted);font-size:.75rem;font-weight:400;line-height:1.4;white-space:normal;overflow-wrap:break-word;word-break:normal}
+.fd-selected-count{font-size:.85rem}.fd-row-account{display:block;margin-top:4px;color:var(--fd-muted);font-size:.8125rem;font-weight:400;line-height:1.4;white-space:normal;overflow-wrap:break-word;word-break:normal}
 #dashboard .fd-table-scroll,.fd-guru #dashboard .fd-table-scroll{position:relative;max-height:65vh;min-height:160px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 #dashboard .fd-table-scroll:focus-visible{outline:2px solid var(--fd-accent);outline-offset:3px}
 .fd-today{position:relative;scroll-margin-top:12px}.fd-today th{padding:14px!important;background:var(--fd-soft);border-block:2px solid var(--fd-accent)!important;color:var(--fd-ink);font-size:.9rem;text-align:left!important}
 .fd-guru .fd-today{display:block}.fd-guru .fd-today th{display:block;width:100%}
 .fd-timeline-more{margin-top:12px;width:100%}.fd-timeline-sentinel td{height:1px;padding:0!important;border:0!important}
 .fd-guru .fd-timeline-sentinel{display:block;height:1px}
-.fd-root .fd-forecast-row{background:#f5f5f5;color:#4b4b4b;border-left-color:#8a8a8a;opacity:1}
-.fd-root .fd-forecast-row :is(.fd-forecast-status-label,.fd-forecast-origin,.fd-forecast-date,.fd-forecast-amount,.fd-forecast-running-balance,.fd-row-account){color:#4b4b4b}
+.fd-root .fd-forecast-row{background:var(--fc-ghost-bg);color:var(--fc-ghost-text);border-left-color:var(--fc-ghost-border);opacity:1}
+.fd-root .fd-forecast-row :is(.fd-forecast-status-label,.fd-forecast-origin,.fd-forecast-date,.fd-forecast-amount,.fd-forecast-running-balance,.fd-row-account){color:var(--fc-ghost-text)}
 .fd-root .fd-forecast-row .fd-forecast-status-label{font-weight:600}
 .fd-root .fd-forecast-row .fd-forecast-name{font-weight:500}
 .fd-root .fd-forecast-row .fd-forecast-details summary{min-height:44px;display:flex;align-items:center}
@@ -248,17 +248,32 @@
  #dashboard .fd-blick .fc-counterparty{gap:6px}
  #dashboard .fd-blick :is(.fc-counterparty-logo,.fc-counterparty-pictogram,.fc-counterparty-initials){width:24px;height:24px;flex-basis:24px;border-radius:6px}
  #dashboard .fd-blick .fd-booking-counterparty .fc-counterparty-text{overflow-wrap:break-word;word-break:normal}
- #dashboard .fd-blick .fd-booking-category .fd-category-name{font-size:.75rem;gap:3px}
+ #dashboard .fd-blick .fd-booking-category .fd-category-name{font-size:.8125rem;gap:3px}
  #dashboard .fd-blick .fd-booking-category .fd-category-name .fd-icon{width:14px;height:14px;min-width:14px;max-width:14px;flex:0 0 14px}
  #dashboard .fd-blick .fd-booking-table :is(.fd-booking-amount,.fd-booking-balance,.fd-forecast-amount,.fd-forecast-running-balance){white-space:normal!important;overflow-wrap:normal;font-size:.82rem}
- #dashboard .fd-blick .fd-booking-table :is(.fd-booking-date,.fd-forecast-date){font-size:.72rem;overflow-wrap:normal}
- #dashboard .fd-blick .fd-booking-table :is(.fd-booking-toggle,.fd-forecast-details summary){padding:8px 4px;font-size:.8rem!important;max-width:100%;white-space:normal}
+ #dashboard .fd-blick .fd-booking-table :is(.fd-booking-date,.fd-forecast-date){font-size:.8125rem;overflow-wrap:normal}
+ #dashboard .fd-blick .fd-booking-table :is(.fd-booking-toggle,.fd-forecast-details summary){padding:8px 4px;font-size:.8125rem!important;max-width:100%;white-space:normal}
 }
+/* Explicit monochrome preview: only virtual rows, including their document icons,
+   are grayscale. Imported bookings and their original merchant logos are untouched. */
 .fd-root .fd-forecast-row{filter:grayscale(1)}
-.fd-root .fd-booking-table .fd-forecast-row :is(a,button,summary){color:#4b4b4b;border-color:#a0a0a0}
-.fd-root .fd-booking-table .fd-forecast-row :is(a,button,summary):hover{background:#e8e8e8;color:#333}
+.fd-root .fd-booking-table .fd-forecast-row :is(a,button,summary){color:var(--fc-ghost-text);border-color:var(--fc-ghost-border)}
+.fd-root .fd-booking-table .fd-forecast-row :is(a,button,summary):hover{background:var(--fc-ghost-hover-bg);color:var(--fc-ghost-text)}
 .fd-forecast-overview{margin:0 0 12px;border:1px solid var(--fd-border);border-radius:12px;padding:0 12px}
 .fd-forecast-overview>summary{min-height:44px;padding:10px 0;font-size:.85rem;color:var(--fd-muted)}
-.fd-forecast-overview .fd-forecast-balance:not(:empty){margin-top:0;background:var(--fc-surface,#fff);border-color:var(--fd-border)}
-.fd-picker-count{font-size:.8rem;line-height:1.4;text-align:right}
+.fd-forecast-overview .fd-forecast-balance:not(:empty){margin-top:0;background:var(--fc-surface);border-color:var(--fd-border)}
+.fd-picker-count{font-size:.8125rem;line-height:1.4;text-align:right}
 @media(max-width:700px){.fd-side-head{gap:8px;min-height:44px}.fd-side-head h2{font-size:.95rem}.fd-picker-count{flex:0 1 auto}}
+
+/* Explicit archival views stay separate from the booking timeline. */
+.fd-booking-history,.fd-removed-history,.fd-account-history {margin:12px 0; min-width:0;}
+.fd-booking-history summary,.fd-removed-history summary,.fd-account-history summary,.fd-history-event summary {min-height:44px;display:flex;align-items:center;cursor:pointer;overflow-wrap:anywhere;}
+.fd-history-content {display:grid;gap:12px;min-width:0;}
+.fd-history-version {border:1px solid var(--fc-border);border-radius:10px;padding:12px;min-width:0;overflow-wrap:anywhere;}
+.fd-history-version p,.fd-history-event p {margin:8px 0;white-space:normal;overflow-wrap:anywhere;}
+.fd-history-more {min-height:44px;white-space:normal;}
+.fd-history-event {min-width:0;overflow-wrap:anywhere;}
+
+/* Keep compact module controls usable without shrinking the existing layout. */
+.fd-root :is(button,summary,a.button){min-width:44px;min-height:44px;}
+@media(max-width:650px){.fd-root :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}

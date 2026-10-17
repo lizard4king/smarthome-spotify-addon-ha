@@ -21,7 +21,7 @@ class DashboardConfigurationError(ValueError):
 
 
 def build(store, as_of, accounts=None, *, reporting_history=None,
-          current_balances=None):
+          current_balances=None, reconciliations=None):
     """Return account movements through ``as_of`` without household netting.
 
     ``accounts`` may be the account dictionaries already enriched with owner
@@ -47,7 +47,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                                      if account_id in account_by_id]
     overview = build_account_overview(
         store, month, None, {}, plan_available=False, reporting_scope=scope,
-        cash_activity={}, today=day, include_cash=False)
+        cash_activity={}, today=day, include_cash=False, reconciliations=reconciliations)
     account_rows = overview["accounts"]
     if current_balances is None:
         current_balances = latest_by_account(store, account_rows)
@@ -61,7 +61,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
             row["account_id"]: row["last_booking_date"]
             for row in store.db.execute(
                 "SELECT account_id,MAX(date) AS last_booking_date "
-                "FROM transactions "
+                "FROM active_transactions "
                 f"WHERE date<=? AND account_id IN ({placeholders}) "
                 "GROUP BY account_id",
                 (day.isoformat(), *account_ids),
@@ -120,7 +120,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
             "o.account_id AS override_present,"
             "cat.label AS override_label,cat.transaction_type,a.kind AS account_kind,"
             f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
-            "FROM transactions t "
+            "FROM active_transactions t "
             "JOIN accounts a ON a.id=t.account_id "
             "LEFT JOIN transaction_context c USING(account_id,external_id) "
             "LEFT JOIN classification_overrides o USING(account_id,external_id) "

@@ -1,53 +1,54 @@
 .fc-counterparty {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: middle;
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  min-width:0;
+  max-width:100%;
+  vertical-align:middle;
 }
 
 .fc-counterparty-logo,
 .fc-counterparty-pictogram,
 .fc-counterparty-initials {
-  box-sizing: border-box;
-  display: inline-flex;
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #e2e8e6;
-  border-radius: 8px;
-  background: #fff;
+  box-sizing:border-box;
+  display:inline-flex;
+  flex:0 0 36px;
+  width:36px;
+  height:36px;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--fc-border);
+  border-radius:8px;
+  background:var(--fc-surface);
 }
 
 .fc-counterparty-logo {
-  object-fit: contain;
-  padding: 2px;
+  object-fit:contain;
+  padding:2px;
+  background:var(--fc-logo-surface);
 }
 
 .fc-counterparty-logo--dark {
-  background: #18323c;
-  border-color: #18323c;
+  background:var(--fc-logo-dark-surface);
+  border-color:var(--fc-logo-dark-surface);
 }
 
 .fc-counterparty-pictogram,
 .fc-counterparty-initials {
-  color: #47615a;
-  background: #edf2f0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .02em;
+  color:var(--fc-muted);
+  background:var(--fc-surface-alt);
+  font-size:.8125rem;
+  font-weight:700;
+  letter-spacing:.02em;
 }
 
 .fc-counterparty-pictogram svg {
-  width: 22px;
-  height: 22px;
-  flex: none;
+  width:22px;
+  height:22px;
+  flex:none;
 }
 
 .fc-counterparty-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
+  min-width:0;
+  overflow-wrap:anywhere;
 }

@@ -85,7 +85,7 @@ def category_summary(store, data=None, *, people=None):
     where = '' if not clauses else ' WHERE ' + ' AND '.join(clauses)
     rows = store.db.execute(
         'SELECT t.account_id,t.external_id,t.date,t.amount,t.category,t.transfer_id,c.description,c.counterparty,'
-        'o.category_id,o.confirmed FROM transactions t '
+        'o.category_id,o.confirmed FROM active_transactions t '
         'LEFT JOIN transaction_context c USING(account_id,external_id) '
         'LEFT JOIN classification_overrides o USING(account_id,external_id)' + where,
         params).fetchall()

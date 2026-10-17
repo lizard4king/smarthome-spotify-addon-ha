@@ -20,10 +20,10 @@ _LABELS = {
 
 def _bookings(store, document_id):
     where = (' FROM classification_document_links l '
-             'JOIN transactions t USING(account_id,external_id) '
+             'JOIN active_transactions t USING(account_id,external_id) '
              "WHERE l.document_id=? AND l.allocation_type IN ('payment','evidence') "
-             'AND NOT EXISTS (SELECT 1 FROM classification_audit a '
-             "WHERE a.action='document_link_rejected' AND a.account_id=l.account_id "
+             'AND NOT EXISTS (SELECT 1 FROM rejected_document_links a '
+             "WHERE a.account_id=l.account_id "
              'AND a.external_id=l.external_id AND a.document_id=l.document_id)')
     total = store.db.execute('SELECT COUNT(*)' + where, (document_id,)).fetchone()[0]
     rows = store.db.execute(

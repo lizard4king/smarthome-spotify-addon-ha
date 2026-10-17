@@ -12,6 +12,9 @@ from decimal import Decimal, InvalidOperation
 from importlib.resources import files
 from pathlib import Path
 
+from .audit import actor_for, import_operation, validated_actor
+from .ledger import insert_transaction
+
 _IDENTIFIER = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z')
 _USER_MONEY = re.compile(r'[+-]?[0-9]+(?:[.,][0-9]{1,2})?\Z')
 
@@ -88,11 +91,12 @@ def scenario(base, **overrides):
 
 
 class Store:
-    def __init__(self, path=':memory:', *, readonly=False):
+    def __init__(self, path=':memory:', *, readonly=False, actor='system:local'):
         if type(readonly) is not bool:
             raise ValueError('readonly must be boolean')
         if readonly and str(path) == ':memory:':
             raise ValueError('readonly requires an existing database file')
+        self.audit_actor = validated_actor(actor)
         self.path = None if str(path) == ':memory:' else Path(path).expanduser().resolve()
         self.db = sqlite3.connect(
             f'{self.path.as_uri()}?mode=ro' if readonly else
@@ -106,24 +110,25 @@ class Store:
         for resource in sorted(files('finance_control').joinpath('migrations').iterdir(), key=lambda p: p.name):
             if resource.name.endswith('.sql') and not self.db.execute(
                     'SELECT 1 FROM schema_versions WHERE version=?', (resource.name,)).fetchone():
-                rebuild_accounts = resource.name == '037_generic_households.sql'
+                rebuild_referenced_tables = resource.name in {
+                    '037_generic_households.sql', '062_transaction_versions.sql'}
                 try:
-                    if rebuild_accounts:
+                    if rebuild_referenced_tables:
                         # Rebuilding a referenced SQLite table requires this pragma outside a transaction.
                         self.db.commit()
                         self.db.execute('PRAGMA foreign_keys=OFF')
                         if self.db.execute('PRAGMA foreign_keys').fetchone()[0] != 0:
-                            raise RuntimeError('Could not disable foreign keys for account rebuild')
+                            raise RuntimeError('Could not disable foreign keys for table rebuild')
                     self.db.executescript('BEGIN;\n' + resource.read_text(encoding='utf-8'))
                     self.db.execute('INSERT INTO schema_versions VALUES (?)', (resource.name,))
-                    if rebuild_accounts and self.db.execute('PRAGMA foreign_key_check').fetchone():
-                        raise RuntimeError('Account rebuild left invalid foreign keys')
+                    if rebuild_referenced_tables and self.db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise RuntimeError('Table rebuild left invalid foreign keys')
                     self.db.commit()
                 except Exception:
                     self.db.rollback()
                     raise
                 finally:
-                    if rebuild_accounts:
+                    if rebuild_referenced_tables:
                         self.db.execute('PRAGMA foreign_keys=ON')
                         if self.db.execute('PRAGMA foreign_keys').fetchone()[0] != 1:
                             raise RuntimeError('Could not restore foreign key enforcement')
@@ -219,10 +224,11 @@ class Store:
                 raise ValueError('Account display name revision is stale')
             self.db.execute(
                 'INSERT INTO account_display_name_audit('
-                'account_id,revision,previous_display_name,display_name,changed_at) VALUES (?,?,?,?,?)',
-                (account_id, next_revision, current['display_name'], display_name, changed_at))
+                'account_id,revision,previous_display_name,display_name,changed_at,actor) VALUES (?,?,?,?,?,?)',
+                (account_id, next_revision, current['display_name'], display_name, changed_at, actor_for(self)))
         return {'id': account_id, 'display_name': display_name, 'display_name_revision': next_revision}
 
+    @import_operation
     def import_csv(self, source, *, manage_transaction=True):
         reader = csv.DictReader(io.StringIO(source))
         columns = ['external_id', 'account_id', 'date', 'amount', 'currency', 'category', 'transfer_id']
@@ -252,14 +258,14 @@ class Store:
                 values = (row['account_id'], row['external_id'], booked.isoformat(), amount,
                           row['currency'], row['category'], row['transfer_id'])
                 existing = self.db.execute('SELECT account_id,external_id,date,amount,currency,category,transfer_id '
-                                           'FROM transactions WHERE account_id=? AND external_id=?', values[:2]).fetchone()
+                                           'FROM active_transactions WHERE account_id=? AND external_id=?', values[:2]).fetchone()
                 if existing:
                     if tuple(existing) != values:
                         raise ValueError('Conflicting external transaction ID')
                     continue
-                self.db.execute('INSERT INTO transactions VALUES (?,?,?,?,?,?,?,?)', (*values, import_id))
+                insert_transaction(self, (*values, import_id))
                 inserted += 1
-            transfers = self.db.execute("SELECT * FROM transactions WHERE transfer_id != ''").fetchall()
+            transfers = self.db.execute("SELECT * FROM active_transactions WHERE transfer_id != ''").fetchall()
             for transfer_id in {row['transfer_id'] for row in transfers}:
                 pair = [row for row in transfers if row['transfer_id'] == transfer_id]
                 if (len(pair) != 2 or pair[0]['account_id'] == pair[1]['account_id']
@@ -279,7 +285,7 @@ class Store:
         balances = {row['id']: money(row['opening']) for row in accounts}
         income = expenses = Decimal(0)
         for row in self.db.execute(
-                'SELECT t.*,m.pair_id AS correction_pair_id,c.description FROM transactions t '
+                'SELECT t.*,m.pair_id AS correction_pair_id,c.description FROM active_transactions t '
                 'LEFT JOIN transfer_correction_members m '
                 'ON m.account_id=t.account_id AND m.external_id=t.external_id '
                 'LEFT JOIN transaction_context c '

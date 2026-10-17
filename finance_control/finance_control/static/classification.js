@@ -264,6 +264,7 @@ async function classificationRejectLink(){if(!classificationSelected||!classific
 async function classificationAllocate(){if(classificationSelectedDocument?.kind==='contract')throw new Error('Vertragsnachweise werden separat bestätigt.');if(!classificationSelected||!classificationSelectedDocument)throw new Error('Bitte zuerst Buchung und Beleg auswählen.');const selected=classificationSelected,value=$('classification-allocation-amount').value.trim().replace(',','.');const amount=Number(value);if(!Number.isFinite(amount)||amount<=0)throw new Error('Bitte einen positiven Zuordnungsbetrag eingeben.');await api('/api/classification-allocate',{...classificationKey(selected),document_id:classificationSelectedDocument.id,allocated_amount:value,allocation_type:$('classification-allocation-type').value,confirmed:true});const review=await api('/api/classification-model-review',classificationKey(selected));await classificationLoad();await classificationLoadDocuments();await classificationLoadDocumentMatches(classificationSelectedDocument,classificationDocumentSelectionEpoch,0);classificationMessage(review.reviewed?'Teilzuordnung gespeichert und Kategorie-Vorschlag aus dem Beleg erzeugt.':'Zuordnungsbetrag gespeichert. Es wurde keine zusätzliche Buchung erzeugt.');}
 document.addEventListener('DOMContentLoaded',()=>{
   if(!$('classification'))return;
+  classificationRulesInit();
   const compactViewport=window.matchMedia?.('(max-width:640px)').matches??false;
   $('classification-range-controls').open=!compactViewport;
   document.querySelector('.classification-scope-details').open=!compactViewport;
@@ -280,7 +281,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   classificationCreateMobileControls();
   for(const [id,step] of [['prev',-1],['next',1]])$('classification-'+id).addEventListener('click',()=>run(async()=>{classificationPage+=step;await classificationLoad();}));
   $('classification-single-save').addEventListener('click',()=>run(async()=>{if(!classificationSelected||classificationSelected.is_transfer)throw new Error('Zuerst eine Einnahme oder Ausgabe auswählen.');const category=$('classification-rule-own').value;if(!category)throw new Error('Bitte eine eigene Kategorie wählen.');const result=await api('/api/classification-save',{...classificationKey(classificationSelected),category,revision:classificationSelected.revision});classificationSelected={...classificationSelected,category,confirmed:true,revision:result.classification.revision};await classificationSelect(classificationSelected);classificationMessage('Kategorie für genau diese Buchung bestätigt.');}));
-  $('classification-rule-save').addEventListener('click',()=>run(async()=>{if(!classificationSelected||classificationSelected.is_transfer)throw new Error('Zuerst eine Einnahme oder Ausgabe auswählen.');await api('/api/classification-rule',{counterparty:$('classification-rule-source').value,direction:classificationSelected.direction,category:$('classification-rule-own').value});await classificationSelect(classificationSelected);classificationMessage('Regel gespeichert. Sie erzeugt Vorschläge und ändert keine Buchung automatisch.');}));
+  $('classification-rule-save').addEventListener('click',()=>run(async()=>{if(!classificationSelected||classificationSelected.is_transfer)throw new Error('Zuerst eine Einnahme oder Ausgabe auswählen.');await api('/api/classification-rule',{counterparty:$('classification-rule-source').value,direction:classificationSelected.direction,category:$('classification-rule-own').value});await classificationSelect(classificationSelected);await classificationRulesRefresh();classificationMessage('Regel gespeichert. Gültige exakte Treffer können beim nächsten Import oder Regelabgleich automatisch bestätigt werden. Bei Zahlungsdienstleistern und Marktplätzen entstehen nur Vorschläge.');}));
   $('classification-rule-own').addEventListener('change',()=>{if($('classification-rule-own').value==='__create__'&&classificationSelected){$('classification-rule-own').value='';classificationPrepareCategoryCreator(classificationSelected);}});
   $('classification-category-create-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{if(!classificationSelected||classificationSelected.is_transfer)throw new Error('Zuerst eine Einnahme oder Ausgabe auswählen.');const selected=classificationSelected;const result=await api('/api/classification-category-create',{parent_label:$('classification-category-parent').value,label:$('classification-category-child').value,transaction_type:selected.direction});classificationCatalogParents=result.parents;classificationCatalog=result.categories;await api('/api/classification-save',{...classificationKey(selected),category:result.category.id,revision:selected.revision});$('classification-category-create').open=false;$('classification-category-create-form').reset();$('classification-category-create-status').textContent='';classificationClearSelectedTransaction();await classificationLoad();classificationMessage(`Kategorie ${result.parent.label} > ${result.category.label} angelegt, zugeordnet und bestätigt.`);$('classification-status').scrollIntoView({block:'nearest'});});});
   $('classification-local-model').addEventListener('click',()=>run(async()=>{if(!classificationSelected||classificationSelected.is_transfer)throw new Error('Zuerst eine Einnahme oder Ausgabe auswählen.');const selected=classificationSelected,control=$('classification-local-model'),box=$('classification-suggestions');control.disabled=true;control.textContent='Lokales Modell arbeitet …';try{const result=await api('/api/classification-local-suggestion',classificationKey(selected));if(!classificationSelected||classificationSelected.account_id!==selected.account_id||classificationSelected.external_id!==selected.external_id)return;for(const old of box.querySelectorAll('[data-local-model]'))old.remove();if(result.status==='ok'){if(box.textContent.trim()==='Keine Regeln, Belegvorschläge oder Verknüpfungen vorhanden.')box.replaceChildren();for(const proposal of result.suggestions)classificationProposal(box,selected,proposal);classificationMessage(`Lokaler Vorschlag von ${result.model} geladen; noch nicht bestätigt.`);}else classificationMessage(result.message||'Kein lokaler Modellvorschlag verfügbar.',true);}finally{control.textContent='Lokales Modell erneut fragen';control.disabled=!classificationSelected||classificationSelected.is_transfer;}}));
@@ -299,4 +300,87 @@ async function documentCoverageLoad(){
   const years=$('document-years');years.replaceChildren();
   for(const bucket of data.years){const key=bucket.year===null?'unknown':String(bucket.year),label=bucket.year===null?'Datum fehlt':String(bucket.year);select.append(new Option(label,key));const row=document.createElement('div'),text=document.createElement('span'),track=document.createElement('div'),bar=document.createElement('div');row.className='classification-bar-row';text.textContent=`${label}: ${bucket.count} Dokumente · ${bucket.confirmed} bestätigt · ${bucket.linked} verknüpft`;track.className='classification-bar-track';bar.className='classification-bar';bar.style.width=`${data.total?100*bucket.count/data.total:0}%`;track.append(bar);row.append(text,track);years.append(row);}
   if(chosen && ![...select.options].some(o=>o.value===chosen))select.append(new Option(chosen,chosen));select.value=chosen;
+}
+
+// Rule management has its own error boundary: booking loading must remain usable.
+const classificationRulesState={epoch:0,rules:[],categories:[],editor:null,busy:false,loaded:false};
+function classificationRulesMessage(message,error=false){const node=$('classification-rules-status');if(node){node.textContent=message;node.className=error?'error':'';}}
+function classificationRulesInit(){
+  const panel=$('classification-rules-panel');if(!panel)return;
+  panel.addEventListener('toggle',()=>{if(!panel.open){if(!classificationRulesState.mutating){classificationRulesState.epoch++;if(classificationRulesState.busy)classificationRulesMessage('Prüfung abgebrochen. Bitte bei Bedarf erneut prüfen.');}return;}if(!classificationRulesState.loaded&&!classificationRulesState.editor&&!classificationRulesState.busy)void classificationRulesLoad();});
+  $('classification-rules-reload').addEventListener('click',()=>{if(classificationRulesState.busy)return;if(classificationRulesState.editor&&!window.confirm('Ungespeicherte Änderungen verwerfen und Regeln neu laden?'))return;classificationRulesState.editor=null;$('classification-rules-editor').replaceChildren();void classificationRulesLoad();});
+}
+async function classificationRulesLoad(){
+  const state=classificationRulesState,epoch=++state.epoch;
+  classificationRulesMessage('Regeln werden geladen …');
+  try{const data=await api('/api/classification-rules',{});if(epoch!==state.epoch)return;
+    state.rules=data.rules;state.categories=data.categories||classificationCatalog;state.loaded=true;classificationRulesRender();classificationRulesMessage(state.rules.length?'':'Noch keine Regeln gespeichert.');return true;
+  }catch(error){if(epoch===state.epoch)classificationRulesMessage('Regeln konnten nicht geladen werden. Bitte „Regeln neu laden“ wählen. '+error.message,true);}
+}
+async function classificationRulesRefresh(){
+  const state=classificationRulesState;state.loaded=false;
+  // Preserve a draft when a new rule is created from the selected booking.
+  if($('classification-rules-panel')?.open&&!state.editor&&!state.busy)await classificationRulesLoad();
+}
+function classificationRuleButton(parent,label,handler){const control=document.createElement('button');control.type='button';control.className='secondary';control.textContent=label;control.addEventListener('click',handler);parent.append(control);return control;}
+function classificationRulesRender(){
+  const box=$('classification-rules-list');box.replaceChildren();
+  for(const rule of classificationRulesState.rules){
+    const card=document.createElement('article');card.className='classification-rule-card';
+    const title=document.createElement('h4');title.textContent=rule.counterparty;
+    const label=document.createElement('p');label.textContent=`${rule.direction==='income'?'Einnahme':'Ausgabe'} → ${rule.category_label||classificationHierarchy(rule.category,rule.parent_category)} · ${rule.enabled?'Aktiv':'Deaktiviert'}`;
+    const dates=document.createElement('p');dates.className='muted';dates.textContent=`Gültig: ${rule.valid_from||'ohne Beginn'} bis ${rule.valid_to||'ohne Ende'} (einschließlich).`;
+    const count=document.createElement('p');count.textContent=`Diese Regel hat ${rule.auto_count} Buchungen zugeordnet.`;card.append(title,label,dates,count);
+    if(rule.legacy_ambiguous_count){const note=document.createElement('p');note.className='notice';note.textContent=`${rule.legacy_ambiguous_count} ältere Zuordnungen sind nicht eindeutig auf diese Regel zurückzuführen. Sie werden nicht zurückgenommen.`;card.append(note);}
+    const actions=document.createElement('div');actions.className='classification-rule-actions';
+    classificationRuleButton(actions,'Regel bearbeiten',()=>classificationRulesEdit(rule));
+    classificationRuleButton(actions,rule.enabled?'Deaktivieren':'Aktivieren',()=>void classificationRulesToggle(rule));
+    classificationRuleButton(actions,'Zuordnungen prüfen und zurücknehmen',()=>void classificationRulesRevoke(rule));
+    card.append(actions);box.append(card);
+  }
+}
+function classificationRuleGuardDraft(){return !classificationRulesState.editor||window.confirm('Ungespeicherte Änderungen verwerfen?');}
+function classificationRulesEdit(rule){
+  const state=classificationRulesState;if(state.busy||!classificationRuleGuardDraft())return;
+  state.epoch++;state.editor=rule;classificationRulesMessage('Änderungen werden erst beim Speichern übernommen.');const box=$('classification-rules-editor');box.replaceChildren();
+  const heading=document.createElement('h4');heading.textContent='Regel bearbeiten';const form=document.createElement('form');form.className='classification-rule-form';
+  const field=(label,id,type,value)=>{const wrapper=document.createElement('label');wrapper.textContent=label;const input=document.createElement('input');input.id=id;input.type=type;input.value=value||'';wrapper.append(input);form.append(wrapper);return input;};
+  const party=field('Gegenpartei','rule-edit-party','text',rule.counterparty);party.required=true;party.maxLength=240;
+  const directionLabel=document.createElement('label');directionLabel.textContent='Zahlungsrichtung';const direction=document.createElement('select');direction.id='rule-edit-direction';direction.append(new Option('Ausgabe','expense'),new Option('Einnahme','income'));direction.value=rule.direction;directionLabel.append(direction);form.append(directionLabel);
+  const categoryLabel=document.createElement('label');categoryLabel.textContent='Kategorie';const category=document.createElement('select');category.id='rule-edit-category';category.required=true;categoryLabel.append(category);form.append(categoryLabel);
+  const fillCategories=value=>{category.replaceChildren(new Option('Kategorie wählen',''));for(const item of state.categories.filter(item=>item.transaction_type===direction.value)){const parentLabel=item.parent_label||classificationCatalogParents.find(parent=>parent.id===item.parent_id)?.label;category.append(new Option(parentLabel?`${parentLabel} > ${item.label}`:item.label,item.id));}category.value=value||'';};fillCategories(rule.category);direction.addEventListener('change',()=>fillCategories(''));
+  const from=field('Gültig ab (optional, einschließlich)','rule-edit-from','date',rule.valid_from),to=field('Gültig bis (optional, einschließlich)','rule-edit-to','date',rule.valid_to);
+  const enabledLabel=document.createElement('label');enabledLabel.textContent='Regel aktiv';enabledLabel.className='check';const enabled=document.createElement('input');enabled.type='checkbox';enabled.id='rule-edit-enabled';enabled.checked=rule.enabled;enabledLabel.prepend(enabled);form.append(enabledLabel);
+  const note=document.createElement('p');note.textContent='Speichern ändert keine bereits zugeordnete Buchung.';form.append(note);
+  const save=document.createElement('button');save.type='submit';save.textContent='Änderungen speichern';form.append(save);
+  classificationRuleButton(form,'Bearbeitung abbrechen',()=>{if(state.busy)return;if(!window.confirm('Ungespeicherte Änderungen verwerfen?'))return;state.epoch++;state.editor=null;box.replaceChildren();classificationRulesMessage('Bearbeitung abgebrochen.');});
+  form.addEventListener('submit',event=>{event.preventDefault();if(state.busy||!form.reportValidity())return;if(from.value&&to.value&&from.value>to.value){classificationRulesMessage('Das Beginn-Datum darf nicht nach dem Ende liegen.',true);return;}const payload={id:rule.id,revision:rule.revision,counterparty:party.value.trim(),direction:direction.value,category:category.value,enabled:enabled.checked,valid_from:from.value||null,valid_to:to.value||null,confirmed:true};if(!window.confirm('Regeländerung speichern? Bereits zugeordnete Buchungen bleiben unverändert.'))return;void classificationRulesUpdate(payload);});
+  box.append(heading,form);party.focus();
+}
+async function classificationRulesUpdate(payload){
+  const state=classificationRulesState;if(state.busy)return;state.busy=true;state.mutating=true;const epoch=++state.epoch;classificationRulesBusy(true);
+  try{await api('/api/classification-rule-update',payload);state.loaded=false;if(epoch!==state.epoch)return;state.editor=null;$('classification-rules-editor').replaceChildren();if(await classificationRulesLoad())classificationRulesMessage('Regel gespeichert. Bestehende Buchungszuordnungen blieben unverändert.');}
+  catch(error){if(epoch===state.epoch)classificationRulesMessage('Speichern fehlgeschlagen. Deine Eingaben bleiben erhalten. '+error.message,true);}
+  finally{state.busy=false;state.mutating=false;classificationRulesBusy(false);}
+}
+function classificationRulesBusy(busy){for(const control of document.querySelectorAll('#classification-rules-panel button, #classification-rules-editor input, #classification-rules-editor select'))control.disabled=busy;}
+async function classificationRulesToggle(rule){
+  const state=classificationRulesState;if(state.busy||!classificationRuleGuardDraft())return;
+  if(!window.confirm(`Regel ${rule.enabled?'deaktivieren':'aktivieren'}? Bereits zugeordnete Buchungen bleiben unverändert.`))return;
+  await classificationRulesUpdate({id:rule.id,revision:rule.revision,counterparty:rule.counterparty,direction:rule.direction,category:rule.category,enabled:!rule.enabled,valid_from:rule.valid_from,valid_to:rule.valid_to,confirmed:true});
+}
+async function classificationRulesRevoke(rule){
+  const state=classificationRulesState;if(state.busy||!classificationRuleGuardDraft())return;
+  const epoch=++state.epoch;state.busy=true;classificationRulesBusy(true);classificationRulesMessage('Betroffene Zuordnungen werden geprüft …');
+  try{const effects=await api('/api/classification-rule-effects',{id:rule.id,revision:rule.revision});if(epoch!==state.epoch)return;
+    if(effects.rule_id!==rule.id||effects.revision!==rule.revision)throw new Error('Die Regel wurde zwischenzeitlich geändert. Bitte neu laden.');
+    const legacy=effects.legacy_ambiguous_count?` ${effects.legacy_ambiguous_count} ältere, nicht eindeutig belegte Zuordnungen bleiben unverändert.`:'';
+    if(!effects.auto_count){classificationRulesMessage('Keine eindeutig dieser Regel zugeordneten Buchungen zum Zurücknehmen.'+legacy);return;}
+    if(!window.confirm(`${effects.auto_count} automatische Kategoriezuordnungen dieser Regel zurücknehmen? Die Kategorien sind danach wieder offen; die Finanzbuchungen werden nicht gelöscht. Die Regel bleibt unverändert.${legacy}`)){classificationRulesMessage('Zurücknehmen abgebrochen.');return;}
+    state.mutating=true;const result=await api('/api/classification-rule-revoke',{id:rule.id,revision:rule.revision,review_token:effects.review_token,confirmed:true});state.loaded=false;if(epoch!==state.epoch)return;
+    state.editor=null;$('classification-rules-editor').replaceChildren();const refreshed=await classificationRulesLoad();if(refreshed)classificationRulesMessage(`${result.revoked} Kategoriezuordnungen zurückgenommen; ${result.skipped_legacy} ältere Zuordnungen unverändert. Finanzbuchungen wurden nicht gelöscht.`);
+    // Refresh booking rows only after the rule action succeeded; keep failures local.
+    try{await classificationLoad();}catch(error){classificationRulesMessage('Zuordnungen zurückgenommen. Bitte die Buchungsliste neu laden. '+error.message,true);}
+  }catch(error){if(epoch===state.epoch)classificationRulesMessage('Zurücknehmen fehlgeschlagen. Bitte Regeln neu laden und erneut prüfen. '+error.message,true);}
+  finally{state.busy=false;state.mutating=false;classificationRulesBusy(false);}
 }

@@ -13,7 +13,7 @@ let paymentPolicyRequestId = 0;
 let paymentPolicySelectedRevision = null;
 let budgetOriginalPlan = {};
 
-const budgetKindLabels = {income:'Einnahme', fixed:'Fixkosten', variable:'Variable Ausgabe'};
+const budgetKindLabels = {income:'Einnahme', fixed:'Fixkosten', variable:'Variable Ausgabe', saving:'Sparrate'};
 const paymentPolicyEndpoint = '/api/payment-policy-load';
 
 function budgetIsActive(revision, activeRevision = budgetActiveRevision) {
@@ -203,6 +203,7 @@ function budgetNewId() {
   return `manual-${Date.now()}-${budgetRowCounter}`;
 }
 function budgetInvalidate() {
+  if ($('budget-reserves-result')) $('budget-reserves-result').hidden = true;
   budgetDirty = true;
   budgetEditVersion += 1;
   $('budget-result-details').hidden = true;
@@ -278,7 +279,7 @@ function budgetAddItem(values = {}, persisted = false) {
 
   const labelInput = budgetInput('text', values.label); labelInput.required = true; labelInput.maxLength = 160; labelInput.dataset.budgetField = 'label';
   const kindSelect = document.createElement('select'); kindSelect.dataset.budgetField = 'kind';
-  for (const kind of ['income','fixed','variable']) { const option = document.createElement('option'); option.value = kind; option.textContent = budgetKindLabels[kind]; kindSelect.append(option); }
+  for (const kind of ['income','fixed','variable','saving']) { const option = document.createElement('option'); option.value = kind; option.textContent = budgetKindLabels[kind]; kindSelect.append(option); }
   kindSelect.value = values.kind || 'variable';
   const amountInput = budgetInput('text', values.amount); amountInput.required = true; amountInput.inputMode = 'decimal'; amountInput.pattern = '\\d+(?:[.,]\\d{1,2})?'; amountInput.placeholder = '0,00'; amountInput.dataset.budgetField = 'amount';
   amountInput.enterKeyHint = 'next';
@@ -309,6 +310,7 @@ function budgetAddItem(values = {}, persisted = false) {
   const confirmedLabel = budgetControl('Position fachlich bestätigt', confirmedInput, `${token}-confirmed`); confirmedLabel.className = 'budget-confirmed';
   for (const [control, name] of [[labelInput,'Bezeichnung'],[kindSelect,'Art'],[amountInput,'Betrag'],[intervalSelect,'Zahlungsrhythmus'],[startInput,'Startmonat'],[endInput,'Endmonat'],[sourceInput,'Quelle'],[confirmedInput,'Bestätigung'],[accountSelect,'Girokonto']]) control.setAttribute('aria-label', `${name} der Position ${itemId}`);
   grid.append(sourceLabel, confirmedLabel);
+  budgetAddReserveItemFields(item, grid, values, token, kindSelect);
   item.append(head, grid); $('budget-items').append(item);
   const syncMonthRange = () => { endInput.min = startInput.value; if (endInput.value && startInput.value && endInput.value < startInput.value) endInput.setCustomValidity('Der Endmonat darf nicht vor dem Startmonat liegen.'); else endInput.setCustomValidity(''); };
   item.addEventListener('input', () => { syncMonthRange(); budgetUpdateItemHeading(item); budgetInvalidate(); });
@@ -444,7 +446,7 @@ function budgetRenderSetup(plan) {
 function budgetAllocationKey(value) { return JSON.stringify([value.account_id, value.external_id]); }
 function budgetAllocationItemOptions(select, selected) {
   select.replaceChildren();
-  const options = [['', 'Planposition auswählen'], ...[...$('budget-items').children].map(item => [item.dataset.itemId, `${budgetKindLabels[item.querySelector('[data-budget-field="kind"]').value]} · ${item.querySelector('[data-budget-field="label"]').value || 'Ohne Bezeichnung'}`])];
+  const options = [['', 'Planposition auswählen'], ...[...$('budget-items').children].filter(item => item.querySelector('[data-budget-field="kind"]').value !== 'saving').map(item => [item.dataset.itemId, `${budgetKindLabels[item.querySelector('[data-budget-field="kind"]').value]} · ${item.querySelector('[data-budget-field="label"]').value || 'Ohne Bezeichnung'}`])];
   if (selected && !options.some(([id]) => id === selected)) options.push([selected, `${selected} (Position entfernt)`]);
   for (const [id, text] of options) { const option = document.createElement('option'); option.value = id; option.textContent = text; select.append(option); }
   select.value = selected || '';
@@ -554,6 +556,7 @@ function budgetReadAllocations(items) {
       const item_id = part.querySelector('[data-allocation-item]').value, weight = part.querySelector('[data-allocation-weight]').value.trim().replace(',', '.');
       if (!itemById.has(item_id)) throw new Error('Bitte eine vorhandene Planposition für jede Buchungszuordnung wählen.');
       if (seen.has(item_id)) throw new Error('Eine Buchung darf jeder Planposition nur einmal zugeordnet sein.'); seen.add(item_id);
+      if (itemById.get(item_id).kind === 'saving') throw new Error('Sparraten können keiner tatsächlichen Buchung zugeordnet werden.');
       const expected = itemById.get(item_id).kind === 'income' ? 'income' : 'expense';
       if (group.dataset.transactionType && group.dataset.transactionType !== expected) throw new Error('Einnahmen können nur Einnahmepositionen zugeordnet werden; Ausgaben nur Ausgabepositionen.');
       if ((parts.length > 1 && !weight) || (weight && (!/^\d+(?:\.\d{1,2})?$/.test(weight) || Number(weight) <= 0 || Number(weight) > 999999999999.99))) throw new Error('Bei einer Aufteilung braucht jede Position ein positives Gewicht mit höchstens zwei Nachkommastellen.');
@@ -614,7 +617,9 @@ function budgetReadPlan() {
     if (accountId && !(state?.accounts || []).some(account => account.id === accountId && account.kind === 'CHECKING')) throw new Error('Bitte für die Planposition ein vorhandenes Girokonto auswählen oder die Kontozuordnung entfernen.');
     const amountText = read('amount').value.trim().replace(',', '.');
     if (!/^\d+(?:\.\d{1,2})?$/.test(amountText)) throw new Error('Beträge müssen nichtnegative, centgenaue Dezimalzahlen sein.');
+    const reserveFields = budgetReadReserveItem(item);
     items.push({
+      ...reserveFields,
       ...(accountId ? {account_id:accountId} : {}),
       id:item.dataset.itemId,
       label:read('label').value.trim(),
@@ -631,10 +636,10 @@ function budgetReadPlan() {
   if (Object.hasOwn(budgetOriginalPlan, 'actual_mappings')) plan.actual_mappings = structuredClone(budgetOriginalPlan.actual_mappings);
   const itemById = new Map(items.map(item => [item.id, item]));
   const fallbackItem = itemById.get(budgetOriginalPlan.unmapped_expense_item_id);
-  if (fallbackItem && fallbackItem.kind !== 'income') plan.unmapped_expense_item_id = fallbackItem.id;
+  if (fallbackItem && ['fixed','variable'].includes(fallbackItem.kind)) plan.unmapped_expense_item_id = fallbackItem.id;
   const cashItem = itemById.get(budgetOriginalPlan.cash_receipt_item_id);
   if (cashItem?.kind === 'variable') plan.cash_receipt_item_id = cashItem.id;
-  try { return {...plan, ...budgetReadSetup(items), ...budgetReadAllocations(items)}; }
+  try { return {...plan, ...budgetReadSetup(items), ...budgetReadAllocations(items), ...budgetReadReserves(items)}; }
   catch (error) { budgetSetStatus(error.message); throw error; }
 }
 function budgetRenderHistory(history, activeRevision) {
@@ -656,7 +661,7 @@ function budgetRenderHistory(history, activeRevision) {
     } else {
       const activateButton = button(actions, budgetActivationPending ? 'Aktivierung läuft …' : 'Als aktive Planung übernehmen', async () => {
       if (budgetActivationPending) return;
-      if (budgetDirty && !window.confirm('Ungespeicherte Änderungen verwerfen und diese Revision aktivieren?')) return;
+      if (budgetDirty && !window.confirm('Ungespeicherte Änderungen verwerfen und diesen Planstand aktivieren?')) return;
       const version = budgetEditVersion;
       budgetActivationPending = true;
       for (const control of $('budget-history-rows').querySelectorAll('button')) {
@@ -669,8 +674,8 @@ function budgetRenderHistory(history, activeRevision) {
           if (Array.isArray(result.history)) budgetRenderHistory(result.history, budgetActiveRevision);
           $('budget-revision').textContent = budgetRevision === null
             ? 'Noch nicht gespeichert'
-            : `Revision ${budgetRevision}${budgetResultRevisionIsActive(budgetRevision, result) ? ' · aktive Planung' : ' · nicht aktiv'}`;
-          budgetSetStatus(`Revision ${entry.revision} aktiviert. Deine zwischenzeitlichen Änderungen bleiben im Formular.`);
+            : `Planstand ${budgetRevision}${budgetResultRevisionIsActive(budgetRevision, result) ? ' · aktive Planung' : ' · nicht aktiv'}`;
+          budgetSetStatus(`Planstand ${entry.revision} aktiviert. Deine zwischenzeitlichen Änderungen bleiben im Formular.`);
           budgetInvalidatePlanActual(budgetActiveRevision);
           return;
         }
@@ -698,7 +703,7 @@ function budgetRenderHistory(history, activeRevision) {
     for (const entry of history || []) {
       const option = document.createElement('option'); option.value = entry.revision;
       option.dataset.horizonMonths = String(budgetHorizonMonths(entry));
-      option.textContent = `R${entry.revision} · ${entry.title}${budgetEntryIsActive(entry, activeRevision) ? ' · aktiv' : ''} · ab ${entry.start_month} · ${budgetHorizonMonths(entry)} Monate`; select.append(option);
+      option.textContent = `Planstand ${entry.revision} · ${entry.title}${budgetEntryIsActive(entry, activeRevision) ? ' · aktiv' : ''} · ab ${entry.start_month} · ${budgetHorizonMonths(entry)} Monate`; select.append(option);
     }
     if ([...select.options].some(o => o.value === previous)) select.value = previous;
   }
@@ -715,12 +720,13 @@ function budgetRenderPlan(result) {
   budgetActiveRevision = result.active_revision ?? budgetLatestRevision;
   budgetRevision = result.revision === undefined ? null : result.revision;
   $('budget-revision').textContent = plan && budgetRevision !== null
-    ? `Revision ${budgetRevision}${budgetIsActive(budgetRevision) ? ' · aktive Planung' : ' · nicht aktiv'}`
+    ? `Planstand ${budgetRevision}${budgetIsActive(budgetRevision) ? ' · aktive Planung' : ' · nicht aktiv'}`
     : 'Noch nicht gespeichert';
   $('budget-title').value = plan ? plan.title : '';
   $('budget-start-month').value = plan ? plan.start_month : '';
   $('budget-horizon-months').value = String(budgetHorizonMonths(plan));
   $('budget-notes').value = plan ? plan.notes : '';
+  budgetRenderReserveSetup(plan || {});
   $('budget-items').replaceChildren();
   for (const item of (plan ? plan.items : [])) budgetAddItem(item, true);
   budgetRenderSetup(plan || {});
@@ -730,6 +736,7 @@ function budgetRenderPlan(result) {
 }
 function budgetRenderCalculation(result) {
   const rows = result.rows || [];
+  budgetRenderReserves($('budget-reserves-result'), result.reserves);
   budgetClearPositionDetails();
   $('budget-total-income').textContent = eur(result.totals.income);
   $('budget-total-expenses').textContent = eur(result.totals.expenses);
@@ -853,7 +860,7 @@ $('budget-form').addEventListener('input', event => { if (event.target.closest('
 $('budget-form').addEventListener('change', event => { if (event.target.closest('[data-budget-search]')) return; if (event.target.dataset.budgetField === 'kind') budgetRefreshAllocationItems(); if (!event.target.closest('.budget-item')) budgetInvalidate(); });
 $('payment-policy-history').addEventListener('change', event => { void paymentPolicySelectRevision(event.target.value); });
 $('budget-form').addEventListener('submit', event => { event.preventDefault(); run(budgetCalculate); });
-for (const [id, kind] of [['budget-add-income','income'],['budget-add-fixed','fixed'],['budget-add-variable','variable']]) {
+for (const [id, kind] of [['budget-add-income','income'],['budget-add-fixed','fixed'],['budget-add-variable','variable'],['budget-add-saving','saving']]) {
   $(id).addEventListener('click', () => { budgetAddItem({kind, start_month:$('budget-start-month').value}); $('budget-items-details').open = true; budgetInvalidate(); });
 }
 $('budget-save').addEventListener('click', () => run(async () => {
@@ -861,7 +868,7 @@ $('budget-save').addEventListener('click', () => run(async () => {
   const version = budgetEditVersion;
   const result = await budgetPlanRequest('/api/budget-save', {revision:budgetLatestRevision, base_revision:budgetRevision || null, plan});
   budgetLatestRevision = result.latest_revision;
-  if (version !== budgetEditVersion) { budgetSetStatus(`Revision ${result.revision} gespeichert. Deine zwischenzeitlichen Änderungen bleiben im Formular.`); return; }
+  if (version !== budgetEditVersion) { budgetSetStatus(`Planstand ${result.revision} gespeichert. Deine zwischenzeitlichen Änderungen bleiben im Formular.`); return; }
   budgetShowSnapshot(result);
 }));
 $('budget-reload').addEventListener('click', () => run(async () => {
@@ -876,8 +883,8 @@ function budgetShowSnapshot(result) {
 }
 function budgetSnapshotStatus(result, derivedBreakdown = false) {
   const activation = budgetIsActive(result.revision, result.active_revision)
-    ? 'Aktive Planung.' : `Nicht aktiv; aktiv ist R${result.active_revision}.`;
-  budgetSetStatus(`Revision ${result.revision} geladen; Grundlage ${result.base_revision ? 'R' + result.base_revision : 'nicht hinterlegt'}. ${activation} ${result.calculation_status === 'saved' ? 'Gespeichertes Ergebnis.' : 'Altbestand: Ergebnis mit aktuellem Rechenmodell neu berechnet.'}${derivedBreakdown ? ' Anteile und Positionsdetails wurden lesend ergänzt; die gespeicherten Monats- und Gesamtwerte stimmen exakt überein.' : ''}`);
+    ? 'Aktive Planung.' : `Nicht aktiv; aktiv ist Planstand ${result.active_revision}.`;
+  budgetSetStatus(`Planstand ${result.revision} geladen; Grundlage ${result.base_revision ? 'Planstand ' + result.base_revision : 'nicht hinterlegt'}. ${activation} ${result.calculation_status === 'saved' ? 'Gespeichertes Ergebnis.' : 'Altbestand: Ergebnis mit aktuellem Rechenmodell neu berechnet.'}${derivedBreakdown ? ' Anteile und Positionsdetails wurden lesend ergänzt; die gespeicherten Monats- und Gesamtwerte stimmen exakt überein.' : ''}`);
 }
 for (const id of ['budget-first','budget-second']) $(id).addEventListener('change', () => { $('budget-comparison').hidden = true; budgetClearPositionDetails(); });
 $('budget-compare').addEventListener('click', () => run(async () => {
@@ -887,18 +894,162 @@ $('budget-compare').addEventListener('click', () => run(async () => {
   const selected = id => $(id).selectedOptions[0];
   const firstHorizon = budgetHorizonMonths({horizon_months:selected('budget-first').dataset.horizonMonths});
   const secondHorizon = budgetHorizonMonths({horizon_months:selected('budget-second').dataset.horizonMonths});
-  if (firstHorizon !== secondHorizon) throw new Error(`Die Revisionen haben unterschiedliche Vorschauzeiträume (${firstHorizon} und ${secondHorizon} Monate) und können nicht verglichen werden.`);
+  if (firstHorizon !== secondHorizon) throw new Error(`Die Planstände haben unterschiedliche Vorschauzeiträume (${firstHorizon} und ${secondHorizon} Monate) und können nicht verglichen werden.`);
   const result = await api('/api/budget-compare', {first, second});
   if (first !== Number($('budget-first').value) || second !== Number($('budget-second').value)) return;
-  chart('budget-comparison-chart', [{name:`R${first}`,values:result.rows.map(r=>r.first)}, {name:`R${second}`,values:result.rows.map(r=>r.second)}], result.rows.map(r=>r.period));
+  chart('budget-comparison-chart', [{name:`Planstand ${first}`,values:result.rows.map(r=>r.first)}, {name:`Planstand ${second}`,values:result.rows.map(r=>r.second)}], result.rows.map(r=>r.period));
   const horizon = result.rows.length;
-  $('budget-comparison-summary').textContent = `Differenz R${second} minus R${first} nach ${horizon} Monaten: ${eur(result.rows.at(-1).difference)}. Veränderung ohne Anfangsbestand. ${[result.first,result.second].some(r=>r.calculation_status !== 'saved') ? 'Altbestand enthalten: dessen Ergebnis wurde neu berechnet.' : 'Beide Ergebnisse gespeichert.'} Unbestätigte Positionen: R${first}: ${result.first.calculation.warnings.length}, R${second}: ${result.second.calculation.warnings.length}.`;
+  $('budget-comparison-summary').textContent = `Differenz Planstand ${second} minus Planstand ${first} nach ${horizon} Monaten: ${eur(result.rows.at(-1).difference)}. Veränderung ohne Anfangsbestand. ${[result.first,result.second].some(r=>r.calculation_status !== 'saved') ? 'Altbestand enthalten: dessen Ergebnis wurde neu berechnet.' : 'Beide Ergebnisse gespeichert.'} Unbestätigte Positionen: Planstand ${first}: ${result.first.calculation.warnings.length}, Planstand ${second}: ${result.second.calculation.warnings.length}.`;
   const body = $('budget-comparison-rows'); body.replaceChildren();
   for (const r of result.rows) { const row = document.createElement('tr'); cell(row,r.period); for (const k of ['first','second','difference','cashflow_difference']) cell(row,amount(r[k]),true); body.append(row); }
   const describe = i => i ? budgetDescribePosition(i) : 'Nicht enthalten';
   const changes = $('budget-comparison-changes'); changes.replaceChildren();
   for (const c of result.changes) { const li = document.createElement('li'); li.textContent = `${c.id}: ${describe(c.before)} → ${describe(c.after)}`; changes.append(li); }
   if (!result.changes.length) { const li = document.createElement('li'); li.textContent = 'Keine geänderten Positionen.'; changes.append(li); }
-  $('budget-comparison-notes').textContent = result.notes_changed ? `Notizen R${first}: ${result.first.plan.notes} | R${second}: ${result.second.plan.notes}` : 'Notizen unverändert.';
+  for (const [key, label] of [['reserve_pots','Rücklagentöpfe'],['safety_reserve','Sicherheitsreserve']]) {
+    const delta = result.reserve_changes?.[key];
+    if (!delta || JSON.stringify(delta.before) === JSON.stringify(delta.after)) continue;
+    const li = document.createElement('li'); li.textContent = `${label} zwischen den Planständen geändert. Lade die jeweiligen Planstände für die Einzelwerte.`; changes.append(li);
+  }
+  $('budget-comparison-notes').textContent = result.notes_changed ? `Notizen Planstand ${first}: ${result.first.plan.notes} | Planstand ${second}: ${result.second.plan.notes}` : 'Notizen unverändert.';
   $('budget-comparison').hidden = false;
 }));
+
+
+// Reserve values are explicit plan assumptions. No balance is inferred here.
+function budgetReserveField(parent, name, label, value, type = 'text') {
+  const input = budgetInput(type, value ?? ''); input.dataset.reserveField = name;
+  parent.append(budgetControl(label, input, `reserve-${++budgetRowCounter}`));
+  return input;
+}
+function budgetReserveSelect(parent, name, label, choices, value) {
+  const select = document.createElement('select'); select.dataset.reserveField = name;
+  for (const [id, text] of choices) { const option = document.createElement('option'); option.value = id; option.textContent = text; select.append(option); }
+  select.value = value || ''; parent.append(budgetControl(label, select, `reserve-${++budgetRowCounter}`)); return select;
+}
+function budgetReservePotChoices(selected = '') {
+  const choices = [['', 'Kein Topf'], ...[...($('budget-reserve-pots')?.children || [])].map(row => [row.dataset.potId, row.querySelector('[data-reserve-field="purpose"]').value || 'Unbenannter Topf'])];
+  if (selected && !choices.some(([id]) => id === selected)) choices.push([selected, `${selected} (Topf fehlt)`]);
+  return choices;
+}
+function budgetRefreshReserveChoices() {
+  for (const select of $('budget-items').querySelectorAll('[data-reserve-field="pot_id"]')) {
+    const selected = select.value; select.replaceChildren();
+    for (const [id, text] of budgetReservePotChoices(selected)) { const option = document.createElement('option'); option.value = id; option.textContent = text; select.append(option); }
+    select.value = selected;
+  }
+}
+function budgetAddReservePot(value = {}) {
+  const list = $('budget-reserve-pots'), row = document.createElement('article'); row.className = 'budget-reserve-pot'; row.dataset.potId = value.id || budgetNewId();
+  const head = document.createElement('div'); head.className = 'budget-item-head'; const title = document.createElement('h4'); title.textContent = 'Rücklagentopf'; head.append(title);
+  button(head, 'Topf entfernen', () => { row.remove(); budgetRefreshReserveChoices(); budgetInvalidate(); }); row.append(head);
+  const grid = document.createElement('div'); grid.className = 'budget-item-grid'; row.append(grid);
+  budgetReserveField(grid, 'purpose', 'Zweck', value.purpose).required = true;
+  budgetReserveField(grid, 'target_amount', 'Zielbetrag EUR', value.target_amount).required = true;
+  budgetReserveField(grid, 'opening_amount', 'Bestätigter Anfangsbetrag EUR (leer = unbekannt)', value.opening_amount);
+  budgetReserveField(grid, 'opening_date', 'Datum des Anfangsbetrags (Monatsanfang)', value.opening_date, 'date');
+  const accounts = [['', 'Kein Zielkonto'], ...(state?.accounts || []).map(account => [account.id, accountDisplay(account)])];
+  if (value.target_account_id && !accounts.some(([id]) => id === value.target_account_id)) accounts.push([value.target_account_id, `${value.target_account_id} (gespeichert)`]);
+  budgetReserveSelect(grid, 'target_account_id', 'Zielkonto (nur Zuordnung)', accounts, value.target_account_id);
+  list.append(row); row.addEventListener('input', budgetRefreshReserveChoices);
+}
+function budgetRenderReserveSetup(plan) {
+  const root = $('budget-reserve-setup'); if (!root) return; root.replaceChildren();
+  const details = document.createElement('details'); details.id = 'budget-reserve-details';
+  const summary = document.createElement('summary'); summary.textContent = 'Rücklagentöpfe und Sicherheitsreserve (optional)'; details.append(summary);
+  const help = document.createElement('p'); help.className = 'muted'; help.textContent = 'Töpfe binden Geld im Planstand. Ein Zielkonto beschreibt nur die Zuordnung; es wird nichts überwiesen. Leerer Anfangsbetrag bedeutet unbekannt, ausdrücklich 0 bedeutet null Euro. Ein bekannter Anfangsbetrag benötigt den ersten Tag des ersten Planmonats.'; details.append(help);
+  const list = document.createElement('div'); list.id = 'budget-reserve-pots'; details.append(list); root.append(details);
+  for (const pot of plan.reserve_pots || []) budgetAddReservePot(pot);
+  button(details, 'Rücklagentopf hinzufügen', () => { budgetAddReservePot(); details.open = true; budgetInvalidate(); });
+  const grid = document.createElement('div'); grid.className = 'budget-item-grid'; details.append(grid);
+  const mode = budgetReserveSelect(grid, 'safety_mode', 'Sicherheitsreserve', [['', 'Keine'], ['fixed', 'Fester Betrag'], ['expense_factor', 'Faktor der Monatskosten']], plan.safety_reserve?.mode);
+  const amount = budgetReserveField(grid, 'safety_value', 'Betrag EUR / Faktor', plan.safety_reserve?.amount ?? plan.safety_reserve?.factor);
+  amount.disabled = !mode.value; mode.addEventListener('change', () => { amount.disabled = !mode.value; });
+  const basis = document.createElement('p'); basis.className = 'muted'; basis.textContent = 'Faktorbasis: nominelle Monatskosten der im Planungshorizont gültigen Fixkosten und variablen Ausgaben (Zahlungsbetrag ÷ Intervall), einschließlich Jahres- und Quartalskosten. Sparraten sind ausgeschlossen. Kein rückblickender Ist-Mittelwert.'; details.append(basis);
+}
+function budgetAddReserveItemFields(item, grid, values, token, kindSelect) {
+  const box = document.createElement('div'); box.className = 'budget-reserve-item'; grid.append(box);
+  const pot = budgetReserveSelect(box, 'pot_id', 'Rücklagentopf', budgetReservePotChoices(values.pot_id || values.accrual?.pot_id), values.pot_id || values.accrual?.pot_id);
+  const from = budgetReserveField(box, 'from_month', 'Monatliche Bindung ab (bei Ausgaben)', values.accrual?.from_month, 'month');
+  const help = document.createElement('p'); help.className = 'muted'; help.textContent = 'Ausgabe mit Topf: Zahlungsbetrag bleibt am Fälligkeitstermin erhalten; monatliche Bindung separat. Sparrate: reine Bindung, keine Haushaltsausgabe oder Bankbuchung.'; box.append(help);
+  const sync = () => { box.hidden = kindSelect.value === 'income'; pot.disabled = box.hidden; from.disabled = !['fixed','variable'].includes(kindSelect.value); from.required = !from.disabled && Boolean(pot.value); pot.required = kindSelect.value === 'saving'; };
+  kindSelect.addEventListener('change', sync); pot.addEventListener('change', sync); sync();
+}
+function budgetReserveMoney(value, label) {
+  const text = value.trim().replace(',', '.');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) throw new Error(`${label}: nichtnegative, centgenaue Zahl eingeben.`);
+  return text;
+}
+function budgetReadReserveItem(item) {
+  const kind = item.querySelector('[data-budget-field="kind"]').value;
+  const pot = item.querySelector('[data-reserve-field="pot_id"]')?.value;
+  if (kind === 'saving') { if (!pot) throw new Error('Eine Sparrate benötigt einen Rücklagentopf.'); return {pot_id:pot}; }
+  if (['fixed','variable'].includes(kind) && pot) {
+    const from = item.querySelector('[data-reserve-field="from_month"]').value;
+    if (!from) throw new Error('Bitte den ersten Monat der Rücklagenbindung angeben.');
+    return {accrual:{pot_id:pot, from_month:from}};
+  }
+  return {};
+}
+function budgetReadReserves(items) {
+  const root = $('budget-reserve-setup'); if (!root) return {};
+  const pots = [...$('budget-reserve-pots').children].map(row => {
+    const read = key => row.querySelector(`[data-reserve-field="${key}"]`).value.trim();
+    const opening = read('opening_amount'), date = read('opening_date');
+    if (opening && date !== `${$('budget-start-month').value}-01`) throw new Error('Der Anfangsbetrag benötigt den Monatsanfang des ersten Planmonats.');
+    if (!opening && date) throw new Error('Ein Datum ohne bestätigten Anfangsbetrag ist nicht zulässig.');
+    const target = read('target_account_id');
+    if (target && !(state?.accounts || []).some(account => account.id === target)) throw new Error('Bitte ein vorhandenes Zielkonto auswählen.');
+    return {id:row.dataset.potId, purpose:read('purpose'), target_amount:budgetReserveMoney(read('target_amount'), 'Zielbetrag'), opening_amount:opening ? budgetReserveMoney(opening, 'Anfangsbetrag') : null, opening_date:opening ? date : null, ...(target ? {target_account_id:target} : {})};
+  });
+  const seen = new Set();
+  for (const item of items) { const id = item.pot_id || item.accrual?.pot_id; if (!id) continue; if (!pots.some(pot => pot.id === id)) throw new Error('Eine Planposition verweist auf einen fehlenden Topf.'); if (seen.has(id)) throw new Error('Ein Topf darf höchstens eine finanzierende Planposition haben.'); seen.add(id); }
+  const result = {}; if (pots.length || Object.hasOwn(budgetOriginalPlan, 'reserve_pots')) result.reserve_pots = pots;
+  const mode = root.querySelector('[data-reserve-field="safety_mode"]').value;
+  if (mode) {
+    const raw = root.querySelector('[data-reserve-field="safety_value"]').value.trim().replace(',', '.');
+    if (mode === 'expense_factor' && (raw.length > 40 || !/^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw) || !Number.isFinite(Number(raw)))) throw new Error('Der Reservefaktor muss eine nichtnegative endliche Dezimalzahl sein.');
+    result.safety_reserve = {mode, [mode === 'fixed' ? 'amount' : 'factor']:mode === 'fixed' ? budgetReserveMoney(raw, 'Sicherheitsreserve') : raw};
+  }
+  return result;
+}
+function budgetRenderReserves(target, reserves, withBank = false) {
+  if (!target) return; target.replaceChildren(); target.hidden = !reserves; if (!reserves) return;
+  const heading = document.createElement('h3'); heading.textContent = 'Rücklagen und frei verfügbarer Betrag · Gesamtplan'; target.append(heading);
+  const note = document.createElement('p'); note.className = 'muted';
+  note.textContent = reserves.unavailable_reason === 'whole_plan_only' ? 'Rücklagen sind nur in der Gesamtansicht verfügbar; sie werden in Konto- oder Personenansichten nicht erneut abgezogen.' : 'Geplante Bindung und tatsächlicher Bankstand bleiben getrennt. Ein Plananteil bestätigt keinen tatsächlichen Sparbetrag.'; target.append(note);
+  if (reserves.available === false) {
+    if (reserves.unavailable_reason !== 'whole_plan_only') note.textContent = 'Für den ausgewählten Monat liegen keine gespeicherten Rücklagenwerte vor. Ein frei verfügbarer Betrag ist nicht berechenbar.';
+    return;
+  }
+  const money = value => value === null || value === undefined ? 'Unbekannt' : eur(value);
+  const overview = document.createElement('p'); overview.textContent = `Sicherheitsreserve: ${reserves.safety_threshold == null ? 'Nicht festgelegt' : money(reserves.safety_threshold)} · Nominelle Monatskosten: ${money(reserves.monthly_expense_basis)}`; target.append(overview);
+  const pots = new Map((reserves.pots || []).map(pot => [pot.id, pot]));
+  for (const pot of pots.values()) { const text = document.createElement('p'); text.textContent = `${pot.purpose} · Ziel ${money(pot.target_amount)} · bestätigter Anfang ${money(pot.opening_amount)}${pot.opening_date ? ` am ${pot.opening_date}` : ' (Datum unbekannt)'}${pot.target_account_id ? ` · Zielkonto ${pot.target_account_id} (nur Zuordnung)` : ''}`; target.append(text); }
+  const rows = reserves.selected_row ? [reserves.selected_row] : reserves.rows || [];
+  const grid = document.createElement('div'); grid.className = 'reserve-months'; target.append(grid);
+  for (const row of rows) {
+    const card = document.createElement('article'); card.className = 'reserve-month'; const title = document.createElement('h4'); title.textContent = row.period; card.append(title);
+    const data = document.createElement('dl');
+    const add = (label, value) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = label; dd.textContent = money(value); data.append(dt, dd); };
+    add('Gebundene Töpfe', row.bound_total); add('Monatliche Bindung', row.contribution_total); add('Freigabe für Zahlungen', row.release_total); add('Finanzierungslücke', row.funding_gap_total);
+    const liquidity = row.liquidity || (withBank && reserves.liquidity) || null;
+    if (withBank) {
+      add('Prognostizierter Bankstand', liquidity?.bank_balance); add('Frei verfügbar nach Töpfen', liquidity?.free_available);
+      if (reserves.safety_threshold != null) add('Unterschreitung der Sicherheitsreserve', liquidity?.safety_shortfall);
+      if (liquidity?.unavailable_reason) {
+        const action = document.createElement('p'); action.className = 'notice';
+        action.textContent = liquidity.unavailable_reason === 'unknown_pot_balance' ? 'Trage unter Planung den bestätigten Anfangsbestand der Rücklagentöpfe ein.' : liquidity.unavailable_reason === 'incomplete_source_coverage' ? 'Die Buchungen zum Planbeginn sind unvollständig. Ergänze die fehlenden Umsätze, bevor Du diese Kontostandsprognose verwendest.' : 'Wähle unter Planung die Liquiditätskonten mit einem bestätigten Stand zum Planbeginn aus.';
+        card.append(action);
+      } else if (liquidity?.below_reserve) {
+        const warning = document.createElement('p'); warning.className = 'notice';
+        warning.textContent = `Sicherheitsreserve unterschritten um ${money(liquidity.safety_shortfall)}. Prüfe die Planung und Rücklagen.`; card.append(warning);
+      }
+    }
+    card.append(data);
+    for (const entry of row.pots || []) { const text = document.createElement('p'); text.textContent = `${pots.get(entry.pot_id)?.purpose || entry.pot_id}: geplanter Topfstand ${money(entry.closing)} · Bindung ${money(entry.contribution)} · fällige Zahlung ${money(entry.due_amount)} · Lücke ${money(entry.funding_gap)}`; card.append(text); }
+    grid.append(card);
+  }
+  if (!withBank) { const noBank = document.createElement('p'); noBank.textContent = 'Diese Vorschau hat keinen Bankanfangsstand: Ein absoluter Bankstand, frei verfügbarer Betrag und eine Reserveunterschreitung sind hier nicht berechenbar.'; target.append(noBank); }
+  for (const warning of reserves.warnings || []) { const text = document.createElement('p'); text.className = 'notice'; text.textContent = typeof warning === 'string' ? warning : warning.message || warning.code || 'Rücklagenannahme prüfen.'; target.append(text); }
+}

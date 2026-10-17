@@ -15,12 +15,12 @@ _PLAN_FIELDS = {"title", "start_month", "notes", "items"}
 _PLAN_OPTIONAL_FIELDS = _PLAN_FIELDS | {
     "horizon_months", "actual_mappings", "actual_allocations", "liquidity_accounts",
     "payday_cycles", "pending_transfers", "household_split", "unmapped_expense_item_id",
-    "cash_receipt_item_id",
+    "cash_receipt_item_id", "reserve_pots", "safety_reserve",
 }
 _ITEM_FIELDS = {
     "id", "label", "kind", "amount", "start_month", "end_month", "source", "confirmed"
 }
-_ITEM_OPTIONAL_FIELDS = _ITEM_FIELDS | {"interval_months", "account_id"}
+_ITEM_OPTIONAL_FIELDS = _ITEM_FIELDS | {"interval_months", "account_id", "accrual", "pot_id"}
 _MONTH_RE = re.compile(r"[0-9]{4}-(0[1-9]|1[0-2])\Z")
 _DATE_RE = re.compile(r"[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])\Z")
 _CENT = Decimal("0.01")
@@ -110,6 +110,65 @@ def _validate_plan(value, store=None):
         if type(horizon) is not int or not 1 <= horizon <= 120:
             raise ValueError("horizon_months must be an integer from 1 to 120")
         plan["horizon_months"] = horizon
+    if "reserve_pots" in value:
+        pots = value["reserve_pots"]
+        if not isinstance(pots, list) or len(pots) > 200:
+            raise ValueError("reserve_pots must contain at most 200 pots")
+        validated_pots = []
+        pot_ids = set()
+        for raw in pots:
+            required = {"id", "purpose", "target_amount", "opening_amount", "opening_date"}
+            if (not isinstance(raw, dict) or not required <= set(raw)
+                    or set(raw) - required - {"target_account_id"}):
+                raise ValueError("reserve pot has invalid fields")
+            pot_id = _text(raw["id"], "reserve pot id", 1, 64)
+            if pot_id in pot_ids:
+                raise ValueError("reserve pot ids must be unique")
+            pot_ids.add(pot_id)
+            opening = raw["opening_amount"]
+            opening_date = raw["opening_date"]
+            if opening is None:
+                if opening_date is not None:
+                    raise ValueError("unknown reserve opening requires a null opening_date")
+            else:
+                opening = _amount(opening)
+                if opening_date != plan["start_month"] + "-01":
+                    raise ValueError("reserve opening_date must equal the first plan day")
+            pot = {"id": pot_id, "purpose": _text(raw["purpose"], "reserve purpose", 1, 160),
+                   "target_amount": _amount(raw["target_amount"]),
+                   "opening_amount": opening, "opening_date": opening_date}
+            if "target_account_id" in raw:
+                account_id = _text(raw["target_account_id"], "reserve target account", 1, 120)
+                if store is not None and store.db.execute(
+                        "SELECT 1 FROM accounts WHERE id=? AND currency='EUR'",
+                        (account_id,)).fetchone() is None:
+                    raise ValueError("reserve target account must reference an existing EUR account")
+                pot["target_account_id"] = account_id
+            validated_pots.append(pot)
+        plan["reserve_pots"] = validated_pots
+    if "safety_reserve" in value:
+        reserve = value["safety_reserve"]
+        if not isinstance(reserve, dict):
+            raise ValueError("safety_reserve must be an object")
+        mode = reserve.get("mode")
+        if mode == "fixed":
+            _object(reserve, {"mode", "amount"}, "safety reserve")
+            plan["safety_reserve"] = {"mode": mode, "amount": _amount(reserve["amount"])}
+        elif mode == "expense_factor":
+            _object(reserve, {"mode", "factor"}, "safety reserve")
+            # Factors are dimensionless decimal text, not money; retain sub-cent precision.
+            raw_factor = reserve["factor"]
+            try:
+                factor = (Decimal(raw_factor) if isinstance(raw_factor, str)
+                          and 0 < len(raw_factor) <= 40 else None)
+            except InvalidOperation:
+                factor = None
+            if (factor is None or not factor.is_finite() or factor < 0
+                    or factor > _MAX_AMOUNT):
+                raise ValueError("safety reserve factor must be nonnegative finite decimal text")
+            plan["safety_reserve"] = {"mode": mode, "factor": raw_factor}
+        else:
+            raise ValueError("invalid safety reserve mode")
     if "household_split" in value:
         split = value["household_split"]
         if not isinstance(split, list) or not 1 <= len(split) <= 10:
@@ -264,7 +323,7 @@ def _validate_plan(value, store=None):
             raise ValueError("item ids must be unique")
         identifiers.add(identifier)
         kind = raw["kind"]
-        if kind not in {"income", "fixed", "variable"}:
+        if kind not in {"income", "fixed", "variable", "saving"}:
             raise ValueError("invalid item kind")
         start = _month(raw["start_month"], "item start_month")
         end = raw["end_month"]
@@ -299,13 +358,39 @@ def _validate_plan(value, store=None):
         # Preserve legacy snapshot shape while making monthly cadence the default.
         if "interval_months" in raw:
             item["interval_months"] = interval
+        if "accrual" in raw:
+            if kind not in {"fixed", "variable"}:
+                raise ValueError("accrual requires a fixed or variable expense")
+            _object(raw["accrual"], {"pot_id", "from_month"}, "accrual")
+            from_month = _month(raw["accrual"]["from_month"], "accrual from_month")
+            if end is not None and from_month > end:
+                raise ValueError("accrual from_month follows item end_month")
+            item["accrual"] = {
+                "pot_id": _text(raw["accrual"]["pot_id"], "accrual pot id", 1, 64),
+                "from_month": from_month}
+        if kind == "saving":
+            if "pot_id" not in raw:
+                raise ValueError("saving requires pot_id")
+            item["pot_id"] = _text(raw["pot_id"], "saving pot id", 1, 64)
+        elif "pot_id" in raw:
+            raise ValueError("pot_id is only valid for saving items")
         plan["items"].append(item)
+    pot_ids = {pot["id"] for pot in plan.get("reserve_pots", [])}
+    funded_pots = set()
+    for item in plan["items"]:
+        pot_id = (item["accrual"]["pot_id"] if "accrual" in item else item.get("pot_id"))
+        if pot_id is not None:
+            if pot_id not in pot_ids:
+                raise ValueError("item references an unknown reserve pot")
+            if pot_id in funded_pots:
+                raise ValueError("each reserve pot may have only one funding item")
+            funded_pots.add(pot_id)
     if "unmapped_expense_item_id" in value:
         fallback_item_id = _text(
             value["unmapped_expense_item_id"], "unmapped expense item id", 1, 64)
         fallback_item = next((item for item in plan["items"]
                               if item["id"] == fallback_item_id), None)
-        if fallback_item is None or fallback_item["kind"] == "income":
+        if fallback_item is None or fallback_item["kind"] not in {"fixed", "variable"}:
             raise ValueError(
                 "unmapped_expense_item_id must reference an existing expense item")
         plan["unmapped_expense_item_id"] = fallback_item_id
@@ -336,6 +421,8 @@ def _validate_plan(value, store=None):
             item = item_by_id.get(item_id)
             if item is None:
                 raise ValueError("actual mapping references an unknown item")
+            if item["kind"] == "saving":
+                raise ValueError("saving items cannot have actual mappings")
             if store is not None:
                 category = store.db.execute(
                     "SELECT transaction_type FROM category_catalog WHERE id=?", (category_id,)
@@ -366,11 +453,13 @@ def _validate_plan(value, store=None):
             key = (account_id, external_id)
             if item_id not in identifiers:
                 raise ValueError("actual allocation references an unknown item")
+            if item_by_id[item_id]["kind"] == "saving":
+                raise ValueError("saving items cannot have actual allocations")
             if store is not None:
                 transaction_type = transaction_types.get(key)
                 if transaction_type is None:
                     transaction = store.db.execute(
-                        "SELECT t.*,cat.transaction_type,o.confirmed FROM transactions t "
+                        "SELECT t.*,cat.transaction_type,o.confirmed FROM active_transactions t "
                         "LEFT JOIN classification_overrides o "
                         "ON o.account_id=t.account_id AND o.external_id=t.external_id "
                         "LEFT JOIN category_catalog cat ON cat.id=o.category_id "
@@ -617,8 +706,14 @@ def compare(store, data):
     b_items = {i['id']: i for i in second['plan']['items']}
     changes = [{'id': key, 'before': a_items.get(key), 'after': b_items.get(key)}
                for key in sorted(a_items.keys() | b_items.keys()) if a_items.get(key) != b_items.get(key)]
-    return {'first': first, 'second': second, 'rows': rows, 'changes': changes,
-            'notes_changed': first['plan']['notes'] != second['plan']['notes']}
+    result = {'first': first, 'second': second, 'rows': rows, 'changes': changes,
+              'notes_changed': first['plan']['notes'] != second['plan']['notes']}
+    if any(field in snap['plan'] for field in ('reserve_pots', 'safety_reserve')
+           for snap in (first, second)):
+        result['reserve_changes'] = {
+            field: {'before': first['plan'].get(field), 'after': second['plan'].get(field)}
+            for field in ('reserve_pots', 'safety_reserve')}
+    return result
 
 
 def export_snapshot(store, data):
@@ -629,9 +724,23 @@ def export_snapshot(store, data):
     snapshot['format_version'] = 1
     output = io.StringIO(newline='')
     writer = csv.writer(output, delimiter=';', lineterminator='\r\n')
-    writer.writerow(['Monat', 'Einnahmen_EUR', 'Fixkosten_EUR', 'Variabel_EUR', 'Cashflow_EUR', 'Kumulierte_Veraenderung_EUR'])
-    for row in snapshot['calculation']['rows']:
-        writer.writerow([row['period']] + [row[k].replace('.', ',') for k in ('income', 'fixed', 'variable', 'cashflow', 'cumulative')])
+    headers = ['Monat', 'Einnahmen_EUR', 'Fixkosten_EUR', 'Variabel_EUR',
+               'Cashflow_EUR', 'Kumulierte_Veraenderung_EUR']
+    reserves = snapshot['calculation'].get('reserves')
+    if reserves is not None:
+        headers += ['Gebunden_EUR', 'Bindung_EUR', 'Freigabe_EUR',
+                    'Finanzierungsluecke_EUR', 'Sicherheitsschwelle_EUR']
+    writer.writerow(headers)
+    for index, row in enumerate(snapshot['calculation']['rows']):
+        values = [row['period']] + [row[k].replace('.', ',') for k in (
+            'income', 'fixed', 'variable', 'cashflow', 'cumulative')]
+        if reserves is not None:
+            reserve_row = reserves['rows'][index]
+            extra = [reserve_row[k] for k in (
+                'bound_total', 'contribution_total', 'release_total', 'funding_gap_total')]
+            extra.append(reserves['safety_threshold'])
+            values += ['' if amount is None else amount.replace('.', ',') for amount in extra]
+        writer.writerow(values)
     return {'snapshot': snapshot, 'csv': output.getvalue()}
 
 
@@ -676,6 +785,8 @@ def calculate(store, data):
         estimated = {key: Decimal("0.00") for key in ("income", "expenses")}
         active_items = []
         for item in plan["items"]:
+            if item["kind"] == "saving":
+                continue
             if _item_active(item, period):
                 buckets[item["kind"]] += Decimal(item["amount"])
                 target = confirmed if item["confirmed"] else estimated
@@ -716,7 +827,7 @@ def calculate(store, data):
         })
     warnings = [f"Nicht bestätigt: {item['label']}" for item in plan["items"]
                 if not item["confirmed"]]
-    return {
+    result = {
         "rows": rows,
         "outside_horizon": [item.copy() for item in plan["items"]
                             if (item["end_month"] is not None and item["end_month"] < first_period)
@@ -740,3 +851,8 @@ def calculate(store, data):
             },
         },
     }
+    if "reserve_pots" in plan or "safety_reserve" in plan:
+        from .reserves import calculate as calculate_reserves
+
+        result["reserves"] = calculate_reserves(plan)
+    return result

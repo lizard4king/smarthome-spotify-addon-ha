@@ -133,7 +133,7 @@ function approvalContext(item){
   if(item.type==='transfer_correction'){
     const note=document.createElement('p');note.className='muted';note.textContent='Geprüft werden genau diese beiden Gegenbuchungen. Gleicher Betrag und zeitliche Nähe sind ein Vorschlag, kein alleiniger Nachweis.';detail.append(note);
   }else if(item.type==='budget_item'){
-    const note=document.createElement('p');note.className='muted';note.textContent='Die Bestätigung betrifft nur diese Planposition. Dabei entsteht eine neue unveränderliche Planrevision.';detail.append(note);
+    const note=document.createElement('p');note.className='muted';note.textContent='Die Bestätigung betrifft nur diese Planposition. Dabei entsteht ein neuer unveränderlicher Planstand.';detail.append(note);
   }else if(item._members?.length){
     const note=document.createElement('p');note.className='muted';note.textContent=`Die Gruppe enthält nur Buchungen der lokalen Regel für „${item.group_counterparty}“. Stichprobe:`;detail.append(note);
     const list=document.createElement('ul');

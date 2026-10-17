@@ -241,7 +241,7 @@ def _booking_candidates(store, event):
         "SELECT t.account_id,t.external_id,t.date,t.amount,"
         f"CASE WHEN {transfer_sql} THEN 1 ELSE 0 END AS is_transfer,"
         "coalesce(c.counterparty,'') AS counterparty,coalesce(c.description,'') AS description "
-        "FROM transactions t LEFT JOIN transaction_context c USING(account_id,external_id) "
+        "FROM active_transactions t LEFT JOIN transaction_context c USING(account_id,external_id) "
         "WHERE t.currency='EUR' AND t.date>=? AND t.date<=? "
         "ORDER BY t.date,t.account_id,t.external_id",
         ((event_day - timedelta(days=7)).isoformat(),
