@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.57
+
+- Refresh the shared account snapshot after explicitly saving additional bank balances, without another bank request.
+- Keep the successful save visible and distinguish display-refresh errors from failed persistence.
+
 ## 0.2.56
 
 - Show confirmed contract sources, payment phases, existing rules and missing fields in a bounded, mobile-readable inventory.

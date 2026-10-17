@@ -105,7 +105,7 @@
       ? connection.label.trim() : `Bankverbindung ${index + 1}`;
   }
 
-  async function render(host, connections = [], onChanged = () => {}) {
+  async function render(host, connections = [], onChanged = () => {}, onBalancesConfirmed = null) {
     if (!host || typeof host.replaceChildren !== 'function') return;
     const generation = (renderGenerations.get(host) || 0) + 1;
     renderGenerations.set(host, generation);
@@ -261,7 +261,13 @@
           const result = await window.api('/api/administration/bank-balances-confirm',{job_id:jobId,confirmed:true,mappings});
           if (!isCurrent()) return;
           confirm.dataset.completed='true';setStatus(message,`${result.saved} Kontostände übernommen. Es wurden keine Buchungen angelegt.`);
-          refresh();
+          if (typeof onBalancesConfirmed === 'function') {
+            try {
+              await onBalancesConfirmed(result);
+            } catch (_) {
+              if (isCurrent()) setStatus(message, 'Kontostände wurden übernommen. Die Anzeige konnte nicht aktualisiert werden. Bitte lade die Seite neu.', true);
+            }
+          }
         } catch(error) {if(isCurrent())setStatus(message,balanceError(error?.code),true);}
         finally {if(isCurrent())setBusy(false);}
       });
