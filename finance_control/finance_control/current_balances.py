@@ -182,7 +182,11 @@ def latest_by_account(store, account_rows, *, as_of=None):
             latest_date = max(value['booked_on'] for value in values)
             latest = [value for value in values if value['booked_on'] == latest_date]
             amounts = {value['amount'] for value in latest}
-            if len(amounts) > 1:
+            from .finanzguru_day_end import accepted_day_end
+            day_end = accepted_day_end(store, account_id, wanted[account_id], latest_date)
+            if day_end is not None:
+                result[account_id] = {**latest[0], 'amount': day_end, 'day_end_proven': True}
+            elif len(amounts) > 1:
                 result[account_id] = {
                     'amount': None, 'currency': wanted[account_id], 'booked_on': latest_date,
                     'retrieved_at': None, 'source': 'finanzguru_file', 'status': 'ambiguous',

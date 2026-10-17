@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "4964d70c368c07d67c940acb7ed3712986dc47a05886870b0d7225f484930ef9",
-  "addon_version": "0.2.59",
+  "addon_tree_sha256": "71bdb9d931fad360cd14a67550253a7b7be6235d4ff92ec6c39c5758906851a6",
+  "addon_version": "0.2.60",
   "deployment_files": {
-    "Dockerfile": "164f338b83f572f6f0cf1ef7779880f6aa3735bbc064bd11f97fa05ac87d4549",
-    "README.md": "b53c4313881197b50527759c8ea719105a1704430e607c9e7dc26e6810569519",
+    "Dockerfile": "3aba8e9267c328bb4a96d218bb64275110d72d81329f2387bbb76e8b83c57e66",
+    "README.md": "aec03e33689dff385af657cfbaf520c9176f69882b3d714d84699c48b797fc85",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "b037c5cfb92bffa0cb874f7d7dac65630edc86846529ba14eca5bd68efcc2287",
+    "config.yaml": "b2ccc2719d428112888886234e5e068e91511c83d7489b3546f3f8c35729ce05",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -36,7 +36,7 @@
     "bonsy_cash.py": "2e6fef3b519df29f59493d8f805b1883d3be2c93a87d21529bbac2cd18a612f1",
     "bonsy_import.py": "6e4d3db6097227bac30e5c74566b1de9e2af70707d988ec3505606dfa431a4f6",
     "bonsy_vouchers.py": "a8056f438f98cac7877edf029a186616f8e1709a198a06d713cf9e90e768119c",
-    "booking_balances.py": "bedeb668c3a9613b4d50c94af7a88929dc78cd9f06d1cf63232b169525f52b86",
+    "booking_balances.py": "ce5ec102724cf955e6098142d62aa2b59f1335a35f80e75986f3f1a269d74194",
     "booking_categories.py": "1f1e3b7fa9188a85ec010f5698afcfd3e6b09b3d0b630378e5cc0926481944ae",
     "booking_contracts.py": "66ac4197aabf9fef77a548ae5b47611981c16de8533aec6da6c9b0667de04374",
     "budget.py": "369899f49c3b3aa99f64243fdd58dd9e6f21bb07db8b64447e99d3754e19eb6d",
@@ -61,11 +61,12 @@
     "contract_inventory.py": "54ab3932b340c52837d081b3b39bf7a806e36452a79fad4b14dcb5e2cef3d731",
     "contracts.py": "61fe28f6ce6ceb9f27d75f6e44a1ce018130493c56e68b41f09c1c9cafbad384",
     "core.py": "1dcbae4cb29da8f32dd0a93be67396b9341c5c43ec698b4c8da8089bc6538037",
-    "current_balances.py": "13f30b95d6873640a24e4400e61366fd2c8a962c4839d994f55500eb1ab10c19",
+    "current_balances.py": "f2b6184d11fa3b610880e9e2963956edf4756d27b1a922b740abc1e77951d4b0",
     "dashboard.py": "1b517b462d48e59808419f12a82424d1946f33da7c7bccdfa1e35c9c08acddec",
     "document_intake.py": "0b78d48ffadc0259dbbd3d727ae0f4b00ca7b9ea9683d2688bb4cd39e1a5780c",
     "drive_api.py": "c728c4ffaad59e866fbec1c629846d186e2f36e09daf92f1f4bb144e8288fb04",
     "file_import.py": "3aa95547f4f29c8349eb86fd1dc3dcbbc62c7b0ff645f5d8078267543dec456c",
+    "finanzguru_day_end.py": "44d390818428105e23211f30c364927edf30e9f86ac287792c39efb37a30853d",
     "finanzguru_import.py": "7363902b7f1e14362730b6eb50bc9fcd997109cf471ab328ed3a88c11fe6204b",
     "finanzguru_snapshot.py": "cd25534c461b819d117f3ebb9fa34cc3d9516c636a8cf6bdb83d5ce62890e024",
     "historical_positions.py": "39ce60a69315c54f54abd0c63d82d4ca1e189392f3e7501c02d999f037641270",
@@ -485,6 +486,6 @@
     "web.py": "a6282a489eaecb2e909842ee5f8c44777379d4020949e893432a9a150aebcdbb"
   },
   "schema_version": 1,
-  "source_commit": "490f9db21f56e8d7ffe1ad9551a762fa08b879b1",
-  "source_tree_sha256": "560a35485c1d9506f713f01985c8d0c283bf4522098edb606b988c7c39285256"
+  "source_commit": "c3e5e6088062dbeb57d315f0ea981c20ff60ca21",
+  "source_tree_sha256": "609a9f04d51f20d526daf9cc13020f6bef7a084d5396c435bc25837ed53d3687"
 }

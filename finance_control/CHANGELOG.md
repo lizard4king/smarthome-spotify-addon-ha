@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.60
+
+- Prove a file-based day-end balance from every posting and recorded following balance in one intact, accepted full snapshot.
+- Require complete current-day coverage and one connected balance path with an unambiguous end, independently of row order.
+- Keep incomplete, conflicting and mixed evidence unknown; retain direct-bank priority and avoid any ledger mutation.
+
 ## 0.2.59
 
 - Allow an explicit per-booking review of display changes on an existing transfer when automatic IBAN evidence is unavailable.
