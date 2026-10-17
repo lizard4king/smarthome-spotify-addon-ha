@@ -205,6 +205,10 @@ class CockpitHandler(SimpleHTTPRequestHandler):
                 return
             elif parsed.path == "/api/music/albums":
                 result = MusicLibrary(client).albums(query.get("q", [""])[0], int(query.get("offset", ["0"])[0]))
+            elif parsed.path == "/api/music/artists":
+                result = MusicLibrary(client).artists(query.get("q", [""])[0], int(query.get("offset", ["0"])[0]))
+            elif parsed.path == "/api/music/artist":
+                result = MusicLibrary(client).artist(query.get("uri", [""])[0], int(query.get("offset", ["0"])[0]))
             elif parsed.path == "/api/music/folders":
                 result = MusicLibrary(client).folders(query.get("path", [""])[0], query.get("q", [""])[0],
                                                      int(query.get("offset", ["0"])[0]))

@@ -33,6 +33,8 @@ class MusicLibraryRouteTests(unittest.TestCase):
     def test_album_folder_and_collection_parameters_are_forwarded(self):
         routes = [
             ("/api/music/albums?q=Joni&offset=25", "albums", ("Joni", 25)),
+            ("/api/music/artists?q=Joni&offset=50", "artists", ("Joni", 50)),
+            ("/api/music/artist?uri=library%3A%2F%2Fartist%2F7&offset=50", "artist", ("library://artist/7", 50)),
             ("/api/music/folders?path=Artist%2FAlbum&q=Blue&offset=50", "folders",
              ("Artist/Album", "Blue", 50)),
             ("/api/music/collection?uri=" + URI, "collection", (URI,)),
@@ -84,7 +86,7 @@ class MusicLibraryRouteTests(unittest.TestCase):
 
     def test_cross_site_is_rejected_on_all_five_library_routes_before_client(self):
         paths = ["/api/music/albums", "/api/music/folders", "/api/music/collection",
-                 "/api/music/audio?uri=" + URI, "/api/music/browser-status"]
+                 "/api/music/audio?uri=" + URI, "/api/music/browser-status", "/api/music/artists", "/api/music/artist?uri=library://artist/7"]
         for path in paths:
             with self.subTest(path=path):
                 request = handler(path, **{"Sec-Fetch-Site": "cross-site"})

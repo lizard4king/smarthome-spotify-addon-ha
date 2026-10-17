@@ -9,6 +9,22 @@ HAL9000 ist kein Produktivbestandteil.
 
 ## Eigene Musik über Music Assistant
 
+Version `0.1.19` vereinfacht die Oberfläche: Die Musik-Startseite bietet drei
+Quellenkacheln für Spotify Erlene, Mein Spotify und Eigene Musik. Jede Quelle
+öffnet ihre eigene Ansicht mit Suche und Player. Haussteuerung und weitere
+Optionen bleiben separat erreichbar. Die Darstellung passt sich Handy und
+Desktop an. Quellen- und Zielauswahl allein starten oder stoppen keine Musik.
+Die Browserwiedergabe bleibt mit „Dieses Gerät“ beschriftet; Spotify-Profile
+und ihre tatsächlichen Wiedergabeziele bleiben getrennt.
+
+Suchvorschläge erscheinen nach einer kurzen Eingabepause getrennt nach Künstlern,
+Alben und Titeln; Spotify bietet zusätzlich Playlists. Die Künstler der eigenen
+Musik stammen aus Music Assistant und bleiben auf die konfigurierte lokale
+Providerinstanz begrenzt. Künstler lassen sich ohne Wiedergabestart öffnen.
+Weitere Treffer der eigenen Musik sind über den Filter und „Mehr laden“ erreichbar.
+Für gleichmäßig verteilte Spotify-Treffertypen wird Spotify Bridge `0.1.20`
+benötigt; ältere Bridge-Versionen können bei vielen Titeln andere Typen verdrängen.
+
 Der neue Bibliotheksausbau umfasst Alben, Ordner und direkte Browserwiedergabe.
 Einrichtung, Grenzen und Freigaben stehen in
 [Musikbibliothek und Browseraudio](docs/music-library-browser.md). Dieser

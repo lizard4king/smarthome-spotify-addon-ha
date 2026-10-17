@@ -97,25 +97,65 @@ class MusicLibrary:
                                    limit=PAGE_SIZE, offset=offset, search=query or None)
         if not isinstance(values, list) or len(values) > PAGE_SIZE:
             raise MusicAssistantError("Ungültige Music-Assistant-Albenliste.")
-        items = []
-        for album in values:
-            if not isinstance(album, dict) or album.get("media_type") != "album":
-                continue
-            uri = album.get("uri")
-            mappings = album.get("provider_mappings")
-            if not isinstance(uri, str) or not re.fullmatch(r"library://album/[0-9]+", uri):
-                continue
-            if not isinstance(mappings, list) or not any(
-                isinstance(m, dict) and m.get("provider_instance") == provider
-                and isinstance(m.get("provider_domain"), str) and m["provider_domain"] in LOCAL_DOMAINS
-                and m.get("available") is not False
-                and _relative_path(m.get("item_id")) for m in mappings
-            ):
-                continue
-            items.append({"kind": "album", "uri": uri, "title": _text(album.get("name"), "Ohne Titel"),
-                          "artist": _artist(album)})
+        items = [item for album in values if (item := self._entity(album, "album"))]
         result = {"items": items}
         if len(values) == PAGE_SIZE:
+            result["next_offset"] = offset + PAGE_SIZE
+        return result
+
+    def _entity(self, value, kind):
+        """Accept only library entities mapped to the exact configured local source."""
+        if not isinstance(value, dict) or value.get("media_type") != kind or value.get("available") is False:
+            return None
+        uri, mappings = value.get("uri"), value.get("provider_mappings")
+        provider = self._provider()
+        if not isinstance(uri, str) or not re.fullmatch(r"library://" + kind + r"/[0-9]+", uri):
+            return None
+        if not isinstance(mappings, list) or not any(
+            isinstance(m, dict) and m.get("provider_instance") == provider
+            and isinstance(m.get("provider_domain"), str) and m["provider_domain"] in LOCAL_DOMAINS and m.get("available") is not False
+            and _relative_path(m.get("item_id")) for m in mappings
+        ):
+            return None
+        item = {"kind": kind, "uri": uri, "title": _text(value.get("name"), "Ohne Titel")}
+        if kind == "album":
+            item["artist"] = _artist(value)
+        return item
+
+    def artists(self, query="", offset=0):
+        validate_search_page(query, offset)
+        values = self.client.call_library("music/artists/library_items", summary=False, provider=self._provider(),
+                                          limit=PAGE_SIZE, offset=offset, search=query or None)
+        if not isinstance(values, list) or len(values) > PAGE_SIZE:
+            raise MusicAssistantError("Ungültige Music-Assistant-Künstlerliste.")
+        result = {"items": [item for value in values if (item := self._entity(value, "artist"))]}
+        if len(values) == PAGE_SIZE:
+            result["next_offset"] = offset + PAGE_SIZE
+        return result
+
+    def artist(self, uri, offset=0):
+        """Read library artist relations, never provider discographies or top tracks.
+
+        MA 2.10.5 artist_tracks/artist_albums accept provider_filter but no pagination;
+        their underlying library query defaults to 500. Never call this a full collection.
+        """
+        validate_search_page("", offset)
+        provider = self._provider()
+        if not isinstance(uri, str) or not re.fullmatch(r"library://artist/[0-9]+", uri):
+            raise ValueError("Nur lokale Bibliothekskünstler sind erlaubt.")
+        args = {"item_id": uri.rsplit("/", 1)[1], "provider_instance_id_or_domain": "library",
+                "provider_filter": provider}
+        deadline = time.monotonic() + MAX_COLLECTION_SECONDS
+        albums = self.client.call_library("music/artists/artist_albums", **args)
+        self._budget(deadline)
+        tracks = self.client.call_library("music/artists/artist_tracks", **args)
+        self._budget(deadline)
+        if any(not isinstance(values, list) or len(values) > MAX_TRACKS for values in (albums, tracks)):
+            raise MusicAssistantError("Die Künstlerliste ist ungültig oder zu groß.")
+        items = [item for value in albums if (item := self._entity(value, "album"))]
+        items += [{"kind": "track", **item} for value in tracks if (item := self._track(value))]
+        result = {"items": items[offset:offset + PAGE_SIZE], "source_limited": len(albums) >= 500 or len(tracks) >= 500}
+        if offset + PAGE_SIZE < len(items):
             result["next_offset"] = offset + PAGE_SIZE
         return result
 

@@ -17,6 +17,18 @@ flowchart LR
 
 ## Bibliotheksvertrag
 
+Ab `0.1.19` liefert `GET /api/music/artists?q=&offset=0` echte lokale
+Bibliothekskünstler. `GET /api/music/artist?uri=library://artist/ID&offset=0`
+öffnet ihre validierten lokalen Alben und Titel. Beide Routen benötigen eine
+konkrete Providerinstanz; jede zurückgegebene Zuordnung wird erneut geprüft.
+MA `2.10.5` begrenzt seine Künstlerrelationen intern auf jeweils 500 Einträge.
+Bei Erreichen dieser Grenze meldet die API `source_limited: true`, und die
+Oberfläche bezeichnet die Auswahl ausdrücklich als begrenzt. Eine vollständige
+Künstlerqueue wird nicht angeboten. Die bisherige Titelsuche bleibt kompatibel.
+Der Vertrag wurde anhand des offiziellen
+[Artist-Controllers in MA 2.10.5](https://github.com/music-assistant/server/blob/2.10.5/music_assistant/controllers/music/media/artists.py)
+geprüft.
+
 `GET /api/music/albums?q=&offset=0` liefert lokale Alben in Seiten von 50
 Einträgen. `GET /api/music/folders?path=&q=&offset=0` öffnet die ausdrücklich
 konfigurierte Filesystem-Instanz und deren direkte Unterordner. Eine leere

@@ -70,12 +70,13 @@ class SpotifyMediaSearchClient:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise SpotifySearchError("Spotify lieferte keine gültige Suche.") from exc
-        results: list[SpotifySearchResult] = []
+        groups: list[list[SpotifySearchResult]] = []
         for key in ("tracks", "albums", "playlists", "artists"):
             section = payload.get(key) if isinstance(payload, dict) else None
             items = section.get("items") if isinstance(section, dict) else None
             if not isinstance(items, list):
                 continue
+            results: list[SpotifySearchResult] = []
             for item in items:
                 if not isinstance(item, dict) or not isinstance(item.get("uri"), str):
                     continue
@@ -88,7 +89,12 @@ class SpotifyMediaSearchClient:
                 images = item.get("album", {}).get("images") if isinstance(item.get("album"), dict) else item.get("images")
                 image_url = images[0].get("url") if isinstance(images, list) and images and isinstance(images[0], dict) and isinstance(images[0].get("url"), str) else None
                 results.append(SpotifySearchResult(item["uri"], title, subtitle, image_url))
-        return tuple(results[:limit])
+            groups.append(results[:limit])
+        # Keep the first track as resolve(limit=1)'s established default, while
+        # ensuring a full track page cannot hide albums, playlists and artists.
+        suggestions = [group[index] for index in range(limit)
+                       for group in groups if index < len(group)]
+        return tuple(suggestions[:limit])
 
 
 def _first_item(payload: object, key: str) -> Mapping[str, object] | None:

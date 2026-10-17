@@ -321,7 +321,7 @@ test('Räume haben nur Spotify-Status, keine redundante Spotify-Steuerung', () =
   assert.match(html, /room-details\[hidden\]\s*\{\s*display:none/);
   assert.match(html, /event\.target === roomCard/);
   assert.match(html, /room-temperature-controls/);
-  assert.match(html, /Spotify-Vorschau im Browser\. Die Wiedergabe hier steuert keine Alexa\./);
+  assert.match(html, /Die Vorschau nutzt die eigene Spotify-Anmeldung im Browser\. Sie ist keinem Cockpit-Profil oder Lautsprecher zugeordnet/);
   assert.doesNotMatch(html, /iframe[^>]+src="https:\/\/open\.spotify\.com/);
 });
 

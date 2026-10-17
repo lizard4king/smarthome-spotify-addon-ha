@@ -1,0 +1,131 @@
+/* A single source, list and player on phones and desktop. */
+[hidden] { display:none !important; }
+body { background:#101313; font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.shell { max-width:1100px; padding:28px 28px 250px; }
+button, select, input, summary, .quick-link { min-height:44px; }
+button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible { outline:3px solid #fff; outline-offset:3px; }
+button:disabled { opacity:.48; cursor:default; }
+.workspace-header { align-items:center; margin-bottom:38px; }
+.workspace-heading { display:flex; align-items:center; gap:18px; min-width:0; }
+.workspace-header h1 { font-size:clamp(28px,4vw,40px); margin:4px 0 6px; }
+.workspace-header .eyebrow { color:#b9c2bd; letter-spacing:.08em; font-size:11px; }
+.workspace-header .header-actions { flex-shrink:0; }
+.workspace-header button { background:#202625; border-color:#404b47; }
+.source-chooser { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; padding-top:20px; }
+.source-tile { position:relative; display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:12px; min-height:245px; border:1px solid #3e4a44; background:#1c2420; border-radius:22px; padding:28px; transition:background .15s,border-color .15s; }
+.source-tile:hover { background:#27322c; border-color:#b5c7bb; }
+.source-tile:nth-child(2) { background:#242522; }
+.source-tile:nth-child(3) { background:#20272b; }
+.source-mark { display:grid; place-items:center; width:56px; height:56px; border:1px solid #697a6f; color:#e0e8e2; border-radius:16px; font-size:28px; }
+.source-title { font-size:25px; font-weight:750; letter-spacing:-.04em; margin-top:16px; }
+.source-description { color:#bbc5bf; font-size:14px; line-height:1.5; }
+.source-arrow { position:absolute; top:26px; right:26px; color:#bbc5bf; font-size:22px; }
+.source-workspace.card { background:transparent; border:0; padding:0; box-shadow:none; }
+.source-workspace > .section-title, .spotify-session-heading, .spotify-search-heading,
+.spotify-selection-label, .music-selection-label, #spotifyWorkspace > #track { display:none; }
+.spotify-search-panel { margin:0; padding:0; border:0; }
+.spotify-search { margin:0; gap:10px; }
+.spotify-search input, .workspace-target select { background:#202625; border:1px solid #53645b; color:#f4f7f5; padding:12px 14px; border-radius:12px; }
+.spotify-search input { min-height:50px; }
+.spotify-search button, .primary, .spotify-transport .spotify-toggle { background:#1ed760; border-color:#1ed760; color:#06210e; }
+.spotify-results { gap:0; margin:22px 0; }
+.spotify-result { background:transparent; border:0; border-radius:10px; padding:12px 8px; min-height:72px; text-align:left; }
+.spotify-result:hover { background:#222b26; }
+.spotify-result-art { width:48px; height:48px; flex-shrink:0; background:#303b34; }
+.spotify-result-meta { display:grid; gap:4px; }
+.spotify-result-title { font-size:16px; }
+.spotify-result-subtitle { color:#b9c5bd; font-size:13px; }
+.workspace-filter-chips { display:flex; gap:8px; overflow-x:auto; padding:14px 0 6px; scrollbar-width:thin; }
+.workspace-filter-chips button { flex-shrink:0; min-height:44px; border-radius:24px; padding:8px 14px; background:#222b26; border-color:#53645b; font-size:13px; }
+.workspace-filter-chips button[aria-pressed="true"] { background:#e0e8e2; color:#101713; border-color:#e0e8e2; }
+.spotify-search-group { margin:8px 0 20px; min-width:0; }
+.spotify-search-group h3 { font-size:19px; margin:0 0 6px; }
+.workspace-notice { padding:20px; margin-bottom:20px; border:1px solid #67624f; border-radius:12px; color:#f2e7bf; }
+.workspace-more { margin:18px 0; color:#c0cbc4; border-top:1px solid #38453d; }
+.workspace-more > summary { display:flex; align-items:center; cursor:pointer; padding:12px 0; font-size:14px; }
+.workspace-more > summary::after { content:'＋'; margin-left:auto; }
+.workspace-more[open] > summary::after { content:'−'; }
+.workspace-more > button { margin:8px 8px 8px 0; }
+.workspace-player-dock { position:fixed; z-index:20; bottom:16px; left:max(20px,calc((100vw - 1044px)/2)); right:max(20px,calc((100vw - 1044px)/2)); padding:18px 22px; border:1px solid #54655b; border-radius:18px; background:#1d2721; box-shadow:0 12px 44px #0009; }
+/* Compact dock: current playback, optional prepared selection, details on demand. */
+.spotify-dock { padding:12px 16px; }
+.spotify-sessions { display:block; margin:0; }
+.spotify-session { border:0; background:transparent; padding:0; border-radius:0; display:grid; grid-template-columns:minmax(0,1fr) auto auto; column-gap:16px; align-items:center; }
+.spotify-live { margin:0; grid-template-columns:44px minmax(0,1fr); gap:12px; }
+.spotify-live-art { width:44px; height:44px; border-radius:8px; background:#313d35; font-size:24px; }
+.spotify-live-title { font-size:16px; }
+.spotify-live-title, .spotify-live-artist, .spotify-live-room { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.spotify-live-artist { font-size:12px; margin-top:2px; }
+.spotify-live-room { font-size:11px; color:#bdcfc2; margin-top:2px; }
+.spotify-transport { display:flex; gap:5px; margin:0; }
+.spotify-transport button { padding:6px; min-width:44px; width:44px; min-height:44px; font-size:18px; }
+.spotify-selection { border:0; padding:0; margin:10px 180px 0 0; grid-column:1 / -1; }
+.spotify-session-track { margin:0; font-size:13px; color:#d7e2db; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-height:44px; display:flex; align-items:center; }
+.spotify-device-details { min-width:0; grid-column:3; grid-row:1; font-size:12px; }
+.spotify-device-details > summary { cursor:pointer; min-height:44px; display:flex; align-items:center; gap:8px; padding:6px; }
+.spotify-device-details > summary::after { content:'⌄'; }
+.spotify-device-details[open] { min-width:260px; }
+.spotify-device-details .spotify-session-target { color:#c7d0ca; margin:8px 0; }
+.spotify-device-details select { min-height:44px; background:#101b14; border-color:#53645b; }
+.spotify-device-details .spotify-seek { display:block; margin:8px 0 0; }
+.spotify-seek input { min-height:44px; }
+.spotify-session-status { display:none; }
+.workspace-more .spotify-session-status { display:block; }
+.spotify-dock > .actions { position:absolute; bottom:12px; right:16px; width:164px; margin:0; }
+.spotify-dock > .actions button { width:100%; min-height:44px; font-size:13px; }
+.spotify-message { font-size:12px; margin-top:6px; min-height:16px; color:#c7d0ca; }
+.own-music-card .music-workspace { display:block; }
+.own-music-card .music-library { margin:0; }
+.workspace-target { display:grid; gap:7px; color:#c7d0ca; max-width:420px; margin:0 0 18px; font-size:13px; }
+.workspace-target select { width:100%; font:inherit; font-size:15px; }
+.music-status { margin:0 0 16px; font-size:12px; }
+.music-live#musicSpeakerDock { position:fixed; bottom:16px; left:max(20px,calc((100vw - 1044px)/2)); right:max(20px,calc((100vw - 1044px)/2)); padding:18px 22px; border:1px solid #54655b; border-radius:18px; background:#1d2721; z-index:20; }
+.music-live#musicSpeakerDock .music-live-title { font-size:17px; }
+.music-live#musicSpeakerDock .music-live-status { font-size:12px; margin:8px 0; }
+#musicBrowserDock:empty { display:none; }
+#musicBrowserDock:has(> .ml-mini-player[hidden]),
+.workspace-more:has(> #musicBrowserDock > .ml-mini-player[hidden]) { display:none; }
+.workspace-browser-primary { border:0; margin:0; }
+.workspace-browser-primary > summary { display:none; }
+#musicBrowserDock.workspace-browser-secondary { position:static; margin:12px 0; box-shadow:none; }
+#homeWorkspace .quick-links { margin:16px 0 22px; }
+#homeWorkspace .card { background:#19211d; border-color:#39473e; }
+.shell > footer { color:#84938a; border-color:#303d34; margin-top:42px; font-size:12px; }
+@media (max-width:700px) {
+  .shell { padding:20px 16px 290px; }
+  .workspace-header { display:flex; align-items:flex-start; gap:10px; margin-bottom:24px; }
+  .workspace-heading { align-items:flex-start; gap:10px; }
+  .workspace-header h1 { font-size:28px; }
+  .workspace-header .subtitle { font-size:13px; }
+  .workspace-header .header-actions { margin:0; }
+  #workspaceBack { font-size:0; width:44px; padding:0; flex-shrink:0; }
+  #workspaceBack::after { content:'←'; font-size:22px; }
+  #workspaceHome { padding:8px 10px; font-size:13px; white-space:nowrap; }
+  .source-chooser { grid-template-columns:1fr; gap:12px; padding:10px 0; }
+  .source-tile { display:grid; grid-template-columns:52px minmax(0,1fr); gap:4px 18px; min-height:132px; padding:22px; border-radius:18px; }
+  .source-mark { width:52px; height:52px; grid-row:1 / 3; align-self:center; }
+  .source-title { font-size:23px; margin:0 12px 0 0; align-self:end; }
+  .source-description { font-size:13px; align-self:start; }
+  .source-arrow { right:16px; top:18px; font-size:17px; }
+  .workspace-player-dock, .music-live#musicSpeakerDock { left:10px; right:10px; bottom:10px; padding:14px; border-radius:16px; }
+  .spotify-dock { padding:10px 12px; }
+  .spotify-session { grid-template-columns:minmax(0,1fr) auto; gap:0 6px; }
+  .spotify-live { grid-template-columns:36px minmax(0,1fr); gap:8px; }
+  .spotify-live-art { width:36px; height:36px; }
+  .spotify-live-title { font-size:14px; }
+  .spotify-live-artist { font-size:11px; }
+  .spotify-live-room { font-size:10px; }
+  .spotify-transport { gap:0; }
+  .spotify-transport button { width:44px; min-width:44px; padding:4px; font-size:16px; }
+  .spotify-device-details { grid-column:1 / -1; grid-row:2; font-size:11px; }
+  .spotify-device-details > summary { padding:0; min-height:44px; }
+  .spotify-device-details[open] { min-width:0; }
+  .spotify-selection { grid-column:1 / -1; margin:0 154px 0 0; }
+  .spotify-session-track { font-size:12px; }
+  .spotify-dock > .actions { width:144px; right:12px; bottom:10px; }
+  .spotify-dock > .actions button { min-height:44px; padding:8px; font-size:12px; }
+  .music-live#musicSpeakerDock .music-art { width:44px; height:44px; }
+  .music-live#musicSpeakerDock .music-live-heading { grid-template-columns:44px minmax(0,1fr); }
+  .music-live#musicSpeakerDock .music-transport { margin-top:10px; }
+  .workspace-more { font-size:13px; }
+}
