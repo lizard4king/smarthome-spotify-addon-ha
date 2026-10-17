@@ -215,27 +215,22 @@
   </style>
   <link rel="stylesheet" href="music-library.css">
   <script src="music-library.js"></script>
-  <style>@media (max-width:620px) { .music-workspace > .music-library { order:-1; } }</style>
+  <link rel="stylesheet" href="music-workspace.css">
+  <script src="music-workspace.js"></script>
 </head>
 <body>
   <main class="shell">
-    <header>
-      <div>
-        <div class="eyebrow">Privater Leitstand</div>
-        <h1>Smart Home <span id="systemState" class="system-ok"><span class="dot"></span><span id="systemStateLabel">Prüfen …</span></span></h1>
-        <p class="subtitle">Eine ruhige, kompakte Übersicht über Räume, Licht, Klima und Systemstatus.</p>
-      </div>
-      <div class="header-actions">
-        <span class="pill"><span class="dot"></span> Verbindung wird geprüft …</span>
-        <button id="refresh" type="button">↻ Aktualisieren</button>
-      </div>
+    <header class="workspace-header">
+      <div class="workspace-heading"><button id="workspaceBack" type="button" hidden aria-label="Zurück zur Quellenauswahl">← Zurück</button><div><div class="eyebrow">Musik zu Hause</div><h1 id="workspaceTitle" tabindex="-1">Deine Musik</h1><p id="workspaceSubtitle" class="subtitle">Was möchtest Du hören?</p></div></div>
+      <div class="header-actions"><button id="workspaceHome" type="button">⌂ Zuhause</button><button id="refresh" type="button" hidden>↻ Aktualisieren</button><span class="pill" hidden><span class="dot"></span> Verbindung wird geprüft …</span></div>
     </header>
-    <nav class="quick-links" aria-label="Schnellzugriffe">
-      <a class="quick-link" href="https://developer.amazon.com/alexa/console/ask" target="_blank" rel="noopener">Alexa-Konsole ↗</a>
-      <a class="quick-link" href="https://finance.pistelok.de/" target="_blank" rel="noopener" title="Finanzcockpit öffnen">Finanzcockpit ↗</a>
-    </nav>
-
-    <section class="card spotify-card" aria-label="Spotify">
+    <section id="musicSources" class="source-chooser" aria-label="Musikquelle auswählen">
+      <button class="source-tile" data-music-source="erlene" type="button"><span class="source-mark" aria-hidden="true">♫</span><span class="source-title">Spotify Erlene</span><span class="source-description">Erlenes Musik und Playlists</span><span class="source-arrow" aria-hidden="true">↗</span></button>
+      <button class="source-tile" data-music-source="mine" type="button"><span class="source-mark" aria-hidden="true">♫</span><span class="source-title">Mein Spotify</span><span class="source-description">Deine Musik und Playlists</span><span class="source-arrow" aria-hidden="true">↗</span></button>
+      <button class="source-tile" data-music-source="own" type="button"><span class="source-mark" aria-hidden="true">▤</span><span class="source-title">Eigene Musik</span><span class="source-description">Deine Bibliothek, direkt hier hören</span><span class="source-arrow" aria-hidden="true">↗</span></button>
+    </section>
+    <div id="workspaceNotice" class="workspace-notice" role="status" aria-live="polite" hidden></div>
+    <section id="spotifyWorkspace" class="card spotify-card source-workspace" aria-label="Spotify" hidden>
       <div class="section-title"><div class="spotify-brand"><span class="spotify-logo">●</span><h2>Spotify</h2></div><span class="meta">Zentrale Steuerung · Räume zeigen nur den Status</span></div>
       <div class="spotify-sessions" aria-label="Unabhängige Spotify-Profile">
         <div class="spotify-session" data-spotify-slot="1">
@@ -255,23 +250,24 @@
           <div class="spotify-selection"><div class="spotify-selection-label">Für den nächsten Start</div><div class="spotify-session-track">Noch kein Titel ausgewählt.</div><label class="spotify-session-target">Ziel für den nächsten Start<select class="spotify-session-target-select" aria-label="Spotify-Ziel für das zweite Profil" disabled><option value="">Ziele werden geprüft …</option></select></label><label class="spotify-session-enabled-label"><input class="spotify-session-enabled" type="checkbox" disabled>Dieses Profil mit starten</label></div>
         </div>
       </div>
-      <div class="actions"><button id="spotifyPlay" class="primary" type="button" disabled>Ausgewählte Profile starten</button></div>
-      <div id="spotifyMessage" class="meta spotify-message" role="status" aria-live="polite">Titel und Ziel wählen, dann die gewünschten Profile gemeinsam starten.</div>
+      <div class="actions"><button id="spotifyPlay" class="primary" type="button" disabled>▶ Auswahl starten</button></div>
+      <div id="spotifyMessage" class="meta spotify-message" role="status" aria-live="polite">Titel und Ziel wählen. Erst der Startknopf beginnt die Wiedergabe.</div>
       <div class="spotify-search-panel"><div class="spotify-search-heading"><h3>Musik auswählen</h3><label class="spotify-search-profile" for="spotifyProfile">Suchtreffer übernehmen für<select id="spotifyProfile" disabled><option value="">Profile werden geprüft …</option></select></label></div><div class="spotify-search"><input id="spotifyQuery" type="search" placeholder="Titel, Interpret, Album oder Playlist …" aria-label="Spotify-Suche"><button id="spotifySearch" type="button">Suchen</button></div></div>
-      <details class="spotify-embed-wrap" id="spotifyEmbedWrap" hidden><summary>Spotify-Vorschau · im Browser, keine Alexa-Steuerung</summary><span class="spotify-embed-note">Spotify-Vorschau im Browser. Die Wiedergabe hier steuert keine Alexa.</span><iframe id="spotifyEmbed" class="spotify-embed" title="Spotify-Vorschau im Browser, kein Alexa-Player" allow="clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></details>
+      <details class="spotify-embed-wrap" id="spotifyEmbedWrap" hidden><summary>Separate Spotify-Browserwiedergabe · unabhängig von dieser Quelle</summary><span class="spotify-embed-note">Die Vorschau nutzt die eigene Spotify-Anmeldung im Browser. Sie ist keinem Cockpit-Profil oder Lautsprecher zugeordnet und läuft beim Quellenwechsel weiter.</span><iframe id="spotifyEmbed" class="spotify-embed" title="Separate Spotify-Vorschau im Browser, keinem Cockpit-Profil zugeordnet" allow="clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe></details>
       <input id="track" class="spotify-track-hidden" type="text" value="" aria-label="Ausgewählter Titel"><div id="nowPlaying" class="meta">Noch kein Titel für die Vorschau ausgewählt.</div>
       <div id="spotifyResults" class="spotify-results"><div class="meta">Suche nach einem Titel, um Treffer und Coverbilder anzuzeigen.</div></div>
     </section>
 
-    <section class="card own-music-card" aria-labelledby="ownMusicTitle">
+    <section id="ownMusicWorkspace" class="card own-music-card source-workspace" aria-labelledby="ownMusicTitle" hidden>
       <div class="section-title"><div class="spotify-brand"><span class="spotify-logo" style="background:#b89cff">♫</span><h2 id="ownMusicTitle">Eigene Musik</h2></div><span class="meta">Lokale Bibliothek · eigener Player</span></div>
       <div id="musicAvailability" class="meta music-status" role="status" aria-live="polite">Musikdienst wird geprüft …</div>
-      <div class="music-routing">
+      <label class="workspace-target" for="workspaceMusicTarget">Hören auf<select id="workspaceMusicTarget"><option value="">Dieses Gerät</option></select></label>
+      <div class="music-routing" hidden>
         <label for="musicPlayer">Wiedergabeziel<select id="musicPlayer" aria-label="Wiedergabeziel für eigene Musik" disabled><option value="">Player werden geladen …</option></select></label>
         <span id="musicPlayerHint" class="meta">Nur tatsächlich gemeldete Player werden angeboten.</span>
       </div>
       <div class="music-workspace">
-      <div class="music-live">
+      <div id="musicSpeakerDock" class="music-live" hidden>
         <div class="music-live-heading"><span class="music-art-slot"><img id="musicCurrentArt" class="music-art" alt="" hidden></span><div><div id="musicCurrentTitle" class="music-live-title">Wiedergabe wird geprüft …</div><div id="musicCurrentSubtitle" class="music-live-subtitle meta"></div></div></div>
         <div id="musicLiveStatus" class="music-live-status meta" role="status" aria-live="polite">Noch kein Wiedergabestatus geladen.</div>
         <div class="music-transport" aria-label="Aktuelle eigene Musik steuern"><button id="musicPrevious" type="button" disabled>⏮ Zurück</button><button id="musicToggle" class="primary" type="button" disabled>Wiedergabe</button><button id="musicNext" type="button" disabled>Weiter ⏭</button></div>
@@ -280,6 +276,7 @@
         <div class="music-queue"><h3>Warteschlange</h3><div id="musicQueue" class="music-queue-list"><div class="meta">Warteschlange wird geprüft …</div></div></div>
       </div>
       <div class="music-library"><div id="musicLibraryBrowser"></div>
+      <div id="musicBrowserDock" class="workspace-player-dock" aria-label="Player auf diesem Gerät"></div>
       <div id="musicLegacyLibrary" hidden><h3>Musik auswählen</h3>
       <form id="musicSearchForm" class="music-search" role="search">
         <label class="spotify-track-hidden" for="musicQuery">Eigene Musik suchen</label>
@@ -303,6 +300,9 @@
       <div id="musicMessage" class="meta music-message" role="status" aria-live="polite"></div>
     </section>
 
+    <div id="homeWorkspace" hidden>
+    <div id="systemState" class="system-ok"><span class="dot"></span><span id="systemStateLabel">Prüfen …</span></div>
+    <nav class="quick-links" aria-label="Schnellzugriffe"><a class="quick-link" href="https://developer.amazon.com/alexa/console/ask" target="_blank" rel="noopener">Alexa-Konsole ↗</a><a class="quick-link" href="https://finance.pistelok.de/" target="_blank" rel="noopener" title="Finanzcockpit öffnen">Finanzcockpit ↗</a></nav>
     <section class="card alexa-card" aria-label="Alexa">
       <div class="section-title"><div class="spotify-brand"><span class="spotify-logo" style="background:#79a7ff">⌁</span><h2>Alexa</h2></div><span class="meta">Profil, Echo und Schnellaktionen</span></div>
       <div class="alexa-controls">
@@ -341,7 +341,8 @@
         <section class="card notice"><h2>Als Nächstes</h2><p>Weitere Geräte können später über Home Assistant ergänzt werden. Diese Seite zeigt bewusst nur Statusdaten und löst keine Geräteaktion aus.</p></section>
       </aside>
     </div>
-    <footer><span>Smart Home – Leitstand</span><span id="updated">Stand: gerade eben · lokal</span></footer>
+    </div>
+    <footer><span>Smart Home · Musik</span><span id="updated">Stand: gerade eben · lokal</span></footer>
   </main>
   <script>
     let cockpitMode = 'simulation';
@@ -595,11 +596,14 @@
         selected:null, ready:false, searchReady:false, profileId:null, profileName:null, availableTargets:new Set(), requiresTargetSelection:false,
       }));
       let pending = false;
+      let workspaceProfile;
+      let workspaceObserver = null;
+      let roster = [];
       let refreshPromise = null;
       const normalize = value => String(value || '').normalize('NFKC').replace(/[‘’]/g, "'").trim().toLocaleLowerCase('de-DE');
       function setMessage(text, error = false) { message.textContent = text; message.style.color = error ? '#ffb1b1' : ''; }
       function selectedAssignments() {
-        return slots.filter(slot => slot.enabled.checked)
+        return slots.filter(slot => slot.enabled.checked && (workspaceProfile === undefined || slot.profileId === workspaceProfile))
           .map(slot => ({profile:slot.profileId, target:slot.target.value, track:slot.selected?.uri || '', slot}));
       }
       const profileSlot = id => slots.find(slot => slot.profileId === id && id);
@@ -624,6 +628,7 @@
         document.querySelectorAll('.spotify-result').forEach(button => { button.disabled = pending; });
         if (!pending && duplicateTarget) setMessage('Für zwei Profile bitte zwei unterschiedliche Echo-Ziele wählen.', true);
         else if (!pending && message.textContent === 'Für zwei Profile bitte zwei unterschiedliche Echo-Ziele wählen.') setMessage('Zielauswahl korrigiert. Noch kein Befehl gesendet.');
+        workspaceObserver?.();
       }
       function canControl(slot) {
         const state = slot.observed;
@@ -732,6 +737,7 @@
         const profiles = payload.profiles.filter(profile => profile && typeof profile.profile_id === 'string' && profile.profile_id.trim()
           && typeof profile.display_name === 'string' && profile.display_name.trim());
         if (new Set(profiles.map(profile => profile.profile_id)).size !== profiles.length) throw new Error('Mehrdeutige Spotify-Profil-IDs.');
+        roster = available ? profiles.map(profile => ({id:profile.profile_id, name:profile.display_name})) : [];
         const boundIds = new Set(slots.map(slot => slot.profileId).filter(Boolean));
         for (const slot of slots) {
           if (!slot.profileId && available) {
@@ -808,6 +814,7 @@
         refreshPromise = (async () => {
           try { applyStatus(await request('/api/spotify/status')); }
           catch (error) {
+            roster = [];
             for (const slot of slots) { slot.ready = false; slot.searchReady = false; slot.observed = null; if (!slot.busy) slot.feedbackObservations = 0; slot.statusNode.textContent = slot.controlMessage || 'Wiedergabestatus nicht verfügbar.'; renderPlayer(slot,null,[],false); }
             renderRoomStatus([], [], false);
             updateControls();
@@ -859,7 +866,7 @@
       }
       function selectTrack(item, forProfile = profileSelect.value) {
         const slot = profileSlot(forProfile);
-        if (!slot || !slot.searchReady || pending || typeof item.title !== 'string' || !item.title.trim()
+        if (!slot || (workspaceProfile !== undefined && slot.profileId !== workspaceProfile) || !slot.searchReady || pending || typeof item.title !== 'string' || !item.title.trim()
             || !/^spotify:(track|album|playlist|artist):[A-Za-z0-9]+$/.test(String(item.uri || ''))) {
           setMessage('Dieser Treffer kann nicht als eindeutiger Spotify-Inhalt gestartet werden.', true);
           return;
@@ -870,7 +877,7 @@
         document.getElementById('track').value = item.uri;
         showSpotifyEmbed(item.uri);
         document.getElementById('nowPlaying').textContent = 'Ausgewählt: ' + item.title + ' · für ' + slot.profileName;
-        setMessage('Titel für ' + slot.profileName + ' ausgewählt. Erst „Ausgewählte Profile starten“ sendet einen Echo-Befehl.');
+        setMessage('Titel für ' + slot.profileName + ' ausgewählt. Erst „Auswahl starten“ sendet einen Wiedergabebefehl.');
         updateControls();
       }
       async function play() {
@@ -924,7 +931,12 @@
         if (!document.hidden) { renderRoomStatus([], [], false); for (const slot of slots) { slot.ready = false; slot.searchReady = false; slot.statusNode.textContent = 'Wiedergabestatus wird neu geprüft …'; } updateControls(); refresh(); }
       });
       poll();
-      return {selectTrack, refresh, applyStatus, play, control, profileName, searchAllowed:id => !pending && profileSlot(id)?.searchReady === true, updateControls};
+      return {selectTrack, refresh, applyStatus, play, control, profileName, searchAllowed:id => !pending && profileSlot(id)?.searchReady === true, updateControls,
+        getWorkspaceProfiles:() => roster.map(profile => ({...profile, card:profileSlot(profile.id)?.card,
+          selected:profileSlot(profile.id)?.selected || null})),
+        setWorkspaceProfile(id) { workspaceProfile = typeof id === 'string' && id ? id : null; updateControls(); },
+        observeWorkspace(fn) { workspaceObserver = fn; },
+      };
     })();
     function selectSpotifyTrack(item, profile) { spotifyController.selectTrack(item, profile); }
 
@@ -976,6 +988,7 @@
         playerSelect.disabled = !serviceReady || commandPending || !Array.from(playerSelect.options).some(option => !option.disabled && option.value);
         results.querySelectorAll('.music-result').forEach(button => { button.disabled = commandPending; });
         moreButton.disabled = locked || nextOffset === null;
+        globalThis.musicWorkspace?.syncMusic?.();
       }
       async function getJson(path, signal) {
         const controller = new AbortController();
@@ -1225,10 +1238,12 @@
       document.getElementById('musicSearchForm').addEventListener('submit', event => { event.preventDefault(); search(false); });
       document.getElementById('musicLibrary').addEventListener('click', () => { document.getElementById('musicQuery').value = ''; search(false); });
       moreButton.addEventListener('click', () => search(true));
-      document.getElementById('musicPlay').addEventListener('click', () => {
-        if (!selectedTrack) return;
-        command('/api/music/play', { uri:selectedTrack.uri, player_id:selectedPlayer(), option:'replace' }, 'Startbefehl angenommen · Wiedergabestatus wird geprüft.');
-      });
+      function playSelectedTrack(track = selectedTrack) {
+        if (!track || commandPending || !serviceReady || !playbackAllowed || !selectedPlayer()) return;
+        selectTrack(track);
+        return command('/api/music/play', {uri:track.uri, player_id:selectedPlayer(), option:'replace'}, 'Startbefehl angenommen · Wiedergabestatus wird geprüft.');
+      }
+      document.getElementById('musicPlay').addEventListener('click', () => playSelectedTrack());
       document.getElementById('musicAdd').addEventListener('click', () => {
         if (!selectedTrack) return;
         command('/api/music/play', {uri:selectedTrack.uri, player_id:selectedPlayer(), option:'add'}, 'Befehl zum Hinzufügen angenommen · Warteschlange wird geprüft.');
@@ -1309,14 +1324,17 @@
         updateControls();
       }
       const libraryRoot = document.getElementById('musicLibraryBrowser');
+      let library = null;
       if (libraryRoot && typeof initMusicLibrary === 'function') {
-        initMusicLibrary(libraryRoot, {onSelectTrack: selectTrack});
+        library = initMusicLibrary(libraryRoot, {compact:true,
+          playerContainer:document.getElementById('musicBrowserDock'),
+          onSelectTrack:selectTrack, onPlayTrack:track => playSelectedTrack(track)});
       } else {
         const legacy = document.getElementById('musicLegacyLibrary');
         if (legacy) legacy.hidden = false;
       }
       initialize();
-      return { search, refresh:refreshQueue };
+      return {search, refresh:refreshQueue, library, playSelectedTrack};
     })();
     function showSpotifyEmbed(uri) {
       const match = String(uri || '').match(/^spotify:(track|album|playlist):([A-Za-z0-9]+)$/);
@@ -1376,37 +1394,109 @@
       }
     }
     let spotifySearchGeneration = 0;
-    document.getElementById('spotifyProfile').addEventListener('change', () => {
+    let spotifySearchTimer = null;
+    let spotifySearchRequest = null;
+    let spotifySearchItems = [];
+    let spotifySearchProfile = '';
+    let spotifySearchFilter = 'all';
+    const spotifyTypes = [['artist','Künstler'],['album','Alben'],['track','Titel'],['playlist','Playlists']];
+    function renderSpotifySearchGroups() {
+      const results = document.getElementById('spotifyResults');
+      results.replaceChildren();
+      for (const [type, label] of spotifyTypes) {
+        if (spotifySearchFilter !== 'all' && spotifySearchFilter !== type) continue;
+        const items = spotifySearchItems.filter(item => String(item.uri || '').startsWith('spotify:' + type + ':'));
+        if (!items.length) continue;
+        const group = document.createElement('section'); group.className = 'spotify-search-group';
+        const heading = document.createElement('h3'); heading.textContent = label;
+        const list = document.createElement('div');
+        renderSpotifyResults(list, items, spotifySearchProfile);
+        group.append(heading, list); results.append(group);
+      }
+      if (!results.children.length) {
+        const empty = document.createElement('div'); empty.className = 'meta';
+        empty.textContent = 'Keine Treffer in dieser Auswahl.'; results.append(empty);
+      }
+    }
+    function cancelSpotifySearch() {
       spotifySearchGeneration += 1;
+      clearTimeout(spotifySearchTimer);
+      spotifySearchRequest?.abort();
+      spotifySearchRequest = null;
+    }
+    document.getElementById('spotifyProfile').addEventListener('change', () => {
+      cancelSpotifySearch();
+      spotifySearchItems = [];
       const results = document.getElementById('spotifyResults');
       results.replaceChildren();
       const note = document.createElement('div'); note.className = 'meta';
-      note.textContent = 'Suche nach einem Titel für ' + spotifyController.profileName(document.getElementById('spotifyProfile').value) + '.';
+      note.textContent = 'Suche nach Musik für ' + spotifyController.profileName(document.getElementById('spotifyProfile').value) + '.';
       results.append(note);
-      document.getElementById('spotifyEmbedWrap').hidden = true;
-      document.getElementById('spotifyEmbed').src = 'about:blank';
       document.getElementById('nowPlaying').textContent = 'Die Titelauswahl des anderen Profils bleibt erhalten.';
       spotifyController.updateControls();
     });
-    document.getElementById('spotifySearch').addEventListener('click', async () => {
+    async function searchSpotify() {
+      cancelSpotifySearch();
       const query = document.getElementById('spotifyQuery').value.trim();
       const profile = document.getElementById('spotifyProfile').value;
       if (!spotifyController.searchAllowed(profile)) return;
-      const generation = ++spotifySearchGeneration;
+      const generation = spotifySearchGeneration;
       const results = document.getElementById('spotifyResults');
-      if (!query) { results.innerHTML = '<div class="meta">Bitte einen Titel oder Interpreten eingeben.</div>'; return; }
+      if (!query) { results.innerHTML = '<div class="meta">Titel, Künstler, Album oder Playlist suchen.</div>'; return; }
       results.innerHTML = '<div class="meta">Spotify-Suche läuft …</div>';
+      const controller = new AbortController(); spotifySearchRequest = controller;
+      const timeout = setTimeout(() => controller.abort(), 12000);
       try {
-        const response = await fetch('/api/spotify/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ profile, query }) });
+        const response = await fetch('/api/spotify/search', {method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({profile, query}), signal:controller.signal});
         const payload = await response.json();
+        if (generation !== spotifySearchGeneration || profile !== document.getElementById('spotifyProfile').value) return;
         if (!response.ok) throw new Error(payload.error || 'Suche nicht verfügbar');
-        if (generation !== spotifySearchGeneration) return;
-        const items = Array.isArray(payload.results) ? payload.results : [];
-        renderSpotifyResults(results, items.filter(item => item && typeof item === 'object' && !Array.isArray(item)), profile);
-      } catch (error) { if (generation === spotifySearchGeneration) results.innerHTML = '<div class="meta">Spotify-Suche derzeit nicht erreichbar.</div>'; log('Spotify-Suche: ' + error.message); }
+        if (!Array.isArray(payload.results)) throw new Error('Ungültige Suchantwort.');
+        spotifySearchItems = payload.results.filter(item => item && typeof item === 'object' && !Array.isArray(item)
+          && /^spotify:(track|album|playlist|artist):[A-Za-z0-9]+$/.test(String(item.uri || '')));
+        spotifySearchProfile = profile;
+        renderSpotifySearchGroups();
+      } catch (error) {
+        if (generation === spotifySearchGeneration) {
+          results.innerHTML = '<div class="meta">Spotify-Suche derzeit nicht erreichbar. Bitte erneut versuchen.</div>';
+          log('Spotify-Suche: ' + error.message);
+        }
+      } finally {
+        clearTimeout(timeout);
+        if (spotifySearchRequest === controller) spotifySearchRequest = null;
+      }
+    }
+    const spotifyFilterBar = document.createElement('div'); spotifyFilterBar.className = 'workspace-filter-chips';
+    spotifyFilterBar.setAttribute('aria-label', 'Spotify-Suchergebnisse filtern');
+    for (const [type, label] of [['all','Alle'], ...spotifyTypes]) {
+      const chip = document.createElement('button'); chip.type = 'button'; chip.textContent = label;
+      chip.dataset.searchType = type; chip.setAttribute('aria-pressed', String(type === 'all'));
+      chip.addEventListener('click', () => {
+        spotifySearchFilter = type;
+        for (const button of spotifyFilterBar.children) button.setAttribute('aria-pressed', String(button === chip));
+        renderSpotifySearchGroups();
+      });
+      spotifyFilterBar.append(chip);
+    }
+    document.getElementById('spotifyResults').before?.(spotifyFilterBar);
+    document.getElementById('spotifySearch').addEventListener('click', searchSpotify);
+    document.getElementById('spotifyQuery').addEventListener('input', () => {
+      cancelSpotifySearch();
+      spotifySearchItems = [];
+      const query = document.getElementById('spotifyQuery').value.trim();
+      document.getElementById('spotifyResults').innerHTML = query
+        ? '<div class="meta">Vorschläge werden gesucht …</div>' : '<div class="meta">Titel, Künstler, Album oder Playlist suchen.</div>';
+      if (query) spotifySearchTimer = setTimeout(searchSpotify, 300);
     });
-    document.getElementById('spotifyQuery').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); document.getElementById('spotifySearch').click(); } });
+    document.getElementById('spotifyQuery').addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); searchSpotify(); }
+      if (event.key === 'Escape') { cancelSpotifySearch(); document.getElementById('spotifyResults').replaceChildren(); }
+    });
     document.getElementById('refresh').addEventListener('click', async () => { log('Status aktualisiert (lokal)'); await Promise.all([refreshHomeAssistantInventory(), spotifyController.refresh()]); });
+    if (typeof initMusicWorkspace === 'function') {
+      globalThis.musicWorkspace = initMusicWorkspace(document, {spotify:spotifyController, ownMusic});
+    }
   </script>
 </body>
 </html>

@@ -111,13 +111,14 @@ class MusicAssistant:
         return result
 
     def call_library(self, command, **args):
-        """Read album/browse payloads for library consumers; never dispatch mutations.
+        """Read album/artist/browse payloads for library consumers; never dispatch mutations.
 
         Consumers validate query arguments and provider provenance of returned items.
         This is an internal Python interface, not an unrestricted HTTP command proxy.
         """
         if not isinstance(command, str) or command not in {
             "music/albums/library_items", "music/albums/album_tracks", "music/browse",
+            "music/artists/library_items", "music/artists/artist_albums", "music/artists/artist_tracks",
         }:
             raise ValueError("Ungültiger lesender Musikbibliotheksbefehl.")
         return self._call(command, **args)

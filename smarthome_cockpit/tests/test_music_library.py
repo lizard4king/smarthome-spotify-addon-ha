@@ -104,6 +104,66 @@ class LibraryTests(unittest.TestCase):
                              {"media_type": "album", "uri": "library://album/12", "provider_mappings": []}])
         self.assertEqual(MusicLibrary(client).albums(), {"items": []})
 
+    def test_artist_search_reads_real_entities_and_exact_provider(self):
+        artist = {"media_type": "artist", "uri": "library://artist/27", "name": "Real Artist",
+                  "provider_mappings": track()["provider_mappings"]}
+        client = FakeClient([deepcopy(artist) for _ in range(50)])
+        result = MusicLibrary(client).artists("Real", 50)
+        self.assertEqual(result["items"][0], {"kind": "artist", "uri": "library://artist/27", "title": "Real Artist"})
+        self.assertEqual(result["next_offset"], 100)
+        self.assertEqual(client.calls, [("music/artists/library_items", {"summary": False, "provider": PROVIDER,
+                         "limit": 50, "offset": 50, "search": "Real"})])
+
+    def test_artist_search_rejects_other_sources_and_malformed_mappings(self):
+        valid = {"media_type": "artist", "uri": "library://artist/27", "provider_mappings": track()["provider_mappings"]}
+        values = [None, {}, {**valid, "uri": "spotify://artist/x"},
+                  {**valid, "provider_mappings": track(provider="filesystem_local--Other")["provider_mappings"]},
+                  {**valid, "provider_mappings": [{**track()["provider_mappings"][0], "provider_domain": []}]}]
+        self.assertEqual(MusicLibrary(FakeClient(values)).artists(), {"items": []})
+        for provider in ["", "filesystem_local", "spotify"]:
+            client = FakeClient(); client.library_provider = provider
+            with self.assertRaises(MusicAssistantError):
+                MusicLibrary(client).artists()
+            with self.assertRaises(MusicAssistantError):
+                MusicLibrary(client).artist("library://artist/27")
+            self.assertEqual(client.calls, [])
+
+    def test_artist_details_keep_only_local_album_and_track_relations(self):
+        album = {"media_type": "album", "uri": "library://album/12", "name": "Album",
+                 "provider_mappings": track()["provider_mappings"]}
+        client = FakeClient([album, {**album, "provider_mappings": []}],
+                            [track(), track(provider="filesystem_local--Other"), {"media_type": "track", "uri": "spotify://track/x"}])
+        result = MusicLibrary(client).artist("library://artist/27")
+        self.assertEqual([item["kind"] for item in result["items"]], ["album", "track"])
+        self.assertFalse(result["source_limited"])
+        self.assertNotIn("complete", result)
+        args = {"item_id": "27", "provider_instance_id_or_domain": "library", "provider_filter": PROVIDER}
+        self.assertEqual(client.calls, [("music/artists/artist_albums", args), ("music/artists/artist_tracks", args)])
+
+    def test_artist_details_bound_response_and_signal_upstream_limit(self):
+        client = FakeClient([], [track(str(n)) for n in range(500)])
+        result = MusicLibrary(client).artist("library://artist/27", 450)
+        self.assertEqual(len(result["items"]), 50)
+        self.assertTrue(result["source_limited"])
+        self.assertNotIn("next_offset", result)
+        for values in [None, {}, [track()] * 1001]:
+            with self.assertRaises(MusicAssistantError):
+                MusicLibrary(FakeClient(values, [])).artist("library://artist/27")
+        for uri in [None, "spotify://artist/27", "library://artist/27?x", "library://artist/../27"]:
+            client = FakeClient()
+            with self.assertRaises(ValueError):
+                MusicLibrary(client).artist(uri)
+            self.assertEqual(client.calls, [])
+
+    def test_existing_track_search_preserves_empty_and_domain_provider_configuration(self):
+        for provider in ["", "filesystem_local", PROVIDER]:
+            client = FakeClient([]); client.library_provider = provider
+            self.assertEqual(MusicAssistant.tracks(client, "Name"), {"tracks": []})
+            args = {"search": "Name", "limit": 50, "offset": 0, "summary": False}
+            if provider:
+                args["provider"] = provider
+            self.assertEqual(client.calls, [("music/tracks/library_items", args)])
+
     def test_album_collection_order_and_exact_command(self):
         second_disc = track("D2", 1)
         second_disc["disc_number"] = 2
