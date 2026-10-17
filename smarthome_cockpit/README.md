@@ -2,10 +2,22 @@
 
 Das Cockpit läuft als Home-Assistant-Add-on auf dem HA-Server. Tokens und
 Secrets werden ausschließlich über die geschützte Add-on-Konfiguration gesetzt.
-Der veröffentlichte Dienst ist Port `8767`; Cloudflared soll auf den
-Home-Assistant-Host-Port `8767` zeigen. HAL9000 ist kein Produktivbestandteil.
+Der interne Dienst nutzt Port `8767`. Der Host-Port ist standardmäßig gesperrt
+(`8767/tcp: null`); der vorhandene authentifizierte Cloudflared-Zugang verbindet
+sich mit dem internen Add-on-Dienst. Ein Update darf keinen Host-Port öffnen.
+HAL9000 ist kein Produktivbestandteil.
 
 ## Eigene Musik über Music Assistant
+
+Der neue Bibliotheksausbau umfasst Alben, Ordner und direkte Browserwiedergabe.
+Einrichtung, Grenzen und Freigaben stehen in
+[Musikbibliothek und Browseraudio](docs/music-library-browser.md). Dieser
+Integrationsstand `0.1.18` erhält die laufenden Lumi-Steuerungsfunktionen aus
+Cockpit `0.1.17`. Sprachantworten, Raum-Musikziele, Temperaturantworten und
+Schutz gegen doppelte Aufträge bleiben erhalten. Die Add-on-Optionen
+`codex_music_targets_json` und `codex_answer_targets_json` sind weiterhin
+maßgeblich für die freigegebenen Raumziele. Die Veröffentlichung des Quellstands
+ersetzt weder Installation noch Geräteabnahme.
 
 Das Cockpit spricht serverseitig die offizielle [REST API](https://www.music-assistant.io/api/)
 an: `POST /api`, mit `Authorization: Bearer`. Add-on-Optionen sind

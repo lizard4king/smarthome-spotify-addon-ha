@@ -331,6 +331,19 @@ class HomeAssistantAdapter:
             self.config.timeout_seconds,
         )
 
+    def get_state(self, device_id: str) -> dict[str, Any]:
+        """Return the current state and attributes of one configured entity."""
+
+        entity_id = self.config.entities.get(device_id)
+        if not entity_id:
+            raise HomeAssistantError("Die Home-Assistant-Entity ist nicht konfiguriert.")
+        response = self._request("GET", f"api/states/{entity_id}", None)
+        if not isinstance(response, dict):
+            raise HomeAssistantConnectionError(
+                "Home Assistant lieferte keinen gültigen Entity-Status."
+            )
+        return response
+
 
 def _validate_base_url(value: str) -> str:
     url = value.strip().rstrip("/")

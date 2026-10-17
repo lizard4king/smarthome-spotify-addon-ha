@@ -19,6 +19,14 @@ class MusicAssistantError(Exception):
     """Safe user-facing error; upstream bodies and credentials never escape."""
 
 
+def validate_search_page(query, offset):
+    """Validate shared bounded library-search inputs without making an upstream call."""
+    if not isinstance(query, str) or len(query) > 200 or any(ord(c) < 32 for c in query):
+        raise ValueError("Ungültiger Suchtext.")
+    if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100000:
+        raise ValueError("Ungültiger Musik-Offset.")
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -48,7 +56,11 @@ def _valid_uri(uri: object) -> bool:
 
 
 class MusicAssistant:
-    def __init__(self):
+    def __init__(self, *, timeout_seconds=8):
+        if (type(timeout_seconds) not in {int, float} or not math.isfinite(timeout_seconds)
+                or not 0 < timeout_seconds <= 8):
+            raise ValueError("Invalid Music Assistant timeout.")
+        self.timeout_seconds = float(timeout_seconds)
         self.url = os.getenv("MUSIC_ASSISTANT_URL", "").rstrip("/")
         self.token = os.getenv("MUSIC_ASSISTANT_TOKEN", "")
         self.allow_playback = os.getenv("MUSIC_ASSISTANT_ALLOW_PLAYBACK", "").casefold() == "true"
@@ -75,7 +87,7 @@ class MusicAssistant:
             "Content-Type": "application/json", "Accept": "application/json",
         }, method="POST" if data is not None else "GET")
         try:
-            with self.opener.open(request, timeout=8) as response:
+            with self.opener.open(request, timeout=self.timeout_seconds) as response:
                 body = response.read(limit + 1)
                 if len(body) > limit:
                     raise MusicAssistantError("Music-Assistant-Antwort ist zu groß.")
@@ -97,6 +109,34 @@ class MusicAssistant:
         if isinstance(result, dict) and ("error" in result or "error_code" in result):
             raise MusicAssistantError("Music Assistant hat die Anfrage abgelehnt.")
         return result
+
+    def call_library(self, command, **args):
+        """Read album/browse payloads for library consumers; never dispatch mutations.
+
+        Consumers validate query arguments and provider provenance of returned items.
+        This is an internal Python interface, not an unrestricted HTTP command proxy.
+        """
+        if not isinstance(command, str) or command not in {
+            "music/albums/library_items", "music/albums/album_tracks", "music/browse",
+        }:
+            raise ValueError("Ungültiger lesender Musikbibliotheksbefehl.")
+        return self._call(command, **args)
+
+    def local_uri(self, track, preferred=None):
+        """Return a validated local Track URI, bound to the configured provider.
+
+        This performs no upstream lookup. Full Track objects need local provider
+        mappings; browse ItemMapping payloads are validated by the browse consumer.
+        """
+        return self._local_uri(track, preferred=preferred, provider_filter=self.library_provider)
+
+    def resolve_local_track(self, uri):
+        """Read and validate a local track; return its full payload and playable URI.
+
+        Reuses the adapter's existing availability and provider checks without
+        changing playback, storing media, or exposing stream URLs.
+        """
+        return self._track(uri)
 
     def status(self):
         try:
@@ -138,10 +178,7 @@ class MusicAssistant:
         return None
 
     def tracks(self, query="", offset=0):
-        if not isinstance(query, str) or len(query) > 200 or any(ord(c) < 32 for c in query):
-            raise ValueError("Ungültiger Suchtext.")
-        if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 100000:
-            raise ValueError("Ungültiger Musik-Offset.")
+        validate_search_page(query, offset)
         args = {"search": query or None, "limit": PAGE_SIZE, "offset": offset, "summary": False}
         if self.library_provider:
             args["provider"] = self.library_provider

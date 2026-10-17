@@ -1,5 +1,5 @@
 name: Smart Home Cockpit
-version: "0.1.14"
+version: "0.1.18"
 slug: smarthome_cockpit
 description: Privates Smart-Home-Cockpit auf Home Assistant
 arch:
@@ -9,12 +9,13 @@ startup: application
 boot: auto
 init: false
 ports:
-  8767/tcp: 8767
+  8767/tcp: null
 ports_description:
   8767/tcp: Smart-Home-Cockpit
 map:
   - config:rw
   - data:rw
+  - media:ro
 options:
   home_assistant_token: ""
   home_assistant_entities_json: ""
@@ -27,6 +28,10 @@ options:
   music_assistant_token: ""
   music_assistant_allow_playback: false
   music_assistant_library_provider: ""
+  codex_music_targets_json: "{}"
+  codex_answer_targets_json: "{}"
+  music_browser_root: ""
+  music_browser_allow_playback: false
 schema:
   home_assistant_token: password
   home_assistant_entities_json: str
@@ -41,3 +46,7 @@ schema:
   music_assistant_token: password
   music_assistant_allow_playback: bool
   music_assistant_library_provider: str
+  codex_music_targets_json: str
+  codex_answer_targets_json: str
+  music_browser_root: str
+  music_browser_allow_playback: bool

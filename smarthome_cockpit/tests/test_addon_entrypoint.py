@@ -229,6 +229,40 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(os.environ["HOME_ASSISTANT_WRITE_ALLOWLIST"], "existing")
         self.assertEqual(os.environ["CODEX_CONTROL_SECRET"], "offline-existing-secret")
 
+    def test_lumi_target_options_remain_authoritative(self):
+        os.environ.update(CODEX_MUSIC_TARGETS_JSON='{"buero":"stale-player"}',
+                          CODEX_ANSWER_TARGETS_JSON='{"buero":"notify.stale"}')
+        options = {"codex_music_targets_json": '{"buero":"offline-player"}',
+                   "codex_answer_targets_json": '{"buero":"notify.offline"}'}
+        with patch("builtins.open", mock_open(read_data=json.dumps(options))), \
+                patch.object(entry, "_load_private_music_fallback"):
+            entry._load_options_fallback()
+        self.assertEqual(os.environ["CODEX_MUSIC_TARGETS_JSON"], options["codex_music_targets_json"])
+        self.assertEqual(os.environ["CODEX_ANSWER_TARGETS_JSON"], options["codex_answer_targets_json"])
+
+    def test_missing_lumi_target_options_fail_closed(self):
+        os.environ.update(CODEX_MUSIC_TARGETS_JSON='{"buero":"stale-player"}',
+                          CODEX_ANSWER_TARGETS_JSON='{"buero":"notify.stale"}')
+        with patch("builtins.open", mock_open(read_data='{}')), \
+                patch.object(entry, "_load_private_music_fallback"):
+            entry._load_options_fallback()
+        self.assertEqual(os.environ["CODEX_MUSIC_TARGETS_JSON"], "{}")
+        self.assertEqual(os.environ["CODEX_ANSWER_TARGETS_JSON"], "{}")
+
+    def test_browser_options_do_not_change_lumi_or_device_permissions(self):
+        options = {"codex_music_targets_json": '{"buero":"offline-player"}',
+                   "codex_answer_targets_json": '{"buero":"notify.offline"}',
+                   "music_browser_root": "/media/offline-music", "music_browser_allow_playback": True,
+                   "music_assistant_token": "offline-token", "music_assistant_allow_playback": False,
+                   "allow_writes": False}
+        with patch("builtins.open", mock_open(read_data=json.dumps(options))):
+            entry._load_options_fallback()
+        self.assertEqual(os.environ["MUSIC_BROWSER_ROOT"], "/media/offline-music")
+        self.assertEqual(os.environ["MUSIC_BROWSER_ALLOW_PLAYBACK"], "true")
+        self.assertEqual(os.environ["MUSIC_ASSISTANT_ALLOW_PLAYBACK"], "false")
+        self.assertEqual(os.environ["HOME_ASSISTANT_ALLOW_WRITES"], "false")
+        self.assertEqual(os.environ["CODEX_MUSIC_TARGETS_JSON"], options["codex_music_targets_json"])
+
 
 if __name__ == "__main__":
     unittest.main()
