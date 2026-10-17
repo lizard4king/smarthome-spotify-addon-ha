@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.59` adds an explicit, individual review for display changes on an
+existing transfer. It preserves the existing pair only with verified source
+history and unchanged payment data. It creates no new transfer pairing and
+does not relax automatic IBAN matching. Skipped accounts remain unchanged.
+
 Version `0.2.58` preserves an existing transfer through a counterparty display-name
 change only with matching valid IBAN evidence from both verified originals.
 Changed amounts, dates, payment purposes or missing proof remain blocked.

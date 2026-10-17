@@ -314,11 +314,14 @@ def load_batch(root, batch):
     return folder, staged
 
 
-def _original_identity_proofs(root, source_sha256, accepted_rows):
+def _original_identity_proofs(root, source_sha256, accepted_rows, *, _review=False, _display=False):
     """Reparse hash-bound originals; never treat mutable stage JSON as identity proof.
 
-    Only hashes leave this helper. The optional export IBAN is neither staged nor
+    Proof mode returns only hashes. The optional export IBAN is neither staged nor
     persisted in the ledger. Missing, ambiguous or malformed evidence fails closed.
+    Internal review mode instead binds all raw fields except display name and IBAN;
+    it provides no automatic identity assertion. Its separate display mode returns
+    reference text for the authenticated preview only, never for persisted proofs.
     """
     from openpyxl import load_workbook
     from defusedxml.common import DefusedXmlException
@@ -370,6 +373,20 @@ def _original_identity_proofs(root, source_sha256, accepted_rows):
                             if row is None:
                                 continue
                             raw_row = dict(zip(headers, cells))
+                            if _review and _display:
+                                reference = raw_row.get('IBAN Beguenstigter/Auftraggeber')
+                                proofs[(row['source_account'], row['external_id'])] = {
+                                    'counterparty_reference': '' if reference is None else str(reference)}
+                                continue
+                            if _review:
+                                stable = {name: value for name, value in raw_row.items()
+                                          if name not in {'Beguenstigter/Auftraggeber',
+                                                          'IBAN Beguenstigter/Auftraggeber'}}
+                                proofs[(row['source_account'], row['external_id'])] = {
+                                    'source_sha256': source_sha256, 'row_sha256': digest(row),
+                                    'stable_fields_sha256': digest(json.loads(json.dumps(stable, default=str))),
+                                    'raw_row_sha256': digest(json.loads(json.dumps(raw_row, default=str)))}
+                                continue
                             iban = raw_row.get('IBAN Beguenstigter/Auftraggeber')
                             if not isinstance(iban, str):
                                 continue

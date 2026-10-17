@@ -104,6 +104,37 @@ def _transfer_pair_state(store, key):
     return result
 
 
+def _reviewable_transfer_dependency(store, key, old, existing, transfer_members, selected):
+    """Manual approval can preserve exactly one intact cross-selection pair."""
+    corrections = _transfer_pair_state(store, key)
+    if old['transfer_id']:
+        members = transfer_members.get(old['transfer_id'], set())
+        if corrections or len(members) != 2 or key not in members:
+            return None
+        peer_key = next(iter(members - {key}))
+        kind = 'ledger_transfer'
+    else:
+        if len(corrections) != 1:
+            return None
+        pair = corrections[0]
+        if not pair['pair'] or pair['pair'].get('revoked_at') is not None or len(pair['members']) != 2:
+            return None
+        members = {(row['account_id'], row['external_id']) for row in pair['members']}
+        if len(members) != 2 or key not in members:
+            return None
+        peer_key = next(iter(members - {key}))
+        kind = 'confirmed_correction_pair'
+    peer = existing.get(peer_key)
+    if (peer_key in selected or peer is None or peer_key[0] == key[0]
+            or peer['currency'] != old['currency'] or money(old['amount']) == 0
+            or money(old['amount']) + money(peer['amount']) != 0):
+        return None
+    if ((kind == 'confirmed_correction_pair' and peer['transfer_id'])
+            or (kind == 'ledger_transfer' and _transfer_pair_state(store, peer_key))):
+        return None
+    return kind
+
+
 def _check_foreign_keys(store):
     """Never delete a booking when a new dependent table escaped reconciliation."""
     known = set(_CHILD_TABLES)
@@ -127,10 +158,12 @@ def _event(store, *, source, target, exported_at, sha, action, key=None,
          None if current is None else _json(current)))
 
 
-def _source_context(store, root, existing, identity_keys=()):
+def _source_context(store, root, existing, identity_keys=(), display_references=None):
     """Find the last accepted raw context for each still present booking."""
     baseline = {}
     proof_cache = {}
+    review_proof_cache = {}
+    display_cache = {}
     accounts = {row['id']: row for row in store.accounts()}
     imports = [dict(row) for row in store.db.execute(
         'SELECT id,digest,imported_at,source FROM imports ORDER BY id DESC')]
@@ -219,7 +252,8 @@ def _source_context(store, root, existing, identity_keys=()):
                                  'amount': amount,
                                  'currency': 'EUR',
                                  'counterparty': row.get('counterparty', ''),
-                                 'description': row.get('description', '')}
+                                 'description': row.get('description', ''),
+                                 'category': row.get('category', '')}
                 # CSV digests do not bind append receipts to their original XLSX.
                 # Only a digest-bound full manifest can prove historical IBAN identity.
                 if (not append and key in identity_keys
@@ -228,6 +262,19 @@ def _source_context(store, root, existing, identity_keys=()):
                         candidate_proof_key = (original_sha, digest(rows))
                     if candidate_proof_key not in proof_cache:
                         proof_cache[candidate_proof_key] = _original_identity_proofs(archive, original_sha, rows)
+                    if candidate_proof_key not in review_proof_cache:
+                        review_proof_cache[candidate_proof_key] = _original_identity_proofs(
+                            archive, original_sha, rows, _review=True)
+                    review_proof = review_proof_cache[candidate_proof_key].get(
+                        (row['source_account'], identifier))
+                    if review_proof:
+                        baseline[key]['full_snapshot_proof'] = review_proof
+                        if display_references is not None:
+                            if candidate_proof_key not in display_cache:
+                                display_cache[candidate_proof_key] = _original_identity_proofs(
+                                    archive, original_sha, rows, _review=True, _display=True)
+                            display_references[key] = display_cache[candidate_proof_key].get(
+                                (row['source_account'], identifier), {}).get('counterparty_reference', '')
                     proof = proof_cache[candidate_proof_key].get((row['source_account'], identifier))
                     if proof:
                         baseline[key]['identity_proof'] = proof
@@ -298,6 +345,12 @@ def _accepted_metadata_source(store, staged, source, target, head):
 def _plan(store, staged, choices, root):
     if not isinstance(choices, dict) or choices.get('mode') != 'snapshot':
         raise ValueError('invalid_snapshot_choices')
+    reviewed_refs = choices.get('reviewed_transfer_name_changes', [])
+    if (not isinstance(reviewed_refs, list) or len(reviewed_refs) > 10000
+            or any(not isinstance(ref, str) or not 0 < len(ref) <= 120 for ref in reviewed_refs)
+            or len(set(reviewed_refs)) != len(reviewed_refs)):
+        raise ValueError('invalid_reviewed_transfer_name_changes')
+    reviewed_refs = set(reviewed_refs)
     metadata_only = choices.get('metadata_only', False)
     if not isinstance(metadata_only, bool):
         raise ValueError('invalid_snapshot_choices')
@@ -374,7 +427,8 @@ def _plan(store, staged, choices, root):
     selected_existing_keys = {
         key for key in existing
         if selected_prefix_targets.get(key[1].rsplit(':', 1)[0] + ':') == key[0]}
-    source_context = _source_context(store, root, existing, selected_existing_keys)
+    previous_references = {}
+    source_context = _source_context(store, root, existing, selected_existing_keys, previous_references)
     accounts_by_id, ids_by_booking = {}, {}
     for old in ledger:
         accounts_by_id.setdefault(old['external_id'], set()).add(old['account_id'])
@@ -383,6 +437,10 @@ def _plan(store, staged, choices, root):
     context_by_key = {(row['account_id'], row['external_id']): row for row in contexts}
     desired, detail, counts = {}, [], Counter()
     name_changes = {}
+    name_reviews = []
+    accepted_review_refs = set()
+    manual_proofs = None
+    current_references = None
     new_identity_proofs = None
     if unselected_rows:
         counts['source_not_selected'] = len(unselected_rows)
@@ -442,7 +500,8 @@ def _plan(store, staged, choices, root):
                 and (transfer_members.get(old['transfer_id'], set()) - selected_existing_keys
                      or any((member['account_id'], member['external_id']) not in selected_existing_keys
                             for pair in _transfer_pair_state(store, key) for member in pair['members']))
-                and previous_source is not None and previous_source.get('identity_proof')
+                and previous_source is not None and (previous_source.get('identity_proof')
+                                                     or previous_source.get('full_snapshot_proof'))
                 and values['counterparty'] != previous_source['counterparty']
                 and all(values[name] == previous_source[name] for name in
                         ('date', 'amount', 'currency', 'description'))
@@ -458,11 +517,45 @@ def _plan(store, staged, choices, root):
                     new_identity_proofs = _original_identity_proofs(
                         Path(root), staged['source_sha256'], staged['rows'])
                 new_proof = new_identity_proofs.get((source, row['external_id']))
-                if (new_proof and new_proof['identity_sha256']
+                if (new_proof and previous_source.get('identity_proof')
+                        and new_proof['identity_sha256']
                         == previous_source['identity_proof']['identity_sha256']):
                     name_changes[key] = {'previous': previous_source['identity_proof'],
                                          'current': new_proof}
                     values['transfer_id'] = old['transfer_id']
+                elif (previous_source.get('full_snapshot_proof')
+                      and not (new_proof and previous_source.get('identity_proof'))):
+                    # Two different valid IBANs are contradictory bank evidence,
+                    # not merely an unavailable identity or display-only reference.
+                    if manual_proofs is None:
+                        manual_proofs = _original_identity_proofs(
+                            Path(root), staged['source_sha256'], staged['rows'], _review=True)
+                    manual = manual_proofs.get((source, row['external_id']))
+                    prior = previous_source['full_snapshot_proof']
+                    dependency_kind = _reviewable_transfer_dependency(
+                        store, key, old, existing, transfer_members, selected_existing_keys)
+                    if (manual and dependency_kind and manual['stable_fields_sha256']
+                            == prior['stable_fields_sha256']):
+                        if current_references is None:
+                            current_references = _original_identity_proofs(
+                                Path(root), staged['source_sha256'], staged['rows'],
+                                _review=True, _display=True)
+                        reviewed = row['reference'] in reviewed_refs
+                        name_reviews.append({
+                            'reference': row['reference'], 'account_id': target,
+                            'date': values['date'], 'amount': values['amount'],
+                            'previous_counterparty': previous_source['counterparty'],
+                            'current_counterparty': values['counterparty'],
+                            'previous_counterparty_reference': previous_references.get(key, ''),
+                            'current_counterparty_reference': current_references.get(
+                                (source, row['external_id']), {}).get('counterparty_reference', ''),
+                            'description': values['description'], 'reviewed': reviewed,
+                            'dependency_kind': dependency_kind})
+                        if reviewed:
+                            accepted_review_refs.add(row['reference'])
+                            name_changes[key] = {'kind': 'manual', 'reference': row['reference'],
+                                                 'previous': prior, 'current': manual}
+                            values['transfer_id'] = old['transfer_id']
         if ('selected_sources' in choices and old is not None
                 and old['transfer_id'] and not values['transfer_id']
                 and transfer_members.get(old['transfer_id'], set()) - selected_existing_keys
@@ -630,6 +723,21 @@ def _plan(store, staged, choices, root):
             return False
     replay = bool(active_mapping) and all(
         same_source(heads.get(source), source) for source in active_mapping)
+    if replay:
+        for source, target in active_mapping.items():
+            head = heads.get(source)
+            if not _accepted_metadata_source(store, staged, source, target, head):
+                continue
+            imported = store.db.execute('SELECT source FROM imports WHERE id=?',
+                                        (head['import_id'],)).fetchone()
+            archived = json.loads(imported['source'])
+            prior_reviews = archived.get('reviewed_transfer_name_change_proofs', {})
+            prior_refs = archived['choices'].get('reviewed_transfer_name_changes', [])
+            for ref in reviewed_refs & set(prior_refs):
+                if ref in prior_reviews and ref in references and references[ref]['source_account'] == source:
+                    accepted_review_refs.add(ref)
+    if reviewed_refs - accepted_review_refs:
+        raise ValueError('invalid_reviewed_transfer_name_changes')
     for source in active_mapping:
         head = heads.get(source)
         if metadata_only:
@@ -664,13 +772,16 @@ def _plan(store, staged, choices, root):
                                      for key in sorted(set(desired) | set(removed))},
                     'transfer_pairs': {key[0] + '\0' + key[1]: _transfer_pair_state(store, key)
                                        for key in sorted(set(desired) | set(removed))},
-                    'metadata_sha256': staged.get('metadata_sha256')})
+                    'metadata_sha256': staged.get('metadata_sha256'),
+                    'reviewed_transfer_name_changes': sorted(reviewed_refs)})
     for name in ('new', 'updated', 'removed', 'already_imported'):
         counts[name] += 0
     report = {'counts': dict(counts), 'blockers': sorted(set(blockers)), 'rows': detail,
               'transfer_dependencies': transfer_dependencies,
               'contract_dependencies': contract_dependencies,
-              'preserved_transfer_name_changes': len(name_changes),
+              'preserved_transfer_name_changes': sum(proof.get('kind') != 'manual' for proof in name_changes.values()),
+              'reviewed_transfer_name_changes': sum(proof.get('kind') == 'manual' for proof in name_changes.values()),
+              'transfer_name_change_reviews': name_reviews,
               'date_to': cutoff, 'new_net_amount': format(new_total, '.2f'),
               'net_change': format(net_change, '.2f'), 'ready': not blockers,
               'ledger_written': False, 'review_token': token,
@@ -774,7 +885,10 @@ def commit_snapshot(store, root, batch, choices, review_token):
                    'metadata_sha256': staged.get('metadata_sha256'),
                    'choices': choices, 'review_token': review_token,
                    'fingerprint': plan['fingerprint'],
-                   'counts': report['counts']}
+                   'counts': report['counts'],
+                   'reviewed_transfer_name_change_proofs': {
+                       proof['reference']: proof for proof in plan['name_changes'].values()
+                       if proof.get('kind') == 'manual'}}
         receipt['manifest_sha256'] = hashlib.sha256(_json(receipt).encode()).hexdigest()
         with (folder / ('decision-' + secrets.token_hex(8) + '.json')).open(
                 'x', encoding='utf-8') as stream:
@@ -786,6 +900,9 @@ def commit_snapshot(store, root, batch, choices, review_token):
                              'metadata_sha256': staged.get('metadata_sha256'),
                              'exported_at': plan['exported_at'],
                              'choices': choices,
+                             'reviewed_transfer_name_change_proofs': {
+                                 proof['reference']: proof for proof in plan['name_changes'].values()
+                                 if proof.get('kind') == 'manual'},
                              'rows': [row for row in staged['rows']
                                       if row['source_account'] in plan['mapping']],
                              'row_metadata': metadata_rows})
@@ -871,7 +988,9 @@ def commit_snapshot(store, root, batch, choices, review_token):
             _event(store, source=source, target=key[0], exported_at=plan['exported_at'],
                    sha=staged['source_sha256'], action='updated', key=key,
                    previous={'transaction': dict(old), 'context': prior_context,
-                             'dependencies': dependencies}, current=row)
+                             'dependencies': dependencies}, current=(
+                                 row | {'transfer_name_change_review': plan['name_changes'][key]}
+                                 if plan['name_changes'].get(key, {}).get('kind') == 'manual' else row))
             changed['updated'] += 1
         _validate_transfers(store)
         for source, target in plan['mapping'].items():
