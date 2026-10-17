@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.60` shows a file-based day-end balance when every posting on the day
+is proven by the same accepted full export and its recorded balances form a
+connected sequence with one final value. No table row order is assumed. Missing,
+conflicting or mixed evidence remains unknown; direct bank controls keep priority.
+
 Version `0.2.59` adds an explicit, individual review for display changes on an
 existing transfer. It preserves the existing pair only with verified source
 history and unchanged payment data. It creates no new transfer pairing and

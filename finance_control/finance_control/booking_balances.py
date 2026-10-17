@@ -127,9 +127,10 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
             else:
                 movements[row['date']] += money(row['amount'])
 
-        # A file balance belongs to one transaction. More transactions on that
-        # date make its position relative to the other postings unknowable.
-        if source == 'finanzguru_file' and anchor_day_count != 1:
+        # Without a complete accepted-snapshot trail, a file balance belongs
+        # to one transaction and its position among same-day postings is unknown.
+        if (source == 'finanzguru_file' and anchor_day_count != 1
+                and anchor.get('day_end_proven') is not True):
             results[account_id] = unknown('file_balance_not_day_end')
             continue
         results[account_id] = {}
