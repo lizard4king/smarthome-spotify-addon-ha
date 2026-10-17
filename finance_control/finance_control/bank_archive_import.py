@@ -78,7 +78,7 @@ def _preflight(store, payload, account_id, source_category):
                     row['amount'], row['currency'], source_category, '')
         existing = store.db.execute(
             'SELECT account_id,external_id,date,amount,currency,category,transfer_id '
-            'FROM transactions WHERE account_id=? AND external_id=?', expected[:2]).fetchone()
+            'FROM active_transactions WHERE account_id=? AND external_id=?', expected[:2]).fetchone()
         if existing is not None and tuple(existing) != expected:
             raise BankArchiveError('Quellen-ID widerspricht einer vorhandenen Ledgerbuchung.')
 

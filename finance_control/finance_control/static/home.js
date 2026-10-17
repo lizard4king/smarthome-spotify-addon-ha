@@ -40,6 +40,7 @@
       balance ? moneyText(balance.amount, balance.currency) : 'Stand fehlt'));
     value.append(el('small', 'muted', balance ? 'Stand ' + dateText(balance.booked_on) : 'Kein belegter Stand'));
     button.append(icon, name, value);
+    if (window.financeReconciliation) window.financeReconciliation(button, account.reconciliation, {action:false});
     button.addEventListener('click', () => window.financeDashboardSelectAccount(account.id));
     return button;
   }
@@ -59,7 +60,14 @@
       const usage = id => data.bookings.filter(item => item.account_id === id).length;
       return usage(b.id) - usage(a.id) || a.display_name.localeCompare(b.display_name, 'de');
     });
-    for (const account of ordered) list.append(accountButton(account));
+    for (const account of ordered) {
+      const row = el('div', 'fc-home-account-row');
+      row.append(accountButton(account));
+      if (!hasAmount(account.current_balance?.amount)) {
+        row.append(link('Bankabruf oder Konto prüfen', 'dashboard'));
+      }
+      list.append(row);
+    }
     if (!ordered.length) list.append(el('p', 'muted', 'Noch keine Konten vorhanden.'), link('Konten einrichten', 'accounts'));
     accounts.append(list); fragment.append(accounts);
     const paypal = el('article', 'fc-home-panel'); paypal.id = 'home-paypal';
@@ -110,7 +118,7 @@
     try {
       const saved = await api('/api/budget-load', {});
       if (document.getElementById('home-budget') !== root) return;
-      if (!saved.revision) { root.querySelector('.fc-retry-notice')?.remove(); root.querySelector('.fc-budget-status').textContent = 'Noch kein Budget gespeichert.'; root.append(link('Budget erstellen', 'planning')); return; }
+      if (!saved.revision) { root.querySelector('.fc-retry-notice')?.remove(); root.querySelector('.fc-budget-status').textContent = 'Noch kein Planstand gespeichert.'; root.append(link('Budget erstellen', 'planning')); return; }
       const result = await api('/api/budget-actual', {revision: saved.revision, month: data.month});
       if (document.getElementById('home-budget') !== root) return;
       root.querySelector('.fc-retry-notice')?.remove();

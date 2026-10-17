@@ -1,34 +1,38 @@
-.kb-host, .kb-root { min-width: 0; }
-.kb-root { display: grid; gap: 12px; }
-.kb-status, .kb-note, .kb-action-status { margin: 0; color: #526b79; overflow-wrap: anywhere; }
-.kb-card { display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid #dbe5e9; border-radius: 10px; background: #fff; }
-.kb-heading { margin: 0; color: #173143; }
-.kb-info { margin: 0; min-width: 0; padding: 12px 14px; border: 1px solid #e3c97b; border-radius: 8px; background: #fff9e8; color: #59470e; line-height: 1.5; overflow-wrap: anywhere; }
-.kb-compact-hint { margin: 0; min-width: 0; padding: 9px 11px; border-left: 3px solid #e3c97b; background: #fff9e8; color: #59470e; line-height: 1.4; overflow-wrap: anywhere; }
-.kb-limits { min-width: 0; padding: 10px 12px; border: 1px solid #dbe5e9; border-radius: 8px; background: #fff; }
-.kb-limits summary { min-height: 44px; padding: 14px 0; color: #173143; font-weight: 650; cursor: pointer; }
-.kb-limits .kb-info { margin-top: 8px; }
-.kb-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.kb-form[hidden] { display: none; }
-.kb-form > label { display: grid; gap: 5px; min-width: 0; color: #173143; font-size: 13px; font-weight: 650; }
-.kb-form input:not([type="checkbox"]), .kb-form select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 9px 10px; border: 1px solid #91a9b5; border-radius: 7px; background: #fff; color: #173143; font: inherit; font-weight: 400; }
-.kb-form button, .kb-card > button { min-height: 44px; padding: 9px 13px; border: 1px solid #17617b; border-radius: 7px; background: #17617b; color: #fff; font: inherit; font-weight: 650; cursor: pointer; }
-.kb-secondary { border-color: #91a9b5 !important; background: #fff !important; color: #173143 !important; }
-.kb-form button:disabled, .kb-card > button:disabled { opacity: .55; cursor: wait; }
-.kb-check { display: flex; grid-column: 1 / -1; align-items: flex-start; gap: 9px; min-width: 0; color: #344e5b; font-size: 13px; line-height: 1.45; }
-.kb-check input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
-.kb-action-status.kb-error, .kb-error { color: #792c21; }
-.kb-danger { border-color: #8b3529 !important; background: #8b3529 !important; }
-.kb-card a { color: #075b79; overflow-wrap: anywhere; }
-.kb-results { display: grid; gap: 8px; min-width: 0; }
-.kb-results h4 { margin: 10px 0 0; color: #173143; }
-.kb-row { display: grid; gap: 3px; min-width: 0; padding: 10px 12px; border-radius: 7px; background: #f4f7f8; overflow-wrap: anywhere; }
-.kb-row small { color: #526b79; }
+.kb-host, .kb-root { min-width:0; }
+.kb-root { display:grid; gap:12px; }
+.kb-status, .kb-note, .kb-action-status { margin:0; color:var(--fc-muted); overflow-wrap:anywhere; }
+.kb-card { display:grid; gap:12px; min-width:0; padding:16px; border:1px solid var(--fc-border); border-radius:10px; background:var(--fc-surface); }
+.kb-heading { margin:0; color:var(--fc-text); }
+.kb-info { margin:0; min-width:0; padding:12px 14px; border:1px solid var(--fc-border); border-radius:8px; background:var(--fc-warning-bg); color:var(--fc-warning); line-height:1.5; overflow-wrap:anywhere; }
+.kb-compact-hint { margin:0; min-width:0; padding:9px 11px; border-left:3px solid var(--fc-border); background:var(--fc-warning-bg); color:var(--fc-warning); line-height:1.4; overflow-wrap:anywhere; }
+.kb-limits { min-width:0; padding:10px 12px; border:1px solid var(--fc-border); border-radius:8px; background:var(--fc-surface); }
+.kb-limits summary { min-height:44px; padding:14px 0; color:var(--fc-text); font-weight:650; cursor:pointer; }
+.kb-limits .kb-info { margin-top:8px; }
+.kb-form { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+.kb-form[hidden] { display:none; }
+.kb-form > label { display:grid; gap:5px; min-width:0; color:var(--fc-text); font-size:0.8125rem; font-weight:650; }
+.kb-form input:not([type="checkbox"]), .kb-form select { box-sizing:border-box; width:100%; min-width:0; min-height:44px; padding:9px 10px; border:1px solid var(--fc-border); border-radius:7px; background:var(--fc-surface); color:var(--fc-text); font:inherit; font-weight:400; }
+.kb-form button, .kb-card > button { min-height:44px; padding:9px 13px; border:1px solid var(--fc-border); border-radius:7px; background:var(--fc-accent-fill); color:var(--fc-on-accent); font:inherit; font-weight:650; cursor:pointer; }
+.kb-secondary { border-color:var(--fc-border) !important; background:var(--fc-surface) !important; color:var(--fc-text) !important; }
+.kb-form button:disabled, .kb-card > button:disabled { opacity:.55; cursor:wait; }
+.kb-check { display:flex; grid-column:1 / -1; align-items:flex-start; gap:9px; min-width:0; color:var(--fc-muted); font-size:0.8125rem; line-height:1.45; }
+.kb-check input { flex:0 0 auto; width:20px; height:20px; margin:0; }
+.kb-action-status.kb-error, .kb-error { color:var(--fc-negative); }
+.kb-danger { border-color:var(--fc-negative) !important; background:var(--fc-negative) !important; }
+.kb-card a { color:var(--fc-info); overflow-wrap:anywhere; }
+.kb-results { display:grid; gap:8px; min-width:0; }
+.kb-results h4 { margin:10px 0 0; color:var(--fc-text); }
+.kb-row { display:grid; gap:3px; min-width:0; padding:10px 12px; border-radius:7px; background:var(--fc-surface-alt); overflow-wrap:anywhere; }
+.kb-row small { color:var(--fc-muted); }
 @media (max-width: 600px) {
-  .kb-card { padding: 14px; }
-  .kb-info { padding: 11px 12px; }
-  .kb-limits { padding: 9px 10px; }
-  .kb-form { grid-template-columns: minmax(0, 1fr); }
-  .kb-check { grid-column: 1; }
-  .kb-form button, .kb-card > button { width: 100%; overflow-wrap: anywhere; }
+  .kb-card { padding:14px; }
+  .kb-info { padding:11px 12px; }
+  .kb-limits { padding:9px 10px; }
+  .kb-form { grid-template-columns:minmax(0, 1fr); }
+  .kb-check { grid-column:1; }
+  .kb-form button, .kb-card > button { width:100%; overflow-wrap:anywhere; }
 }
+
+/* Keep compact module controls usable without shrinking the existing layout. */
+.kb-root :is(button,summary,a.button){min-width:44px;min-height:44px;}
+@media(max-width:650px){.kb-root :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}

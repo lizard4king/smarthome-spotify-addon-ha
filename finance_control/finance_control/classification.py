@@ -9,8 +9,13 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from itertools import combinations
 
+from .audit import actor_for
 from .budget import canonical_category_id
 from .core import money, parse_money_input
+from .classification_rules import (
+    eligible_rules, is_intermediary, latest_decision, rule_is_eligible, validate_rule_fields,
+)
+from .review_policy import DOCUMENT_REVIEW_START_DATE
 from .payment_status import statuses_for_transactions
 from .transfer_corrections import (
     effective_transfer_id,
@@ -22,7 +27,6 @@ _PAGE = 50
 _DOCUMENT_MATCH_PAGE = 25
 _MATCH_GROUP_CANDIDATES = 18
 _MATCH_GROUP_LIMIT = 25
-DOCUMENT_REVIEW_START_DATE = '2026-01-01'
 _KINDS = {'invoice', 'contract'}
 _TRANSACTION_FILTERS = {'query', 'category', 'reviewed', 'account_id', 'date_from', 'date_to'}
 _DATE_RE = re.compile(r'[0-9]{4}-[0-9]{2}-[0-9]{2}\Z')
@@ -131,6 +135,17 @@ def _warnings(value):
     return [_text(item, 'warning', 240) for item in value]
 
 
+def _stored_document_warnings(raw):
+    """Expose corrupt legacy warning data as requiring review, without repairing it."""
+    try:
+        value = json.loads(raw)
+        if not isinstance(value, list):
+            raise ValueError('invalid_warnings')
+        return _warnings(value)
+    except (TypeError, ValueError):
+        return ['invalid_document_warnings']
+
+
 def normalize_counterparty(value):
     """Return the canonical counterparty key shared by rules and approval views."""
     return ' '.join(_text(value, 'counterparty').casefold().split())
@@ -166,7 +181,8 @@ def _merchant_family_match(store, counterparty, description, direction):
     if row is None:
         return None
     return {'rule_id': None, 'category': row['id'], 'parent_category': row['parent_id'],
-            'label': row['label'], 'provenance': 'local_merchant_family_rule'}
+            'label': row['label'], 'provenance': 'local_merchant_family_rule',
+            'rule_revision': None, 'suggestion_only': True}
 
 
 def _match_tokens(value):
@@ -244,12 +260,10 @@ def _api_refund_total(store, document_id):
 
 def _document_match_eligible(store, document):
     """Allow reviewed documents and narrow, auditable unreviewed candidates."""
-    try:
-        warnings = json.loads(document['warnings'])
-    except (TypeError, ValueError):
-        return False
-    if not isinstance(warnings, list) or set(warnings) & {
-            'source_excluded_bonsy', 'not_invoice_like', 'duplicate_source_document'}:
+    warnings = _stored_document_warnings(document['warnings'])
+    if set(warnings) & {
+            'source_excluded_bonsy', 'not_invoice_like', 'duplicate_source_document',
+            'invalid_document_warnings'}:
         return False
     if document['status'] == 'confirmed':
         return True
@@ -290,22 +304,22 @@ def _now():
 
 
 def _audit(store, action, current, account_id=None, external_id=None, document_id=None, previous=None):
-    store.db.execute('INSERT INTO classification_audit(occurred_at,action,account_id,external_id,document_id,previous,current) VALUES (?,?,?,?,?,?,?)',
+    store.db.execute('INSERT INTO classification_audit(occurred_at,action,account_id,external_id,document_id,previous,current,actor) VALUES (?,?,?,?,?,?,?,?)',
                      (_now(), action, account_id, external_id, document_id,
                       None if previous is None else json.dumps(previous, sort_keys=True),
-                      json.dumps(current, sort_keys=True)))
+                      json.dumps(current, sort_keys=True), actor_for(store)))
 
 
 def _document_link_rejected(store, account_id, external_id, document_id):
     return store.db.execute(
-        "SELECT 1 FROM classification_audit WHERE action='document_link_rejected' "
-        'AND account_id=? AND external_id=? AND document_id=? LIMIT 1',
+        "SELECT 1 FROM rejected_document_links WHERE "
+        'account_id=? AND external_id=? AND document_id=? LIMIT 1',
         (account_id, external_id, document_id)).fetchone() is not None
 
 
 def _transaction(store, account_id, external_id):
     row = store.db.execute(
-        'SELECT t.*,c.counterparty,c.description FROM transactions t '
+        'SELECT t.*,c.counterparty,c.description FROM active_transactions t '
         'LEFT JOIN transaction_context c USING(account_id,external_id) '
         'WHERE t.account_id=? AND t.external_id=?', (account_id, external_id)).fetchone()
     if row is None:
@@ -323,7 +337,7 @@ def _cash_withdrawal_evidence(store, account_id, external_id):
     """Return explicit cash-withdrawal evidence without classifying neutral payments."""
     row = store.db.execute(
         """SELECT t.category AS source_category,c.counterparty,c.description,o.category_id
-           FROM transactions t
+           FROM active_transactions t
            LEFT JOIN transaction_context c USING(account_id,external_id)
            LEFT JOIN classification_overrides o USING(account_id,external_id)
            WHERE t.account_id=? AND t.external_id=?""",
@@ -495,7 +509,7 @@ def _transaction_scope(data, allowed, error_name):
     if date_to is not None:
         clauses.append('t.date<=?'); params.append(date_to)
     where = '' if not clauses else ' WHERE ' + ' AND '.join(clauses)
-    base = (' FROM transactions t JOIN accounts a ON a.id=t.account_id '
+    base = (' FROM active_transactions t JOIN accounts a ON a.id=t.account_id '
             'LEFT JOIN transaction_context c ON (c.account_id=t.account_id AND c.external_id=t.external_id) '
             'LEFT JOIN classification_overrides o ON (o.account_id=t.account_id AND o.external_id=t.external_id) '
             'LEFT JOIN transfer_correction_members m ON (m.account_id=t.account_id AND m.external_id=t.external_id)')
@@ -585,7 +599,7 @@ def _transaction_list_rows(store, selected):
         'SELECT id,label,transaction_type,parent_id FROM category_catalog')}
     rules_by_key = {}
     for rule in store.db.execute(
-            'SELECT r.id,r.counterparty_normalized,r.direction,r.category_id,c.parent_id '
+            'SELECT r.*,c.parent_id '
             'FROM classification_rules r JOIN category_catalog c ON c.id=r.category_id '
             'ORDER BY r.id'):
         rules_by_key.setdefault(
@@ -660,7 +674,8 @@ def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key):
                 if item['counterparty'] and item['counterparty'].strip() else None)
             rule = rules_by_key.get((normalized_counterparty, item['direction']))
             model = models_by_key.get((item['account_id'], item['external_id']))
-            if (rule is not None and item['source_context_complete']
+            if (rule is not None and rule_is_eligible(rule, item['date'])
+                    and item['source_context_complete']
                     and _safe_exact_rule(store, rule['category_id'],
                                          item['counterparty'], item['description'])):
                 item['category_proposal'] = {
@@ -767,7 +782,7 @@ def get_transaction(store, data):
                   t.external_id,t.date,t.amount,t.currency,
                   t.category AS source_category,t.transfer_id,c.counterparty,c.description,
                   o.category_id,o.confirmed,o.revision
-           FROM transactions t
+           FROM active_transactions t
            JOIN accounts a ON a.id=t.account_id
            LEFT JOIN transaction_context c USING(account_id,external_id)
            LEFT JOIN classification_overrides o USING(account_id,external_id)
@@ -957,19 +972,22 @@ def reset_classification(store, data):
 
 
 def create_rule(store, data):
-    if not isinstance(data, dict) or set(data) != {'counterparty', 'direction', 'category'}:
+    required = {'counterparty', 'direction', 'category'}
+    if (not isinstance(data, dict) or not required <= set(data)
+            or set(data) - required - {'enabled', 'valid_from', 'valid_to'}):
         raise ValueError('invalid_rule')
-    direction = data['direction']
-    if direction not in {'income', 'expense'}:
-        raise ValueError('invalid_rule_direction')
-    normalized = normalize_counterparty(data['counterparty'])
+    normalized, direction, enabled, start, end = validate_rule_fields(data)
     store.db.execute('BEGIN IMMEDIATE')
     try:
         category = _category(store, data['category'], direction)
-        cursor = store.db.execute('INSERT INTO classification_rules(counterparty_normalized,direction,category_id,revision) VALUES (?,?,?,1)',
-                                  (normalized, direction, category['id']))
+        cursor = store.db.execute(
+            'INSERT INTO classification_rules(counterparty_normalized,direction,category_id,'
+            'revision,enabled,valid_from,valid_to) VALUES (?,?,?,1,?,?,?)',
+            (normalized, direction, category['id'], enabled, start, end))
         result = {'id': cursor.lastrowid, 'counterparty': normalized, 'direction': direction,
-                  'category': category['id'], 'parent_category': category['parent_id'], 'revision': 1}
+                  'category': category['id'], 'parent_category': category['parent_id'],
+                  'category_label': category['label'], 'revision': 1, 'enabled': bool(enabled),
+                  'valid_from': start, 'valid_to': end}
         _audit(store, 'rule_created', result)
         store.db.commit()
     except Exception:
@@ -1002,10 +1020,7 @@ def suggestions(store, data):
     if context is None or not context['counterparty'].strip():
         return {'suggestions': result}
     normalized, direction = normalize_counterparty(context['counterparty']), _direction(store, transaction)
-    rows = store.db.execute('SELECT r.id,r.category_id,c.parent_id FROM classification_rules r '
-                            'JOIN category_catalog c ON c.id=r.category_id '
-                            'WHERE r.counterparty_normalized=? AND r.direction=? ORDER BY r.id',
-                            (normalized, direction)).fetchall()
+    rows = eligible_rules(store, normalized, direction, transaction['date'])
     result.extend(
         {'rule_id': row['id'], 'category': row['category_id'],
          'parent_category': row['parent_id'],
@@ -1036,22 +1051,21 @@ def _safe_exact_rule(store, category_id, counterparty, description):
     return is_cash_withdrawal({'counterparty': counterparty, 'description': description})
 
 
-def exact_rule_match(store, counterparty, description, direction):
+def exact_rule_match(store, counterparty, description, direction, *, booked_on=None):
     """Return one safe local rule match without consulting source categories."""
     if direction not in {'income', 'expense'}:
         return None
     if not source_context_complete(counterparty, description):
         return None
-    row = store.db.execute(
-        'SELECT r.id,r.category_id,c.parent_id,c.label FROM classification_rules r '
-        'JOIN category_catalog c ON c.id=r.category_id '
-        'WHERE r.counterparty_normalized=? AND r.direction=?',
-        (normalize_counterparty(counterparty), direction)).fetchone()
+    rows = eligible_rules(store, normalize_counterparty(counterparty), direction, booked_on)
+    row = rows[0] if rows else None
     if row is None:
         return _merchant_family_match(store, counterparty, description, direction)
     if not _safe_exact_rule(store, row['category_id'], counterparty, description):
         return None
-    return {'rule_id': row['id'], 'category': row['category_id'],
+    return {'rule_id': row['id'], 'rule_revision': row['revision'],
+            'suggestion_only': is_intermediary(counterparty, description),
+            'category': row['category_id'],
             'parent_category': row['parent_id'], 'label': row['label'],
             'provenance': 'local_rule_exact_counterparty_and_direction'}
 
@@ -1065,15 +1079,31 @@ def apply_exact_rule_if_safe(store, account_id, external_id, *, allow_empty_over
     transaction = _transaction(store, account_id, external_id)
     direction = _direction(store, transaction)
     match = exact_rule_match(store, transaction['counterparty'],
-                             transaction['description'], direction)
-    if match is None:
+                             transaction['description'], direction, booked_on=transaction['date'])
+    if match is None or match['suggestion_only']:
         return None
     current = store.db.execute(
         'SELECT * FROM classification_overrides WHERE account_id=? AND external_id=?',
         (account_id, external_id)).fetchone()
-    if current is not None and (not allow_empty_override or current['category_id'] is not None
-                                or current['confirmed'] != 0):
-        return None
+    if current is not None:
+        if (not allow_empty_override or current['category_id'] is not None
+                or current['confirmed'] != 0):
+            return None
+        decision = latest_decision(store, account_id, external_id)
+        if decision is None or decision['action'] != 'snapshot_category_reset':
+            return None
+        try:
+            reset = json.loads(decision['current'])
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(reset, dict):
+            return None
+        if (reset.get('revision') != current['revision']
+                or reset.get('category_id') is not None or reset.get('confirmed') != 0):
+            return None
+    transaction_revision = store.db.execute(
+        'SELECT revision FROM active_transaction_versions WHERE account_id=? AND external_id=?',
+        (account_id, external_id)).fetchone()['revision']
     revision = 1 if current is None else current['revision'] + 1
     if current is None:
         store.db.execute(
@@ -1087,6 +1117,7 @@ def apply_exact_rule_if_safe(store, account_id, external_id, *, allow_empty_over
     result = {'account_id': account_id, 'external_id': external_id,
               'category': match['category'], 'parent_category': match['parent_category'],
               'confirmed': True, 'revision': revision, 'rule_id': match['rule_id'],
+              'rule_revision': match['rule_revision'], 'transaction_revision': transaction_revision,
               'provenance': match['provenance']}
     _audit(store, 'classification_auto_applied', result, account_id, external_id,
            previous=None if current is None else dict(current))
@@ -1095,10 +1126,10 @@ def apply_exact_rule_if_safe(store, account_id, external_id, *, allow_empty_over
 
 def apply_pending_exact_rules(store, data):
     """Apply already confirmed local rules to older open bookings in one transaction."""
-    if data != {'confirmed': True}:
+    if not isinstance(data, dict) or set(data) != {'confirmed'} or data['confirmed'] is not True:
         raise ValueError('explicit_rule_backfill_confirmation_required')
     rows = store.db.execute(
-        'SELECT t.account_id,t.external_id FROM transactions t '
+        'SELECT t.account_id,t.external_id FROM active_transactions t '
         'LEFT JOIN classification_overrides o USING(account_id,external_id) '
         'WHERE o.account_id IS NULL OR o.confirmed=0 '
         'ORDER BY t.date,t.account_id,t.external_id').fetchall()
@@ -1208,7 +1239,7 @@ def document_match_suggestions(store, data):
     linked_transactions = []
     linked_query = """SELECT t.account_id,t.external_id,t.date,t.amount,t.currency,t.category AS source_category,
         t.transfer_id,c.counterparty,c.description,o.category_id,o.confirmed,o.revision
-        FROM classification_document_links l JOIN transactions t ON (t.account_id=l.account_id AND t.external_id=l.external_id)
+        FROM classification_document_links l JOIN active_transactions t ON (t.account_id=l.account_id AND t.external_id=l.external_id)
         LEFT JOIN transaction_context c ON (c.account_id=t.account_id AND c.external_id=t.external_id)
         LEFT JOIN classification_overrides o ON (o.account_id=t.account_id AND o.external_id=t.external_id)
         WHERE l.document_id=? ORDER BY t.date,t.account_id,t.external_id"""
@@ -1257,7 +1288,7 @@ def document_match_suggestions(store, data):
     days = timedelta(days=data['max_days'])
     date_to = date.max if issued > date.max - days else issued + days
     params = (issued.isoformat(), date_to.isoformat())
-    eligible = f""" FROM transactions t
+    eligible = f""" FROM active_transactions t
         LEFT JOIN transaction_context c ON (c.account_id=t.account_id AND c.external_id=t.external_id)
         LEFT JOIN classification_overrides o ON (o.account_id=t.account_id AND o.external_id=t.external_id)
         WHERE NOT COALESCE({sql_transfer_predicate(context_alias='c')},0)
@@ -1351,7 +1382,7 @@ def document_match_suggestions(store, data):
 
 def _document(row):
     value = dict(row)
-    value['warnings'] = json.loads(value['warnings'])
+    value['warnings'] = _stored_document_warnings(value['warnings'])
     value['evidence_type'] = _evidence_type(
         value['kind'], value['title'], value['warnings'])
     value['links'] = []
@@ -1455,8 +1486,9 @@ def list_documents(store, data=None):
         raise ValueError('invalid_document_list')
     # Rows explicitly identified as non-documents remain in the audit trail and
     # external source cache, but no longer belong in the active review queue.
-    clauses = ['warnings NOT LIKE ?', 'warnings NOT LIKE ?', 'warnings NOT LIKE ?']
-    params = ['%"not_invoice_like"%', '%"source_excluded_bonsy"%', '%"duplicate_source_document"%']
+    # Guard only the JSON marker lookup; _document exposes invalid legacy data as a warning.
+    clauses = ['NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?)', 'NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?)', 'NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?)']
+    params = ['not_invoice_like', 'source_excluded_bonsy', 'duplicate_source_document']
     if data.get('query') is not None:
         like = '%' + _text(data['query'], 'query', 240, empty=True).casefold() + '%'
         clauses.append('(lower(vendor) LIKE ? OR lower(title) LIKE ?)')
@@ -1530,9 +1562,9 @@ def document_coverage(store, data=None):
     rows = store.db.execute(
         'SELECT document_date,status,EXISTS('
         'SELECT 1 FROM classification_document_links l WHERE l.document_id=d.id) AS linked '
-        'FROM classification_documents d WHERE warnings NOT LIKE ? '
-        'AND warnings NOT LIKE ? AND warnings NOT LIKE ?',
-        ('%"not_invoice_like"%', '%"source_excluded_bonsy"%', '%"duplicate_source_document"%')).fetchall()
+        'FROM classification_documents d WHERE NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?) '
+        'AND NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?) AND NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?)',
+        ('not_invoice_like', 'source_excluded_bonsy', 'duplicate_source_document')).fetchall()
     result = {
         'total': len(rows),
         'confirmed': sum(row['status'] == 'confirmed' for row in rows),
@@ -1600,7 +1632,7 @@ def mark_document_duplicate(store, data):
 
     The caller verifies original-source equivalence. This operation performs no
     heuristic matching and never edits source files, links or bank transactions.
-    The canonical document id is recorded in the audit, avoiding a schema change.
+    The canonical document id is stored as revisioned state and audited atomically.
     """
     if (not isinstance(data, dict) or set(data) != {'id', 'revision', 'duplicate_of', 'confirmed'}
             or type(data['id']) is not int or data['id'] < 1
@@ -1638,20 +1670,13 @@ def mark_document_duplicate(store, data):
                 raise ValueError('linked_document_cannot_be_duplicate')
             if _bonsy_cash_allocated(store, data['id']):
                 raise ValueError('bonsy_receipt_already_cash_allocated')
-            references = store.db.execute(
-                "SELECT a.current FROM classification_audit a "
-                "JOIN classification_documents d ON d.id=a.document_id "
-                "WHERE d.warnings LIKE ? AND a.id=(SELECT MAX(b.id) "
-                "FROM classification_audit b WHERE b.document_id=a.document_id "
-                "AND b.action IN ('document_marked_duplicate','document_duplicate_restored'))",
-                ('%"duplicate_source_document"%',)).fetchall()
-            if any(json.loads(row['current']).get('duplicate_of') == data['id'] for row in references):
+            if store.db.execute(
+                    'SELECT 1 FROM document_duplicate_state WHERE duplicate_of=? AND is_duplicate=1',
+                    (data['id'],)).fetchone():
                 raise ValueError('duplicate_canonical_is_referenced')
-        latest = store.db.execute(
-            "SELECT current FROM classification_audit WHERE document_id=? "
-            "AND action IN ('document_marked_duplicate','document_duplicate_restored') "
-            'ORDER BY id DESC LIMIT 1', (data['id'],)).fetchone()
-        last_target = None if latest is None else json.loads(latest['current']).get('duplicate_of')
+        state = store.db.execute(
+            'SELECT * FROM document_duplicate_state WHERE document_id=?', (data['id'],)).fetchone()
+        last_target = None if state is None else state['duplicate_of']
         marked = 'duplicate_source_document' in warnings
         if (target_id is None and not marked) or (marked and target_id is not None and target_id == last_target):
             store.db.commit()
@@ -1667,6 +1692,12 @@ def mark_document_duplicate(store, data):
             raise ValueError('stale_revision')
         result = _document(store.db.execute(
             'SELECT * FROM classification_documents WHERE id=?', (data['id'],)).fetchone())
+        store.db.execute(
+            'INSERT INTO document_duplicate_state(document_id,duplicate_of,is_duplicate,revision,actor,changed_at) '
+            'VALUES (?,?,?,1,?,?) ON CONFLICT(document_id) DO UPDATE SET '
+            'duplicate_of=excluded.duplicate_of,is_duplicate=excluded.is_duplicate,'
+            'revision=document_duplicate_state.revision+1,actor=excluded.actor,changed_at=excluded.changed_at',
+            (data['id'], target_id, int(target_id is not None), actor_for(store), _now()))
         _audit(store, 'document_duplicate_restored' if target_id is None else 'document_marked_duplicate',
                {**result, 'duplicate_of': target_id}, document_id=data['id'],
                previous={**dict(previous), 'duplicate_of': last_target})
@@ -1734,8 +1765,8 @@ def auto_confirm_documents(store, data):
             raise ValueError('invalid_auto_document_ids')
         ids = sorted(set(ids))
     query = ("SELECT * FROM classification_documents WHERE kind='invoice' AND status='unreviewed' "
-             'AND warnings NOT LIKE ? AND warnings NOT LIKE ? AND (document_date IS NULL OR document_date>=?)')
-    params = ['%"source_excluded_bonsy"%', '%"duplicate_source_document"%', DOCUMENT_REVIEW_START_DATE]
+             'AND NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?) AND NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?) AND (document_date IS NULL OR document_date>=?)')
+    params = ['source_excluded_bonsy', 'duplicate_source_document', DOCUMENT_REVIEW_START_DATE]
     if ids is not None:
         if not ids:
             return {'confirmed': [], 'rejected': [], 'checked': 0}
@@ -1774,7 +1805,7 @@ def auto_confirm_documents(store, data):
                 'SELECT 1 FROM classification_documents WHERE id!=? '
                 'AND lower(trim(vendor))=lower(trim(?)) AND lower(trim(title))=lower(trim(?)) '
                 'AND document_date=? AND amount=? '
-                'AND warnings NOT LIKE \'%"duplicate_source_document"%\' LIMIT 1',
+                "AND NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value='duplicate_source_document') LIMIT 1",
                 (row['id'], vendor, title, row['document_date'], row['amount'])).fetchone()
             if duplicate:
                 reasons.append('possible_duplicate_document')
@@ -1811,12 +1842,12 @@ def auto_link_documents(store, data):
         if not isinstance(ids, list) or any(type(value) is not int or value < 1 for value in ids):
             raise ValueError('invalid_auto_document_link_ids')
         ids = sorted(set(ids))
-    query = ("SELECT id,document_date FROM classification_documents WHERE kind='invoice' "
-             "AND status='confirmed' AND warnings NOT LIKE ? AND document_date>=? AND NOT EXISTS ("
+    query = ("SELECT id,document_date,warnings FROM classification_documents WHERE kind='invoice' "
+             "AND status='confirmed' AND NOT EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(warnings) THEN warnings ELSE json_array() END) w WHERE w.value=?) AND document_date>=? AND NOT EXISTS ("
              'SELECT 1 FROM classification_document_links l WHERE l.document_id=classification_documents.id) '
              'AND NOT EXISTS (SELECT 1 FROM bonsy_receipts r JOIN bonsy_voucher_payments v USING(entry_id) '
              'WHERE r.document_id=classification_documents.id)')
-    params = ['%"duplicate_source_document"%', DOCUMENT_REVIEW_START_DATE]
+    params = ['duplicate_source_document', DOCUMENT_REVIEW_START_DATE]
     if ids is not None:
         if not ids:
             return {'linked': [], 'rejected': [], 'checked': 0}
@@ -1825,6 +1856,9 @@ def auto_link_documents(store, data):
     rows = store.db.execute(query + ' ORDER BY id', params).fetchall()
     linked, rejected = [], []
     for row in rows:
+        if 'invalid_document_warnings' in _stored_document_warnings(row['warnings']):
+            rejected.append({'id': row['id'], 'reasons': ['invalid_document_warnings']})
+            continue
         matches = document_match_suggestions(
             store, {'document_id': row['id'], 'max_days': 45, 'page': 0})
         reasons = []
@@ -1855,13 +1889,18 @@ def auto_link_documents(store, data):
         if reasons:
             rejected.append({'id': row['id'], 'reasons': sorted(set(reasons))})
             continue
-        result = link_document(store, {
-            'account_id': candidate['account_id'], 'external_id': candidate['external_id'],
-            'document_id': row['id'], 'confirmed': True,
-        })['link']
-        _audit(store, 'document_auto_linked', result, candidate['account_id'],
-               candidate['external_id'], row['id'])
-        store.db.commit()
+        store.db.execute('BEGIN IMMEDIATE')
+        try:
+            result = _link_document_in_transaction(store, {
+                'account_id': candidate['account_id'], 'external_id': candidate['external_id'],
+                'document_id': row['id'], 'confirmed': True,
+            })
+            _audit(store, 'document_auto_linked', result, candidate['account_id'],
+                   candidate['external_id'], row['id'])
+            store.db.commit()
+        except Exception:
+            store.db.rollback()
+            raise
         linked.append(result)
     return {'linked': linked, 'rejected': rejected, 'checked': len(rows)}
 
@@ -1884,9 +1923,18 @@ def reject_document_link(store, data):
         raise ValueError('document_link_already_exists')
     result = {'account_id': account_id, 'external_id': external_id,
               'document_id': data['document_id'], 'rejected': True}
-    if not _document_link_rejected(store, account_id, external_id, data['document_id']):
-        _audit(store, 'document_link_rejected', result, account_id, external_id, data['document_id'])
+    store.db.execute('BEGIN IMMEDIATE')
+    try:
+        inserted = store.db.execute(
+            'INSERT OR IGNORE INTO rejected_document_links '
+            '(account_id,external_id,document_id,revision,actor,changed_at) VALUES (?,?,?,1,?,?)',
+            (account_id, external_id, data['document_id'], actor_for(store), _now()))
+        if inserted.rowcount:
+            _audit(store, 'document_link_rejected', result, account_id, external_id, data['document_id'])
         store.db.commit()
+    except Exception:
+        store.db.rollback()
+        raise
     return {'rejection': result}
 
 
@@ -2034,49 +2082,55 @@ def allocate_document(store, data):
 
 
 def link_document(store, data):
-    if not isinstance(data, dict) or set(data) != {'account_id', 'external_id', 'document_id', 'confirmed'} or type(data['document_id']) is not int or data['confirmed'] is not True:
-        raise ValueError('explicit_link_confirmation_required')
-    account_id, external_id = _text(data['account_id'], 'account_id', 120), _text(data['external_id'], 'external_id', 240)
     store.db.execute('BEGIN IMMEDIATE')
     try:
-        transaction = _transaction(store, account_id, external_id)
-        document = store.db.execute('SELECT * FROM classification_documents WHERE id=?', (data['document_id'],)).fetchone()
-        if document is None:
-            raise ValueError('unknown_document')
-        _require_not_duplicate_document(document)
-        if _bonsy_cash_allocated(store, document['id']):
-            raise ValueError('bonsy_receipt_already_cash_allocated')
-        is_transfer = bool(effective_transfer_id(store, transaction))
-        if is_transfer and document['kind'] != 'contract':
-            raise ValueError('transfer_document_link_forbidden')
-        if document['kind'] == 'contract' and document['status'] != 'confirmed':
-            raise ValueError('confirmed_contract_required')
-        if document['kind'] == 'invoice':
-            if document['status'] != 'confirmed' or document['currency'] != 'EUR' or document['amount'] is None:
-                raise ValueError('confirmed_eur_invoice_required')
-            if money(transaction['amount']) >= 0 or -money(transaction['amount']) != money(document['amount']):
-                raise ValueError('invoice_amount_must_match_debit')
-            from .bonsy_vouchers import voucher_total
-            if voucher_total(store, document['id']) > 0:
-                raise ValueError('voucher_payment_prevents_full_invoice_link')
-            if store.db.execute('SELECT 1 FROM classification_document_links WHERE document_id=?', (document['id'],)).fetchone():
-                raise ValueError('invoice_already_linked')
-            if store.db.execute('SELECT 1 FROM classification_document_links l JOIN classification_documents d ON d.id=l.document_id WHERE l.account_id=? AND l.external_id=? AND d.kind=\'invoice\'', (account_id, external_id)).fetchone():
-                raise ValueError('transaction_already_has_invoice')
-        allocated_amount = format(abs(money(transaction['amount'])), '.2f')
-        # A confirmed contract may explain a wallet funding transfer without
-        # turning that transfer into a second household expense.
-        allocation_type = 'evidence' if is_transfer or document['kind'] == 'contract' else 'payment'
-        store.db.execute('INSERT OR IGNORE INTO classification_document_links(account_id,external_id,document_id,allocated_amount,allocation_type) VALUES (?,?,?,?,?)',
-                         (account_id, external_id, document['id'], allocated_amount, allocation_type))
-        result = {'account_id': account_id, 'external_id': external_id, 'document_id': document['id'],
-                  'allocated_amount': allocated_amount, 'allocation_type': allocation_type}
-        _audit(store, 'document_linked', result, account_id, external_id, document['id'])
+        result = _link_document_in_transaction(store, data)
         store.db.commit()
     except Exception:
         store.db.rollback()
         raise
     return {'link': result}
+
+
+def _link_document_in_transaction(store, data):
+    """Write link and its audit within the caller's transaction."""
+    if not isinstance(data, dict) or set(data) != {'account_id', 'external_id', 'document_id', 'confirmed'} or type(data['document_id']) is not int or data['confirmed'] is not True:
+        raise ValueError('explicit_link_confirmation_required')
+    account_id, external_id = _text(data['account_id'], 'account_id', 120), _text(data['external_id'], 'external_id', 240)
+    transaction = _transaction(store, account_id, external_id)
+    document = store.db.execute('SELECT * FROM classification_documents WHERE id=?', (data['document_id'],)).fetchone()
+    if document is None:
+        raise ValueError('unknown_document')
+    _require_not_duplicate_document(document)
+    if _bonsy_cash_allocated(store, document['id']):
+        raise ValueError('bonsy_receipt_already_cash_allocated')
+    is_transfer = bool(effective_transfer_id(store, transaction))
+    if is_transfer and document['kind'] != 'contract':
+        raise ValueError('transfer_document_link_forbidden')
+    if document['kind'] == 'contract' and document['status'] != 'confirmed':
+        raise ValueError('confirmed_contract_required')
+    if document['kind'] == 'invoice':
+        if document['status'] != 'confirmed' or document['currency'] != 'EUR' or document['amount'] is None:
+            raise ValueError('confirmed_eur_invoice_required')
+        if money(transaction['amount']) >= 0 or -money(transaction['amount']) != money(document['amount']):
+            raise ValueError('invoice_amount_must_match_debit')
+        from .bonsy_vouchers import voucher_total
+        if voucher_total(store, document['id']) > 0:
+            raise ValueError('voucher_payment_prevents_full_invoice_link')
+        if store.db.execute('SELECT 1 FROM classification_document_links WHERE document_id=?', (document['id'],)).fetchone():
+            raise ValueError('invoice_already_linked')
+        if store.db.execute('SELECT 1 FROM classification_document_links l JOIN classification_documents d ON d.id=l.document_id WHERE l.account_id=? AND l.external_id=? AND d.kind=\'invoice\'', (account_id, external_id)).fetchone():
+            raise ValueError('transaction_already_has_invoice')
+    allocated_amount = format(abs(money(transaction['amount'])), '.2f')
+    # A confirmed contract may explain a wallet funding transfer without
+    # turning that transfer into a second household expense.
+    allocation_type = 'evidence' if is_transfer or document['kind'] == 'contract' else 'payment'
+    store.db.execute('INSERT OR IGNORE INTO classification_document_links(account_id,external_id,document_id,allocated_amount,allocation_type) VALUES (?,?,?,?,?)',
+                     (account_id, external_id, document['id'], allocated_amount, allocation_type))
+    result = {'account_id': account_id, 'external_id': external_id, 'document_id': document['id'],
+              'allocated_amount': allocated_amount, 'allocation_type': allocation_type}
+    _audit(store, 'document_linked', result, account_id, external_id, document['id'])
+    return result
 
 
 def unlink_document(store, data):

@@ -1,265 +1,269 @@
 .fsb-host {
-  min-width: 0;
+  min-width:0;
 }
 
 .fsb-root {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
+  display:grid;
+  gap:12px;
+  min-width:0;
 }
 
 .fsb-status,
 .fsb-notice {
-  margin: 0;
-  color: #526b79;
-  overflow-wrap: anywhere;
+  margin:0;
+  color:var(--fc-muted);
+  overflow-wrap:anywhere;
 }
 
 .fsb-status.fsb-error,
 .fsb-form-message.fsb-error {
-  color: #792c21;
+  color:var(--fc-negative);
 }
 
 .fsb-card {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid #dbe5e9;
-  border-radius: 10px;
-  background: #fff;
+  display:grid;
+  gap:12px;
+  min-width:0;
+  padding:16px;
+  border:1px solid var(--fc-border);
+  border-radius:10px;
+  background:var(--fc-surface);
 }
 
 .fsb-heading,
 .fsb-presence,
 .fsb-form-message {
-  margin: 0;
-  overflow-wrap: anywhere;
+  margin:0;
+  overflow-wrap:anywhere;
 }
 
 .fsb-presence,
 .fsb-form-message {
-  color: #526b79;
-  font-size: 13px;
+  color:var(--fc-muted);
+  font-size:0.8125rem;
 }
 
 .fsb-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  min-width: 0;
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:12px;
+  min-width:0;
 }
 
 .fsb-form[hidden] {
-  display: none;
+  display:none;
 }
 
 .fsb-form > label:not(.fsb-check),
 .fsb-remove-form > label:not(.fsb-check) {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  color: #173143;
-  font-size: 13px;
-  font-weight: 650;
+  display:grid;
+  gap:5px;
+  min-width:0;
+  color:var(--fc-text);
+  font-size:0.8125rem;
+  font-weight:650;
 }
 
 .fsb-form input[type="password"] {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 42px;
-  padding: 9px 10px;
-  border: 1px solid #91a9b5;
-  border-radius: 7px;
-  background: #fff;
-  color: #173143;
-  font: inherit;
-  font-weight: 400;
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  min-height:44px;
+  padding:9px 10px;
+  border:1px solid var(--fc-border);
+  border-radius:7px;
+  background:var(--fc-surface);
+  color:var(--fc-text);
+  font:inherit;
+  font-weight:400;
 }
 
 .fsb-check {
-  display: flex;
-  grid-column: 1 / -1;
-  align-items: flex-start;
-  gap: 9px;
-  min-width: 0;
-  color: #344e5b;
-  font-size: 13px;
-  line-height: 1.45;
+  display:flex;
+  grid-column:1 / -1;
+  align-items:flex-start;
+  gap:9px;
+  min-width:0;
+  color:var(--fc-muted);
+  font-size:0.8125rem;
+  line-height:1.45;
 }
 
 .fsb-check input {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  margin: 0;
+  flex:0 0 auto;
+  width:18px;
+  height:18px;
+  margin:0;
 }
 
 .fsb-form button,
 .fsb-read-button,
 .fsb-remove-form button {
-  min-height: 40px;
-  padding: 9px 13px;
-  border: 1px solid #17617b;
-  border-radius: 7px;
-  background: #17617b;
-  color: #fff;
-  font: inherit;
-  font-weight: 650;
-  cursor: pointer;
+  min-height:44px;
+  padding:9px 13px;
+  border:1px solid var(--fc-border);
+  border-radius:7px;
+  background:var(--fc-accent-fill);
+  color:var(--fc-on-accent);
+  font:inherit;
+  font-weight:650;
+  cursor:pointer;
 }
 
 .fsb-secondary {
-  min-height: 40px;
-  padding: 9px 13px;
-  border: 1px solid #91a9b5;
-  border-radius: 7px;
-  background: #fff;
-  color: #173143;
-  font: inherit;
-  font-weight: 650;
-  cursor: pointer;
+  min-height:44px;
+  padding:9px 13px;
+  border:1px solid var(--fc-border);
+  border-radius:7px;
+  background:var(--fc-surface);
+  color:var(--fc-text);
+  font:inherit;
+  font-weight:650;
+  cursor:pointer;
 }
 
 .fsb-form button:disabled,
 .fsb-read-button:disabled,
 .fsb-remove-form button:disabled {
-  opacity: .55;
-  cursor: wait;
+  opacity:.55;
+  cursor:wait;
 }
 
 .fsb-balance-panel {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding-top: 12px;
-  border-top: 1px solid #e3ebee;
+  display:grid;
+  gap:10px;
+  min-width:0;
+  padding-top:12px;
+  border-top:1px solid var(--fc-border);
 }
 
 .fsb-read-button {
-  justify-self: start;
+  justify-self:start;
 }
 
 .fsb-read-button:disabled {
-  border-color: #91a9b5;
-  background: #eef3f5;
-  color: #526b79;
-  cursor: not-allowed;
+  border-color:var(--fc-border);
+  background:var(--fc-surface-alt);
+  color:var(--fc-muted);
+  cursor:not-allowed;
 }
 
 .fsb-tan-details {
-  min-width: 0;
-  color: #344e5b;
-  font-size: 13px;
+  min-width:0;
+  color:var(--fc-muted);
+  font-size:0.8125rem;
 }
 
 .fsb-tan-details summary {
-  cursor: pointer;
+  cursor:pointer;
 }
 
 .fsb-tan-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding-top: 10px;
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:10px;
+  padding-top:10px;
 }
 
 .fsb-tan-fields label {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  font-weight: 650;
+  display:grid;
+  gap:5px;
+  min-width:0;
+  font-weight:650;
 }
 
 .fsb-tan-fields input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  padding: 8px 10px;
-  border: 1px solid #91a9b5;
-  border-radius: 7px;
-  background: #fff;
-  color: #173143;
-  font: inherit;
-  font-weight: 400;
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  min-height:44px;
+  padding:8px 10px;
+  border:1px solid var(--fc-border);
+  border-radius:7px;
+  background:var(--fc-surface);
+  color:var(--fc-text);
+  font:inherit;
+  font-weight:400;
 }
 
 .fsb-balance-list {
-  display: grid;
-  gap: 8px;
+  display:grid;
+  gap:8px;
 }
 
 .fsb-balance-row {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  padding: 10px 12px;
-  border-radius: 7px;
-  background: #f4f7f8;
-  overflow-wrap: anywhere;
+  display:grid;
+  gap:3px;
+  min-width:0;
+  padding:10px 12px;
+  border-radius:7px;
+  background:var(--fc-surface-alt);
+  overflow-wrap:anywhere;
 }
 
 .fsb-balance-row small {
-  color: #526b79;
+  color:var(--fc-muted);
 }
 
 .fsb-remove-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:10px;
+  min-width:0;
 }
 
 .fsb-remove-form[hidden] {
-  display: none;
+  display:none;
 }
 
 .fsb-remove-form .fsb-check,
 .fsb-remove-form .fsb-form-message {
-  flex: 1 0 100%;
+  flex:1 0 100%;
 }
 
 .fsb-remove-form .fsb-secondary {
-  border-color: #91a9b5;
-  background: #fff;
-  color: #173143;
+  border-color:var(--fc-border);
+  background:var(--fc-surface);
+  color:var(--fc-text);
 }
 
 .fsb-remove-form .fsb-danger {
-  border-color: #8b3529;
-  background: #8b3529;
+  border-color:var(--fc-negative);
+  background:var(--fc-negative);
 }
 
-.fsb-mappings{display:grid;gap:14px;min-width:0;margin-top:10px;padding-top:14px;border-top:1px solid #dbe5e9}.fsb-mappings>label{display:grid;gap:8px;min-width:0;overflow-wrap:anywhere;font-size:15px;line-height:1.5}.fsb-mappings select{box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:44px;border:1px solid #91a9b5;border-radius:7px;padding:10px;background:#fff;color:#173143;font-size:16px}.fsb-confirm-balances{min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere;border:1px solid #17617b;border-radius:7px;padding:10px 14px;background:#17617b;color:#fff;font-size:16px;cursor:pointer}.fsb-confirm-balances:disabled,.fsb-mappings select:disabled{opacity:.6;cursor:default}
+.fsb-mappings{display:grid;gap:14px;min-width:0;margin-top:10px;padding-top:14px;border-top:1px solid var(--fc-border)}.fsb-mappings>label{display:grid;gap:8px;min-width:0;overflow-wrap:anywhere;font-size:0.9375rem;line-height:1.5}.fsb-mappings select{box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:44px;border:1px solid var(--fc-border);border-radius:7px;padding:10px;background:var(--fc-surface);color:var(--fc-text);font-size:1rem}.fsb-confirm-balances{min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere;border:1px solid var(--fc-border);border-radius:7px;padding:10px 14px;background:var(--fc-accent-fill);color:var(--fc-on-accent);font-size:1rem;cursor:pointer}.fsb-confirm-balances:disabled,.fsb-mappings select:disabled{opacity:.6;cursor:default}
 
 @media (max-width: 600px) {
   .fsb-card {
-    padding: 14px;
+    padding:14px;
   }
 
   .fsb-form {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns:minmax(0, 1fr);
   }
 
   .fsb-form .fsb-check {
-    grid-column: 1;
+    grid-column:1;
   }
 
   .fsb-form button,
   .fsb-read-button,
   .fsb-remove-form button {
-    width: 100%;
-    overflow-wrap: anywhere;
+    width:100%;
+    overflow-wrap:anywhere;
   }
 
   .fsb-read-button {
-    justify-self: stretch;
+    justify-self:stretch;
   }
 
   .fsb-tan-fields {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns:minmax(0, 1fr);
   }
 }
+
+/* Keep compact module controls usable without shrinking the existing layout. */
+.fsb-root :is(button,summary,a.button){min-width:44px;min-height:44px;}
+@media(max-width:650px){.fsb-root :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}

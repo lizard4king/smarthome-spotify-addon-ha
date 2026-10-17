@@ -341,10 +341,15 @@
     const balanceBox = add(summary, 'span', 'fd-account-balance');
     add(balanceBox, 'strong', `fd-account-amount ${tone(account.current_balance?.amount)}`, balance.amount);
     add(balanceBox, 'small', 'fd-account-balance-date', balance.stand);
+    if (window.financeReconciliation) window.financeReconciliation(summary, account.reconciliation);
     const body = add(card, 'div', 'fd-account-body');
     add(body, 'p', 'fd-account-freshness', `Letzte erfasste Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
     body.append(metrics(account));
     if (account.note) add(body, 'p', 'fd-account-note', account.note);
+    if (!account.current_balance || account.current_balance.amount === null || account.current_balance.amount === undefined) {
+      const nextAction = add(body, 'a', 'fc-text-link', 'Konto prüfen');
+      nextAction.href = '#wealth';
+    }
     if (area === 'category-outflows') summary.addEventListener('click', () => pick(id));
     card.addEventListener('toggle', () => { if (card.open) expandedAccounts.add(id); else expandedAccounts.delete(id); });
     if (area !== 'dashboard') return card;
@@ -745,6 +750,91 @@
       forecastWarnings[warning] || 'Diese erwartete Zahlung muss geprüft werden.');
     const link = add(body, 'a', '', 'Verträge & Zahlungen öffnen'); link.href = '#recurring';
   }
+  function historyPanel(parent, identity) {
+    const details = add(parent, 'details', 'fd-booking-history');
+    add(details, 'summary', '', 'Buchungsverlauf');
+    const content = add(details, 'div', 'fd-history-content');
+    lazyHistory(details, content, '/api/booking-history', identity, (data, target) => {
+      const statuses = {active:'Aktiv',superseded:'Ersetzt',voided:'Entfernt'};
+      for (const version of data.versions || []) {
+        const card = add(target, 'article', 'fd-history-version');
+        add(card, 'strong', '', `Version ${version.revision} · ${statuses[version.status] || version.status}`);
+        add(card, 'p', '', `${date(version.date)} · ${money(version.amount,version.currency,true)}`);
+        add(card, 'p', '', `Quellkategorie: ${version.source_category || '—'}`);
+        add(card, 'p', '', `Import ${version.import_id} · ${version.imported_at || '—'}`);
+        if (version.voided_at) add(card, 'p', '', `Archiviert: ${version.voided_at} · ${version.actor || '—'}`);
+        if (version.archived_data_status === 'invalid') add(card,'p','','Archivierte Zusatzdaten sind beschädigt.');
+        const context = version.context || {};
+        if (context.counterparty || context.description) add(card, 'p', '', [context.counterparty,context.description].filter(Boolean).join(' · '));
+        const dependencyLabels = {
+          transaction_context:'Gegenpartei und Verwendungszweck',classification_overrides:'Kategorie',
+          classification_document_links:'Belege',booking_contract_links:'Verträge',
+          transfer_correction_members:'Bestätigte Umbuchungen',transfer_single_legs:'Weitere Umbuchungen',
+          bonsy_cash_allocations:'Bargeldbelege',rejected_document_links:'Abgelehnte Belegzuordnungen',
+          classification_model_reviews:'Kategorievorschläge',classification_model_rejections:'Abgelehnte Kategorien',
+          payment_mail_events:'Zahlungsbestätigungen'
+        };
+        const dependencies = Object.entries(version.dependencies || {}).map(([name,items]) =>
+          `${dependencyLabels[name] || 'Weitere Zuordnungen'}: ${items.length}`);
+        if (dependencies.length) add(card, 'p', '', `Archivierte Zuordnungen: ${dependencies.join(' · ')}`);
+      }
+      for (const event of data.events || []) {
+        const trace = add(target, 'details', 'fd-history-event');
+        add(trace, 'summary', '', `Journal ${event.id} · ${{inserted:'Angelegt',updated:'Geändert',removed:'Entfernt'}[event.action] || event.action} · ${event.occurred_at}`);
+        if (event.archived_data_status === 'invalid') add(trace,'p','','Archivierte Zusatzdaten sind beschädigt.');
+        for (const [label,value] of [['Vorher',event.previous?.transaction],['Danach',event.current]]) {
+          if (value && Object.keys(value).length) add(trace, 'p', '', `${label}: ${date(value.date)} · ${value.amount || '—'} ${value.currency || ''} · Quellkategorie: ${value.category || '—'}`);
+        }
+        const context = event.previous?.context || {};
+        if (context.counterparty || context.description) add(trace,'p','',[context.counterparty,context.description].filter(Boolean).join(' · '));
+      }
+      if (!(data.versions || []).length && !(data.events || []).length) add(target, 'p', '', 'Kein Buchungsverlauf vorhanden.');
+    });
+  }
+  function lazyHistory(details, content, route, identity, render) {
+    let request = 0; let loaded = false;
+    const basis = snapshot;
+    const load = async (offset = 0) => {
+      const token = ++request;
+      const loading = add(content, 'p', 'fd-history-loading', 'Verlauf wird geladen …');
+      try {
+        if (typeof api !== 'function') throw new Error('unavailable');
+        const data = await api(route, {...identity,limit:50,offset});
+        if (token !== request || !details.isConnected || basis !== snapshot || !details.open) return;
+        loading.remove(); loaded = true;
+        render(data,content);
+        if (data.has_more) {
+          const more = add(content, 'button', 'fd-history-more', 'Weitere Einträge laden'); more.type = 'button';
+          more.addEventListener('click', () => {more.remove(); load(offset + 50);});
+        }
+      } catch {
+        if (token !== request || !details.isConnected || basis !== snapshot || !details.open) return;
+        loading.textContent = 'Buchungsverlauf nicht verfügbar. Zum erneuten Laden schließen und öffnen.';
+      }
+    };
+    details.addEventListener('toggle', () => {
+      if (!details.open) {++request; loaded = false; content.replaceChildren(); return;}
+      if (!loaded) {content.replaceChildren(); load();}
+    });
+  }
+  function removedHistory(parent) {
+    const outer = add(parent,'details','fd-removed-history');
+    add(outer,'summary','','Entfernte Buchungen · separater Verlauf');
+    add(outer,'p','','Archivierte Buchungen sind nicht in Buchungssummen und Kontoständen enthalten.');
+    for (const account of accounts().filter(item => includesAccount(accountKey(item)))) {
+      const details = add(outer,'details','fd-account-history');
+      add(details,'summary','',accountName(account));
+      const content = add(details,'div','fd-history-content');
+      lazyHistory(details,content,'/api/booking-history-inactive',{account_id:accountKey(account)},(data,target) => {
+        for (const item of data.bookings || []) {
+          const card = add(target,'article','fd-history-version');
+          add(card,'p','',`${date(item.date)} · ${money(item.amount,item.currency,true)} · Entfernt`);
+          historyPanel(card,{account_id:accountKey(account),external_id:item.external_id});
+        }
+        if (!(data.bookings || []).length) add(target,'p','','Keine entfernten Buchungen vorhanden.');
+      });
+    }
+  }
   function bookingRow(parent, item, account, index) {
     const row = add(parent, 'tr', 'fd-booking');
     row.dataset.timelineKey = `booking:${item.account_id}:${item.external_id}`;
@@ -823,6 +913,7 @@
       add(body, 'p', 'fd-booking-cash-review-detail', 'Bargeldanteil prüfen. Die vorhandene Buchung bleibt unverändert, bis eine Aufteilung vorliegt.');
     }
     if (item.external_id != null) {
+      historyPanel(body,{account_id:item.account_id,external_id:item.external_id});
       const edit = add(body, 'button', 'fd-booking-edit', 'Kategorie und Belege bearbeiten');
       edit.type = 'button';
       edit.addEventListener('click', () => document.dispatchEvent(new CustomEvent('finance-dashboard-edit',
@@ -840,6 +931,7 @@
     rows.replaceChildren();
     const account = current();
     if (area === 'dashboard' ? !selectedAccounts.size : !account) {add(rows,'p','fd-empty','Kein Konto ausgewählt.'); return;}
+    if (!supplied) removedHistory(rows);
     const term = query.trim();
     const list = supplied || filteredBookings();
     const expected = supplied ? [] : forecastEvents();

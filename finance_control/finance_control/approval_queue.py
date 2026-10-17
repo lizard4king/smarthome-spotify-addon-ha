@@ -11,7 +11,9 @@ from .classification import (
     normalize_counterparty,
     source_context_complete,
 )
+from .classification_rules import rule_is_eligible
 from .core import money
+from .review_policy import DOCUMENT_REVIEW_START_DATE
 from .transfer_corrections import pending_suggestions, sql_transfer_predicate
 
 
@@ -55,7 +57,7 @@ def _category_items(store):
                   mr.category_id AS model_category,mr.confidence AS model_confidence,
                   mr.rationale AS model_rationale,mr.model AS model_name,
                   CASE WHEN substr(t.amount, 1, 1)='-' THEN 'expense' ELSE 'income' END AS direction
-           FROM transactions t
+           FROM active_transactions t
            LEFT JOIN transaction_context x ON (x.account_id=t.account_id AND x.external_id=t.external_id)
            LEFT JOIN classification_overrides o ON (o.account_id=t.account_id AND o.external_id=t.external_id)
            LEFT JOIN classification_model_reviews mr
@@ -65,15 +67,14 @@ def _category_items(store):
            WHERE {non_transfer}
              AND COALESCE(o.confirmed, 0)=0
            ORDER BY t.date DESC,t.account_id,t.external_id""").fetchall()
-    rules = {(rule['counterparty_normalized'], rule['direction']): (rule['id'], rule['category_id'])
-             for rule in store.db.execute(
-                 'SELECT id,counterparty_normalized,direction,category_id FROM classification_rules')}
+    rules = {(rule['counterparty_normalized'], rule['direction']): dict(rule)
+             for rule in store.db.execute('SELECT * FROM classification_rules WHERE enabled=1')}
     suggestions = []
     for row in rows:
         normalized = normalize_counterparty(row['counterparty']) if row['counterparty'] else ''
         rule = rules.get((normalized, row['direction']))
-        if rule is not None:
-            suggestions.append((row, *rule))
+        if rule is not None and rule_is_eligible(rule, row['date']):
+            suggestions.append((row, rule['id'], rule['category_id']))
     groups = {}
     for row, rule_id, category in suggestions:
         group = groups.setdefault((rule_id, category), {
@@ -253,7 +254,7 @@ def document_link_items(store):
                   COALESCE(c.counterparty,'') AS counterparty,COALESCE(c.description,'') AS description,
                   d.id AS document_id,d.id AS id,d.kind,d.vendor,d.title,d.document_date,d.amount AS document_amount,
                   d.currency,d.source_reference,d.warnings,d.status,d.revision
-           FROM transactions t
+           FROM active_transactions t
            LEFT JOIN transaction_context c ON c.account_id=t.account_id AND c.external_id=t.external_id
            LEFT JOIN transfer_correction_members m ON m.account_id=t.account_id AND m.external_id=t.external_id
            LEFT JOIN transaction_allocations ta
@@ -263,7 +264,7 @@ def document_link_items(store):
             AND d.document_date IS NOT NULL AND d.document_date<=t.date
             AND d.document_date>=date(t.date,'-45 days')
            LEFT JOIN document_allocations da ON da.document_id=d.id
-           WHERE t.date >= '2026-01-01' AND t.currency='EUR' AND substr(t.amount,1,1)='-'
+           WHERE t.date >= ? AND t.currency='EUR' AND substr(t.amount,1,1)='-'
              AND t.transfer_id='' AND m.pair_id IS NULL
              AND CAST(REPLACE(REPLACE(t.amount,'-',''),'.','') AS INTEGER)
                    - COALESCE(ta.allocated_cents,0)
@@ -274,10 +275,11 @@ def document_link_items(store):
                 JOIN classification_documents d ON d.id=l.document_id
                 WHERE l.account_id=t.account_id AND l.external_id=t.external_id AND d.kind='invoice')
              AND NOT EXISTS (
-                SELECT 1 FROM classification_audit a
-                WHERE a.action='document_link_rejected' AND a.account_id=t.account_id
+                SELECT 1 FROM rejected_document_links a
+                WHERE a.account_id=t.account_id
                   AND a.external_id=t.external_id AND a.document_id=d.id)
-           ORDER BY t.date,t.account_id,t.external_id,d.document_date,d.id"""
+           ORDER BY t.date,t.account_id,t.external_id,d.document_date,d.id""",
+        (DOCUMENT_REVIEW_START_DATE,),
     ).fetchall()
     for row in rows:
         if not document_recipient_matches(

@@ -48,7 +48,7 @@ def accepted_day_end(store, account_id, currency, day):
     from .finanzguru_snapshot import _accepted_metadata_source
 
     ledger = [dict(row) for row in store.db.execute(
-        'SELECT external_id,date,amount,currency FROM transactions '
+        'SELECT external_id,date,amount,currency FROM active_transactions '
         'WHERE account_id=? AND date=?', (account_id, day))]
     if not ledger or any(row['currency'] != currency for row in ledger):
         return None

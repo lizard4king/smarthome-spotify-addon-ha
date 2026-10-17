@@ -15,6 +15,7 @@ from statistics import median
 from . import budget, contracts
 from .booking_categories import _canonical_counterparty
 from .classification import _cash_withdrawal_evidence
+from .classification_rules import is_intermediary, rule_is_eligible
 from .core import money
 from .transfer_corrections import sql_transfer_predicate
 
@@ -65,7 +66,7 @@ def detect(store, *, as_of, known_schedules):
     items = {i['id']: i for i in plan.get('items', [])}
     markers = defaultdict(list)
     if store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='finanzguru_row_metadata'").fetchone():
-        for row in store.db.execute('SELECT m.* FROM finanzguru_row_metadata m JOIN transactions t USING(account_id,external_id) '
+        for row in store.db.execute('SELECT m.* FROM finanzguru_row_metadata m JOIN active_transactions t USING(account_id,external_id) '
                 'WHERE m.booked_on=t.date AND m.currency=t.currency AND t.date<=?', (as_of,)):
             label_kind = _contract_marker_label(row['contract_label'])
             # An explicit negative label vetoes even a populated ID. Keep the
@@ -79,7 +80,7 @@ def detect(store, *, as_of, known_schedules):
                     markers[key].append(marker)
     rows, reversals = [], []
     for row in store.db.execute(
-            'SELECT t.*,c.counterparty,c.description,o.category_id FROM transactions t '
+            'SELECT t.*,c.counterparty,c.description,o.category_id FROM active_transactions t '
             'JOIN accounts a ON a.id=t.account_id AND a.currency=t.currency '
             'LEFT JOIN transaction_context c USING(account_id,external_id) '
             'LEFT JOIN classification_overrides o USING(account_id,external_id) '
@@ -93,7 +94,9 @@ def detect(store, *, as_of, known_schedules):
             continue
         item = dict(row)
         item['party'] = _party_key(row['counterparty'])
-        if not markers.get((row['account_id'], row['external_id'])) and item['party'] in {'lastschrift', 'abbuchung', 'zahlung', 'kartenzahlung', 'sonstige', 'paypal', 'amazon', 'klarna', 'apple', 'google'}:
+        if not markers.get((row['account_id'], row['external_id'])) and (
+                item['party'] in {'lastschrift', 'abbuchung', 'zahlung', 'kartenzahlung', 'sonstige'}
+                or is_intermediary(row['counterparty'], row['description'])):
             continue
         rows.append(item)
     rows = [r for r in rows if not any(v['account_id'] == r['account_id'] and v['currency'] == r['currency']
@@ -145,7 +148,7 @@ def detect(store, *, as_of, known_schedules):
                 source = 'budget_category_mapping'
         if iid is not None and source != 'finanzguru_contract_marker':
             item = items.get(iid)
-            if (not item or item['kind'] == 'variable' or not item['confirmed']
+            if (not item or item['kind'] not in {'income', 'fixed'} or not item['confirmed']
                     or (item['kind'] == 'income') != (money(row['amount']) > 0)
                     or item.get('account_id', row['account_id']) != row['account_id']):
                 continue
@@ -153,11 +156,11 @@ def detect(store, *, as_of, known_schedules):
     links = defaultdict(set)
     for row in store.db.execute(
             'SELECT l.*,d.warnings FROM classification_document_links l JOIN classification_documents d ON d.id=l.document_id '
-            "WHERE d.kind='contract' AND d.status='confirmed' AND NOT EXISTS (SELECT 1 FROM classification_audit a "
-            "WHERE a.action='document_link_rejected' AND a.account_id=l.account_id AND a.external_id=l.external_id AND a.document_id=l.document_id)"):
+            "WHERE d.kind='contract' AND d.status='confirmed' AND NOT EXISTS (SELECT 1 FROM rejected_document_links a "
+            "WHERE a.account_id=l.account_id AND a.external_id=l.external_id AND a.document_id=l.document_id)"):
         if not set(json.loads(row['warnings'])) & contracts._EXCLUDED_DOCUMENT_WARNINGS:
             links[(row['account_id'], row['external_id'])].add(row['document_id'])
-    classification_rules = {(_party_key(r['counterparty_normalized']), r['direction']): r['id']
+    classification_rules = {(_party_key(r['counterparty_normalized']), r['direction']): dict(r)
                             for r in store.db.execute('SELECT * FROM classification_rules')}
     candidates = []
     for identity, evidence in sorted(groups.items(), key=lambda pair: str(pair[0])):
@@ -192,9 +195,9 @@ def detect(store, *, as_of, known_schedules):
         if marker:
             refs.append({'type': 'finanzguru_contract', 'source': 'finanzguru',
                          **{k: marker[k] for k in ('contract_id', 'contract_label', 'cadence_raw', 'source_sha256', 'source_reference')}})
-        rule_id = classification_rules.get((party, 'income' if positive else 'expense'))
-        if rule_id:
-            refs.append({'type': 'classification_rule', 'id': rule_id})
+        rule = classification_rules.get((party, 'income' if positive else 'expense'))
+        if rule and all(rule_is_eligible(rule, row['date']) for row in recent):
+            refs.append({'type': 'classification_rule', 'id': rule['id']})
         booking_refs = [{k: r[k] for k in ('account_id', 'external_id', 'date', 'amount')} for r in recent]
         for schedule in known_schedules:
             if schedule.get('requires_contract_setup') and _party_key(schedule['label']) == party:

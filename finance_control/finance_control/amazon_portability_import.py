@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass
 from decimal import Decimal
 
+from .audit import import_operation
 from .classification import register_document
 from .providers import ProviderBatch, SourceDocument, SourceLineItem, SourceProvenance
 
@@ -183,6 +184,7 @@ def _import_item(store, row: SourceLineItem) -> bool:
     return True
 
 
+@import_operation
 def import_amazon_portability(store, batch: ProviderBatch) -> ImportResult:
     """Import each source identity once; conflicts stop processing without overwrites."""
     _check_batch(batch)

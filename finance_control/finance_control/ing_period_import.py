@@ -90,7 +90,7 @@ def _ledger_control(db, account, account_id, start, opening):
     with localcontext() as context:
         context.prec = 40
         total = Decimal(account['opening'])
-        for row in db.execute('SELECT amount FROM transactions WHERE account_id=? AND date<?',
+        for row in db.execute('SELECT amount FROM active_transactions WHERE account_id=? AND date<?',
                               (account_id, start)):
             total += Decimal(row[0])
     if total != opening:
@@ -99,7 +99,7 @@ def _ledger_control(db, account, account_id, start, opening):
 
 def _current_rows(db, account_id, start, next_start):
     return db.execute(
-        'SELECT external_id,date,amount,currency,category,transfer_id FROM transactions '
+        'SELECT external_id,date,amount,currency,category,transfer_id FROM active_transactions '
         'WHERE account_id=? AND date>=? AND date<?', (account_id, start, next_start)).fetchall()
 
 
@@ -255,7 +255,7 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
             raise PeriodImportError('LEDGER_PREFIX_CHANGED')
         old_control = snapshot.opening_balance
         for index, row in enumerate(snapshot.rows[:previous_count], 1):
-            actual = db.execute('SELECT date,amount,currency FROM transactions WHERE account_id=? AND external_id=?',
+            actual = db.execute('SELECT date,amount,currency FROM active_transactions WHERE account_id=? AND external_id=?',
                                 (account_id, ledger_ids[index - 1])).fetchone()
             if actual is None or tuple(actual) != (row.booked_on.isoformat(), _cash(row.amount), row.currency):
                 raise PeriodImportError('LEDGER_PREFIX_CHANGED')
@@ -298,6 +298,17 @@ def import_period_archive(store, archive, *, account_id, confirmed_source_accoun
                        'WHERE period_key=?', (end, archive_sha256, _cash(snapshot.closing_balance), row_json,
                                             ledger_ids_json, count, key))
         if bank_balance is not None:
+            # Record the observation in the same transaction as bookings and the
+            # current cache. Exact replay is harmless; later controls never erase it.
+            db.execute(
+                'INSERT INTO bank_balance_observations '
+                '(account_id,source_key,amount,currency,booked_on,retrieved_at) '
+                'SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM bank_balance_observations '
+                'WHERE account_id=? AND source_key=? AND amount=? AND currency=? '
+                'AND booked_on=? AND retrieved_at=?)',
+                (account_id, source_key, balance_amount, bank_balance.currency,
+                 bank_balance.booked_on.isoformat(),
+                 bank_balance.retrieved_at.astimezone(UTC).isoformat()) * 2)
             db.execute(
                 'INSERT INTO bank_account_balances '
                 '(account_id,source_key,amount,currency,booked_on,retrieved_at) '

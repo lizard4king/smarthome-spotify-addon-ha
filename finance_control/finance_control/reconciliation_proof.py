@@ -1,7 +1,8 @@
 """Strict, text-free balance evidence for an owner-bound failed preview."""
 
 from calendar import monthrange
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 import re
 from typing import TypedDict, cast
 
@@ -74,3 +75,104 @@ class LedgerControlBalanceMismatch(ValueError):
     def __init__(self, *, reconciliation=None):
         super().__init__('ledger_control_balance_mismatch')
         self.reconciliation = validated_reconciliation(reconciliation)
+
+
+_COMPARISON_FIELDS = frozenset({
+    'version', 'account_id', 'requested_as_of', 'comparison_date', 'currency',
+    'control_amount', 'ledger_amount', 'difference', 'status', 'source',
+    'control_reference', 'retrieved_at', 'comparison_basis', 'reason', 'warnings',
+})
+_COMPARISON_REASONS = {'no_control', 'conflicting_controls', 'currency_conflict',
+                       'control_predates_opening', 'invalid_ledger', 'invalid_control'}
+_COMPARISON_WARNINGS = {'ledger_completeness_unverified', 'older_control',
+                        'bank_balance_not_day_end', 'file_balance_not_day_end'}
+
+
+def validated_balance_comparison(value):
+    """Validate the daily comparison without weakening the monthly contract.
+
+    Missing evidence is not zero. Equal numbers do not establish day-end
+    timing or completeness. Only static reason codes and source references
+    accompany the protected financial amounts.
+    """
+    if type(value) is not dict or set(value) != _COMPARISON_FIELDS:
+        return None
+    try:
+        if type(value['version']) is not int or value['version'] != 1:
+            return None
+        if (type(value['account_id']) is not str
+                or not 1 <= len(value['account_id']) <= 240
+                or not value['account_id'].strip()
+                or any(ord(char) < 32 for char in value['account_id'])
+                or type(value['currency']) is not str
+                or re.fullmatch('[A-Z]{3}', value['currency']) is None):
+            return None
+        for key in ('requested_as_of', 'comparison_date'):
+            text = value[key]
+            if key == 'comparison_date' and text is None:
+                continue
+            if type(text) is not str or date.fromisoformat(text).isoformat() != text:
+                return None
+        day = value['comparison_date']
+        if day is not None and day > value['requested_as_of']:
+            return None
+        warnings = value['warnings']
+        if (type(warnings) is not list or any(type(item) is not str for item in warnings)
+                or warnings != sorted(set(warnings))
+                or not set(warnings) <= _COMPARISON_WARNINGS
+                or 'ledger_completeness_unverified' not in warnings
+                or ('older_control' in warnings) != (day is not None and day < value['requested_as_of'])):
+            return None
+        source = value['source']
+        if source not in {None, 'bank', 'statement', 'finanzguru_file'}:
+            return None
+        reference = value['control_reference']
+        if source is None:
+            if any(value[key] is not None for key in ('comparison_date', 'control_reference',
+                                                       'retrieved_at', 'comparison_basis', 'control_amount')):
+                return None
+        elif (day is None or type(reference) is not str
+              or not 1 <= len(reference) <= 256
+              or any(ord(char) < 32 for char in reference)):
+            return None
+        timestamp = value['retrieved_at']
+        if timestamp is not None:
+            if (type(timestamp) is not str or len(timestamp) > 64
+                    or datetime.fromisoformat(timestamp).utcoffset() is None):
+                return None
+        basis = value['comparison_basis']
+        if basis not in {None, 'day_end', 'intraday'}:
+            return None
+        if basis == 'intraday':
+            warning = {'bank': 'bank_balance_not_day_end',
+                       'finanzguru_file': 'file_balance_not_day_end'}.get(source)
+            if warning is None or warning not in warnings:
+                return None
+        elif set(warnings) & {'bank_balance_not_day_end', 'file_balance_not_day_end'}:
+            return None
+        for key in ('control_amount', 'ledger_amount', 'difference'):
+            text = value[key]
+            if text is None:
+                continue
+            pattern = r'-?(?:0|[1-9][0-9]{0,12})\.[0-9]{2}' if key == 'difference' else _AMOUNT
+            if (type(text) is not str or re.fullmatch(pattern, text) is None or text == '-0.00'):
+                return None
+            if key != 'difference':
+                money(text)
+        status = value['status']
+        if status == 'missing':
+            if (value['reason'] not in _COMPARISON_REASONS
+                    or value['difference'] is not None or value['ledger_amount'] is not None):
+                return None
+        elif status in {'matched', 'different'}:
+            if (value['reason'] is not None or source is None or basis is None
+                    or any(value[key] is None for key in ('control_amount', 'ledger_amount', 'difference'))):
+                return None
+            difference = Decimal(value['control_amount']) - Decimal(value['ledger_amount'])
+            if Decimal(value['difference']) != difference or (status == 'matched') != (difference == 0):
+                return None
+        else:
+            return None
+    except (TypeError, ValueError, ArithmeticError):
+        return None
+    return {**value, 'warnings': list(warnings)}

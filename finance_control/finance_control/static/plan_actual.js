@@ -573,13 +573,14 @@ function planActualRenderDue(payday) {
 function planActualMonthChartLayout(svg, min, max) {
   // The single-month SVG fits its panel; range charts keep their wider scrollable canvas.
   const viewport = document.documentElement?.clientWidth || 900;
-  const available = svg.parentNode?.clientWidth || svg.clientWidth || Math.max(1, viewport - 100);
+  const available = svg.clientWidth || svg.parentNode?.clientWidth || Math.max(1, viewport - 100);
   const width = Math.min(900, Math.max(1, Math.floor(available)));
   const compact = width < 440
     ? new Intl.NumberFormat('de-DE', {style: 'currency', currency: 'EUR',
       notation: 'compact', maximumFractionDigits: 1}) : null;
   let formatTick = value => compact ? compact.format(value) : eur(value);
-  let tickFontSize = width < 240 ? 10 : 12;
+  const tickFontSize = typeof getComputedStyle === 'function'
+    ? Math.max(14, parseFloat(getComputedStyle(document.documentElement).fontSize) * .875) : 14;
   const canvas = document.createElement?.('canvas');
   const context = canvas?.getContext?.('2d');
   const measuredWidth = () => {
@@ -593,7 +594,6 @@ function planActualMonthChartLayout(svg, min, max) {
   let labelWidth = measuredWidth();
   if (width < 440 && labelWidth > maxLabelWidth) {
     formatTick = value => `${Number(value).toExponential(1)} €`;
-    tickFontSize = 8;
     labelWidth = measuredWidth();
   }
   const pad = {left: Math.max(width < 240 ? 58 : 72, labelWidth + 10),
@@ -786,14 +786,14 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
   planActualAppendReportingHistoryNote(note, result);
   const height = 300;
   const series = [
-    {key: 'cumulative_expenses', label: 'Ist-Ausgaben (Betrag)', color: '#b34435'},
-    {key: 'planned_cumulative_expenses', label: 'Plan-Ausgaben (Betrag)', color: '#b34435', planned: true},
-    {key: 'cumulative_income', label: 'Ist-Einnahmen', color: '#28734b'},
-    {key: 'planned_cumulative_income', label: 'Plan-Einnahmen', color: '#28734b', planned: true},
+    {key: 'cumulative_expenses', label: 'Ist-Ausgaben (Betrag)', color: 'var(--fc-negative)'},
+    {key: 'planned_cumulative_expenses', label: 'Plan-Ausgaben (Betrag)', color: 'var(--fc-negative)', planned: true},
+    {key: 'cumulative_income', label: 'Ist-Einnahmen', color: 'var(--fc-positive)'},
+    {key: 'planned_cumulative_income', label: 'Plan-Einnahmen', color: 'var(--fc-positive)', planned: true},
   ].filter(item => !item.planned || result?.plan_available !== false);
   if (planActualTrendCumulative && accountBalance?.available && balanceForView?.points?.length) {
     series.push({key: 'change', label: 'Errechnete Kontostandsänderung Girokonto',
-      color: '#34495e', balance: true});
+      color: 'var(--fc-info)', balance: true});
   }
   const valueFor = (day, item, index) => item.balance
     ? Number(balanceForView.points[index]?.change || 0)
@@ -816,12 +816,12 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
   const ns = 'http://www.w3.org/2000/svg';
   const axis = document.createElementNS(ns, 'path');
   axis.setAttribute('d', `M ${pad.left} ${pad.top} V ${height-pad.bottom} M ${pad.left} ${y(0)} H ${width-pad.right}`);
-  axis.setAttribute('fill', 'none'); axis.setAttribute('stroke', '#9eb1bb'); svg.append(axis);
+  axis.setAttribute('fill', 'none'); axis.setAttribute('stroke', 'var(--fc-chart-grid)'); svg.append(axis);
   for (const fraction of [0, .5, 1]) {
     const value = max - span * fraction, gridY = y(value);
     const grid = document.createElementNS(ns, 'line'); grid.setAttribute('x1', String(pad.left));
     grid.setAttribute('x2', String(width-pad.right)); grid.setAttribute('y1', String(gridY));
-    grid.setAttribute('y2', String(gridY)); grid.setAttribute('stroke', '#dbe5e9'); svg.append(grid);
+    grid.setAttribute('y2', String(gridY)); grid.setAttribute('stroke', 'var(--fc-chart-grid)'); svg.append(grid);
     const label = document.createElementNS(ns, 'text'); label.setAttribute('x', String(pad.left-8));
     label.setAttribute('y', String(gridY+4)); label.setAttribute('text-anchor', 'end');
     label.style.fontSize = `${tickFontSize}px`;
@@ -967,11 +967,11 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
   const hasPlan = months.some(row => row.plan?.[view]?.income != null
     || row.plan?.[view]?.expenses != null);
   const series = [
-    {key: 'expenses', source: 'actual', label: 'Ist-Ausgaben (Betrag)', color: '#b34435'},
-    ...(hasPlan ? [{key: 'expenses', source: 'plan', label: 'Plan-Ausgaben (Betrag)', color: '#b34435', planned: true}] : []),
-    {key: 'income', source: 'actual', label: 'Ist-Einnahmen', color: '#28734b'},
-    ...(hasPlan ? [{key: 'income', source: 'plan', label: 'Plan-Einnahmen', color: '#28734b', planned: true}] : []),
-    ...(hasBalance ? [{key: 'balance', source: 'balance', label: 'Errechnete Kontostandsänderung (rechte Achse)', color: '#34495e'}] : []),
+    {key: 'expenses', source: 'actual', label: 'Ist-Ausgaben (Betrag)', color: 'var(--fc-negative)'},
+    ...(hasPlan ? [{key: 'expenses', source: 'plan', label: 'Plan-Ausgaben (Betrag)', color: 'var(--fc-negative)', planned: true}] : []),
+    {key: 'income', source: 'actual', label: 'Ist-Einnahmen', color: 'var(--fc-positive)'},
+    ...(hasPlan ? [{key: 'income', source: 'plan', label: 'Plan-Einnahmen', color: 'var(--fc-positive)', planned: true}] : []),
+    ...(hasBalance ? [{key: 'balance', source: 'balance', label: 'Errechnete Kontostandsänderung (rechte Achse)', color: 'var(--fc-info)'}] : []),
   ];
   for (const item of series) {
     const entry = document.createElement('span'); entry.className = 'plan-actual-daily-legend-item';
@@ -994,10 +994,10 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
       ? 'Für Monate mit Ist-Rückblick wird der Gesamtplan aus den Ist-Buchungen dieses Monats rekonstruiert. Die Nullabweichung dort ist kein unabhängiger Plan-Ist-Nachweis.'
       : '',
     savedProjection
-      ? `Weitere Monate innerhalb Revision ${trend.revision} verwenden die dort gespeicherten Budgetpositionen.`
+      ? `Weitere Monate innerhalb Planstand ${trend.revision} verwenden die dort gespeicherten Budgetpositionen.`
       : '',
     !fixedActuals && !savedProjection && hasPlan
-      ? `Planwerte aus Revision ${trend.revision}.` : '',
+      ? `Planwerte aus Planstand ${trend.revision}.` : '',
     months.some(row => row.plan_source === 'no_saved_budget')
       ? 'Für Monate ohne gespeicherten Plan fehlen Plan- und Abweichungswerte.' : '',
     cumulative && months.some(row => row.plan_source === 'no_saved_budget')
@@ -1040,7 +1040,7 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
   const ns = 'http://www.w3.org/2000/svg';
   const axis = document.createElementNS(ns, 'path');
   axis.setAttribute('d', `M ${pad.left} ${pad.top} V ${height-pad.bottom} M ${pad.left} ${yLeft(0)} H ${width-pad.right}${hasBalance ? ` M ${width-pad.right} ${pad.top} V ${height-pad.bottom}` : ''}`);
-  axis.setAttribute('fill', 'none'); axis.setAttribute('stroke', '#9eb1bb'); svg.append(axis);
+  axis.setAttribute('fill', 'none'); axis.setAttribute('stroke', 'var(--fc-chart-grid)'); svg.append(axis);
   const leftAxisTitle = document.createElementNS(ns, 'text');
   leftAxisTitle.setAttribute('x', String(pad.left)); leftAxisTitle.setAttribute('y', '14');
   leftAxisTitle.setAttribute('class', 'plan-actual-axis-title');
@@ -1058,14 +1058,14 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
     const balanceZero = document.createElementNS(ns, 'line');
     balanceZero.setAttribute('x1', String(pad.left)); balanceZero.setAttribute('x2', String(width-pad.right));
     balanceZero.setAttribute('y1', String(yRight(0))); balanceZero.setAttribute('y2', String(yRight(0)));
-    balanceZero.setAttribute('stroke', '#8495a0'); balanceZero.setAttribute('stroke-dasharray', '3 4');
+    balanceZero.setAttribute('stroke', 'var(--fc-chart-grid)'); balanceZero.setAttribute('stroke-dasharray', '3 4');
     svg.append(balanceZero);
   }
   for (const fraction of [0, .5, 1]) {
     const amount = leftMax - leftSpan * fraction, gridY = yLeft(amount);
     const grid = document.createElementNS(ns, 'line'); grid.setAttribute('x1', String(pad.left));
     grid.setAttribute('x2', String(width-pad.right)); grid.setAttribute('y1', String(gridY));
-    grid.setAttribute('y2', String(gridY)); grid.setAttribute('stroke', '#dbe5e9'); svg.append(grid);
+    grid.setAttribute('y2', String(gridY)); grid.setAttribute('stroke', 'var(--fc-chart-grid)'); svg.append(grid);
     const label = document.createElementNS(ns, 'text'); label.setAttribute('x', String(pad.left-8));
     label.setAttribute('y', String(gridY+4)); label.setAttribute('text-anchor', 'end');
     label.textContent = eur(amount); svg.append(label);
@@ -1429,7 +1429,7 @@ function planActualRenderAccountChart(values) {
   const points = values?.points || []; svg.hidden = !points.length;
   if (!points.length) return;
   const ns = 'http://www.w3.org/2000/svg';
-  const width = Math.max(320, Math.min(1000, svg.parentNode?.clientWidth || 900)), height = 240;
+  const width = Math.max(1, Math.min(1000, svg.clientWidth || svg.parentNode?.clientWidth || 900)), height = 240;
   const pad = {left: 100, right: 30, top: 24, bottom: 38};
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   const balances = [Number(values.start), ...points.map(point => Number(point.balance))];
@@ -1440,7 +1440,7 @@ function planActualRenderAccountChart(values) {
   for (let i = 0; i < 4; i++) {
     const value = min + i * (max - min) / 3;
     const line = document.createElementNS(ns, 'line');
-    for (const [key, val] of Object.entries({x1: pad.left, x2: width-pad.right, y1:y(value), y2:y(value), stroke:'#dce7eb'})) line.setAttribute(key, String(val));
+    for (const [key, val] of Object.entries({x1: pad.left, x2: width-pad.right, y1:y(value), y2:y(value), stroke:'var(--fc-chart-grid)'})) line.setAttribute(key, String(val));
     const label = document.createElementNS(ns, 'text');
     label.setAttribute('x', String(pad.left - 10)); label.setAttribute('y', String(y(value)+4)); label.setAttribute('text-anchor','end'); label.textContent = eur(value);
     svg.append(line, label);
@@ -1527,6 +1527,7 @@ function planActualRenderAccountOverview(result) {
       planBasis.textContent = account.plan_partial ? 'Teilplan · Abweichung = Ist − Plan.'
         : account.plan == null ? 'Kein Kontoplan hinterlegt.' : 'Abweichung = Ist − Plan.';
       card.append(name, kind, planBasis);
+      if (typeof window !== 'undefined' && window.financeReconciliation) window.financeReconciliation(card, account.reconciliation);
       const table = document.createElement('table'); table.className = 'plan-actual-account-table';
       const head = document.createElement('thead'), hr = document.createElement('tr');
       for (const label of ['Position', 'Plan', 'Ist', 'Abweichung']) { const th = document.createElement('th'); th.textContent = label; hr.append(th); }
@@ -1791,8 +1792,8 @@ function planActualBasisLabel(result) {
   if (result.basis?.type === 'retrospective_reference')
     return `${year} Rückblick (Plan=Ist)`;
   if (result.basis?.type === 'monthly_budget_projection')
-    return `${year} Budgetrevision ${result.revision}`;
-  return `${year} Budgetrevision ${result.revision}`;
+    return `${year} Planstand ${result.revision}`;
+  return `${year} Planstand ${result.revision}`;
 }
 
 function planActualTotalMetrics(totals) {
@@ -1820,7 +1821,7 @@ function planActualRenderTotalSummary(result) {
 
 function planActualExpenseReconciliation(result) {
   const cents = value => Math.round(Number(value || 0) * 100);
-  const positions = (result.rows || []).filter(row => row.kind !== 'income')
+  const positions = (result.rows || []).filter(row => ['fixed','variable'].includes(row.kind))
     .reduce((sum, row) => sum + cents(row.actual), 0);
   const unmapped = cents(result.unmapped?.expenses);
   const total = cents(result.totals.actual_expenses);
@@ -1976,7 +1977,7 @@ function planActualRenderBudgetProgress(result) {
     return;
   }
   note.textContent = `Ausgaben im Monat: ${eur(result.totals.actual_expenses)} von ${eur(result.totals.planned_expenses)} geplant. Der Rest gilt je Planposition, nicht als verfügbarer Kontostand.`;
-  const rows = (result.rows || []).filter(item => item.kind !== 'income');
+  const rows = (result.rows || []).filter(item => ['fixed','variable'].includes(item.kind));
   if (!rows.length) {
     note.textContent = 'Für diesen Monat sind keine Ausgabenpositionen aktiv.';
     return;
@@ -2011,6 +2012,7 @@ function planActualRenderBudgetProgress(result) {
 }
 
 function planActualRender(result) {
+  if (typeof budgetRenderReserves === 'function') budgetRenderReserves($('plan-actual-reserves'), result.reserves, true);
   $('plan-actual-result').hidden = false;
   planActualRenderBudgetProgress(result);
   planActualRenderAccountOverview(result);
@@ -2141,7 +2143,7 @@ function planActualRender(result) {
     ambiguousSalary
       ? 'Gehaltsbuchung: mehrere passende Einnahmeplanpositionen. Bitte unter Plan/Ist die Kategorie explizit zuordnen.'
       : 'Bestätigte Ist-Einnahmen · noch nicht einzeln verteilt');
-  renderKind('Ausgaben', 'expense', allRows.filter(item => item.kind !== 'income'),
+  renderKind('Ausgaben', 'expense', allRows.filter(item => ['fixed','variable'].includes(item.kind)),
     result.unmapped.expenses, 'expenses', 'unmapped_expense',
     'Bestätigte Ist-Ausgaben · noch nicht einzeln verteilt');
   if (!body.children.length) {
@@ -2163,7 +2165,7 @@ function planActualMappingsByItem(plan) {
 function planActualRenderMappings(plan) {
   const target = $('plan-actual-mapping-items'); target.replaceChildren();
   const grouped = planActualMappingsByItem(plan);
-  for (const item of plan.items || []) {
+  for (const item of (plan.items || []).filter(item => item.kind !== 'saving')) {
     const block = document.createElement('article'); block.className = 'plan-actual-mapping-item';
     const heading = document.createElement('h3'); heading.textContent = item.label;
     const hint = document.createElement('p'); hint.className = 'muted';
@@ -2186,7 +2188,7 @@ function planActualRenderMappings(plan) {
     block.append(heading, hint, choices); target.append(block);
   }
   if (!target.children.length) {
-    const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'Diese Revision enthält keine Budgetpositionen.'; target.append(empty);
+    const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'Dieser Planstand enthält keine Budgetpositionen.'; target.append(empty);
   }
 }
 
@@ -2222,7 +2224,7 @@ async function planActualMetadata(force = false) {
   planActualCatalog = catalog;
   const select = $('plan-actual-revision'), previous = force ? select.value : ''; select.replaceChildren();
   for (const revision of budget.history || []) {
-    select.append(new Option(`Revision ${revision.revision} · ${revision.title}`, String(revision.revision)));
+    select.append(new Option(`Planstand ${revision.revision} · ${revision.title}`, String(revision.revision)));
   }
   select.value = previous && [...select.options].some(option => option.value === previous)
     ? previous : String(budget.revision || '');
@@ -2230,8 +2232,8 @@ async function planActualMetadata(force = false) {
   $('plan-actual-mapping-save').disabled = planActualMappingBusy || !select.value;
   if (!select.value) {
     $('plan-actual-mapping-items').replaceChildren();
-    planActualSetStatus('Speichere zuerst unter Planung eine Budgetrevision.');
-    $('plan-actual-revision-label').textContent = 'Noch ohne Budgetrevision';
+    planActualSetStatus('Speichere zuerst unter Planung einen Planstand.');
+    $('plan-actual-revision-label').textContent = 'Noch ohne Planstand';
     planActualInitialized = true; return;
   }
   await planActualLoadRevision(Number(select.value));
@@ -2246,7 +2248,7 @@ function planActualInvalidateComparison() {
   $('plan-actual-no-plan').hidden = true;
   $('plan-actual-revision-label').textContent = `${$('plan-actual-month').value || 'Kein Monat'} · noch nicht geladen`;
   planActualRenderDataQuality(null);
-  planActualSetStatus(`Auswahl: ${$('plan-actual-month').value || 'kein Monat'} · Revision ${$('plan-actual-revision').value || 'keine'}. Vergleich laden.`);
+  planActualSetStatus(`Auswahl: ${$('plan-actual-month').value || 'kein Monat'} · Planstand ${$('plan-actual-revision').value || 'keiner'}. Vergleich laden.`);
 }
 function planActualShiftMonth(offset) {
   const input = $('plan-actual-month');
@@ -2265,7 +2267,7 @@ function planActualUpdateMonthNavigation() {
 }
 async function planActualCompare() {
   if (!$('plan-actual-revision').value || !$('plan-actual-month').value) {
-    throw new Error('Bitte Budgetrevision und Kalendermonat auswählen.');
+    throw new Error('Bitte Planstand und Kalendermonat auswählen.');
   }
   const request = ++planActualRequest, revision = $('plan-actual-revision').value,
     month = $('plan-actual-month').value, personBreakdown = $('plan-actual-person-toggle').checked;
@@ -2276,7 +2278,7 @@ async function planActualCompare() {
   $('plan-actual-load').setAttribute('aria-busy', 'true');
   $('plan-actual-result').hidden = true;
   delete $('plan-actual-result').dataset.loaded;
-  planActualSetStatus(`Vergleich für ${month} · Revision ${revision} wird geladen …`);
+  planActualSetStatus(`Vergleich für ${month} · Planstand ${revision} wird geladen …`);
   try {
     const result = await api('/api/budget-actual', {
       revision: Number(revision), month, person_breakdown: personBreakdown,
@@ -2302,8 +2304,8 @@ async function planActualCompare() {
 
 async function planActualSaveMappings() {
   if (planActualMappingBusy) return;
-  if (!planActualBudget?.plan) throw new Error('Bitte zuerst eine Budgetrevision laden.');
-  if (Number($('plan-actual-revision').value) !== planActualBudget.revision) throw new Error('Die ausgewählte Budgetrevision wird noch geladen. Bitte warte, bevor Du die Zuordnung speicherst.');
+  if (!planActualBudget?.plan) throw new Error('Bitte zuerst einen Planstand laden.');
+  if (Number($('plan-actual-revision').value) !== planActualBudget.revision) throw new Error('Der ausgewählte Planstand wird noch geladen. Bitte warte, bevor Du die Zuordnung speicherst.');
   const mappings = [], used = new Set();
   for (const input of $('plan-actual-mapping-items').querySelectorAll('input[data-category-id]:checked')) {
     const label = input.closest('label').textContent;
@@ -2320,14 +2322,14 @@ async function planActualSaveMappings() {
     saved = await api('/api/budget-save', {
       revision: latest.latest_revision, base_revision: baseRevision, plan,
     });
-    planActualSetMappingStatus(`Zuordnung als Revision ${saved.revision} gespeichert. Die Revisionsauswahl wird aktualisiert …`);
+    planActualSetMappingStatus(`Zuordnung als Planstand ${saved.revision} gespeichert. Die Planstandauswahl wird aktualisiert …`);
     // Saving creates a revision; it must never replace the user's current selection.
     planActualInitialized = false; await planActualMetadata(true);
-    planActualSetMappingStatus(`Zuordnung als Revision ${saved.revision} gespeichert. Deine Auswahl bleibt erhalten. Wähle die neue Revision aus, um sie zu vergleichen.`);
+    planActualSetMappingStatus(`Zuordnung als Planstand ${saved.revision} gespeichert. Deine Auswahl bleibt erhalten. Wähle den neuen Planstand aus, um ihn zu vergleichen.`);
   } catch (error) {
     const feedback = saved
-      ? `Zuordnung als Revision ${saved.revision} gespeichert. Die Revisionsauswahl konnte nicht vollständig aktualisiert werden. Bitte die Seite neu laden.`
-      : `Speichern der Zuordnung aus Revision ${baseRevision} nicht bestätigt. Bitte die gespeicherten Revisionen prüfen.`;
+      ? `Zuordnung als Planstand ${saved.revision} gespeichert. Die Planstandauswahl konnte nicht vollständig aktualisiert werden. Bitte die Seite neu laden.`
+      : `Speichern der Zuordnung aus Planstand ${baseRevision} nicht bestätigt. Bitte die gespeicherten Planstände prüfen.`;
     planActualSetMappingStatus(`${feedback} ${error.message}`, true);
     throw new Error(`${feedback} ${error.message}`, {cause:error});
   } finally {

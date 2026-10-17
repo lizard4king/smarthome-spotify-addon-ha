@@ -9,8 +9,92 @@ function analyticsCard(box,label,value,detail,tone=''){const card=document.creat
 function analyticsType(){return $('analytics-type').value;}
 function analyticsVisibleCategories(){const type=analyticsType();return analyticsData.categories.filter(item=>type==='all'||item.transaction_type===type);}
 function analyticsSvg(name,attrs={}){const element=document.createElementNS('http://www.w3.org/2000/svg',name);for(const [key,value] of Object.entries(attrs))element.setAttribute(key,String(value));return element;}
-function analyticsPath(svg,values,max,color){if(!values.length)return;const left=58,right=872,top=24,bottom=246,width=right-left,height=bottom-top,step=values.length===1?0:width/(values.length-1);const points=values.map((value,index)=>[left+step*index,bottom-height*Number(value)/max]);svg.append(analyticsSvg('path',{d:points.map((point,index)=>`${index?'L':'M'}${point[0]} ${point[1]}`).join(' '),fill:'none',stroke:color,'stroke-width':4,'stroke-linecap':'round','stroke-linejoin':'round'}));for(const [x,y] of points)svg.append(analyticsSvg('circle',{cx:x,cy:y,r:4.5,fill:'#fff',stroke:color,'stroke-width':3}));}
-function analyticsTrend(category=null){const svg=$('analytics-trend');svg.replaceChildren();const months=analyticsData.monthly;if(!months.length)return;let income=months.map(item=>Number(item.income)),outflow=months.map(item=>Number(item.outflow)),label='Monatliche Entwicklung';if(category){const values=new Map(category.monthly.map(item=>[item.month,Number(item.amount)]));income=category.transaction_type==='income'?months.map(item=>values.get(item.month)||0):[];outflow=category.transaction_type==='expense'?months.map(item=>values.get(item.month)||0):[];label=category.label+' im Zeitverlauf';}else if(analyticsType()==='income')outflow=[];else if(analyticsType()==='expense')income=[];$('analytics-legend-income').hidden=!income.length;$('analytics-legend-expense').hidden=!outflow.length;$('analytics-trend-title').textContent=label;const values=[...income,...outflow],max=Math.max(1,...values),left=58,right=872,top=24,bottom=246;for(let index=0;index<=4;index++){const y=top+(bottom-top)*index/4;svg.append(analyticsSvg('line',{x1:left,y1:y,x2:right,y2:y,stroke:'#dce7eb','stroke-width':1}));const text=analyticsSvg('text',{x:4,y:y+4});text.textContent=eur(max*(4-index)/4);svg.append(text);}analyticsPath(svg,income,max,'#2e8b70');analyticsPath(svg,outflow,max,'#176783');const step=months.length===1?0:(right-left)/(months.length-1);months.forEach((item,index)=>{if(months.length>12&&index%2)return;const text=analyticsSvg('text',{x:left+step*index,y:278,'text-anchor':'middle'});text.textContent=analyticsMonthLabel(item.month);svg.append(text);});}
+let analyticsTrendSelection=null;
+const analyticsChartWidths=new WeakMap();
+function analyticsViewportWidth(svg){
+  const style=getComputedStyle(svg);
+  const content=svg.getBoundingClientRect().width-(parseFloat(style.borderLeftWidth)||0)-(parseFloat(style.borderRightWidth)||0);
+  return Math.max(1,content||svg.parentElement?.clientWidth||window.innerWidth-64);
+}
+const analyticsChartResize=typeof ResizeObserver==='function'?new ResizeObserver(entries=>{
+  for(const {target} of entries){
+    if(target.clientWidth>0&&Math.abs(analyticsViewportWidth(target)-(analyticsChartWidths.get(target)||0))>.01&&analyticsData)
+      analyticsTrend(analyticsTrendSelection);
+  }
+}):null;
+function analyticsPath(svg,values,max,color,frame){
+  if(!values.length)return;
+  const {left,right,top,bottom,min}=frame,width=right-left,height=bottom-top;
+  const step=values.length===1?0:width/(values.length-1);
+  const points=values.map((value,index)=>[left+step*index,bottom-height*(Number(value)-min)/(max-min)]);
+  svg.append(analyticsSvg('path',{d:points.map((point,index)=>`${index?'L':'M'}${point[0]} ${point[1]}`).join(' '),fill:'none',stroke:color,'stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round'}));
+  for(const [x,y] of points)svg.append(analyticsSvg('circle',{cx:x,cy:y,r:4,fill:'var(--fc-surface)',stroke:color,'stroke-width':2}));
+}
+function analyticsTrend(category=null){
+  const svg=$('analytics-trend');
+  analyticsTrendSelection=category;
+  if(!analyticsChartWidths.has(svg))analyticsChartResize?.observe(svg);
+  svg.replaceChildren();
+  // Defer text measurement until the SVG has a displayed layout box. Hidden
+  // views retain their selection; ResizeObserver redraws them without a request.
+  if(!svg.getClientRects().length||svg.getBoundingClientRect().width<=0){
+    analyticsChartWidths.set(svg,0);
+    // Reset the observation so hide/show in one frame still delivers a first
+    // visible size even when it equals the previously displayed width.
+    analyticsChartResize?.unobserve(svg);
+    analyticsChartResize?.observe(svg);
+    return;
+  }
+  const width=analyticsViewportWidth(svg);
+  analyticsChartWidths.set(svg,width);
+  // One SVG unit equals one CSS pixel; shrinking a 900-unit chart shrinks text too.
+  svg.setAttribute('viewBox',`0 0 ${width} 300`);
+  const months=analyticsData.monthly;
+  if(!months.length)return;
+  let income=months.map(item=>Number(item.income)),outflow=months.map(item=>Number(item.outflow));
+  let label='Monatliche Entwicklung';
+  if(category){
+    const values=new Map(category.monthly.map(item=>[item.month,Number(item.amount)]));
+    income=category.transaction_type==='income'?months.map(item=>values.get(item.month)||0):[];
+    outflow=category.transaction_type==='expense'?months.map(item=>values.get(item.month)||0):[];
+    label=category.label+' im Zeitverlauf';
+  }else if(analyticsType()==='income')outflow=[];
+  else if(analyticsType()==='expense')income=[];
+  $('analytics-legend-income').hidden=!income.length;
+  $('analytics-legend-expense').hidden=!outflow.length;
+  $('analytics-trend-title').textContent=label;
+  const min=Math.min(0,...income,...outflow),max=Math.max(1,...income,...outflow);
+  const format=new Intl.NumberFormat('de-DE',{notation:Math.max(Math.abs(min),max)>=10000?'compact':'standard',maximumFractionDigits:0});
+  const font=Math.max(14,parseFloat(getComputedStyle(document.documentElement).fontSize)*.875);
+  const top=font*2.4+8,bottom=248;
+  const text=(value,attrs)=>{
+    const node=analyticsSvg('text',{...attrs,fill:'var(--fc-chart-text)'});
+    node.style.fontSize=`${font}px`;node.textContent=value;svg.append(node);return node;
+  };
+  const axis=Array.from({length:5},(_,index)=>text(format.format(max-(max-min)*index/4),{x:4,y:top+(bottom-top)*index/4+4}));
+  const left=Math.max(...axis.map(node=>node.getComputedTextLength()))+16,right=width-12;
+  text('EUR',{x:4,y:font+2});
+  axis.forEach((node,index)=>{
+    const y=top+(bottom-top)*index/4;
+    node.setAttribute('x',left-8);node.setAttribute('text-anchor','end');
+    svg.prepend(analyticsSvg('line',{x1:left,y1:y,x2:right,y2:y,stroke:'var(--fc-chart-grid)','stroke-width':1}));
+  });
+  analyticsPath(svg,income,max,'var(--fc-positive)',{left,right,top,bottom,min});
+  analyticsPath(svg,outflow,max,'var(--fc-accent)',{left,right,top,bottom,min});
+  const step=months.length===1?0:(right-left)/(months.length-1);
+  let previousRight=-Infinity;
+  // Measure labels before keeping them: retain endpoints and omit crowded ticks.
+  const last=months.length-1;
+  const lastLabel=text(analyticsMonthLabel(months[last].month),{x:left+step*last,y:278,'text-anchor':last?'end':'start'});
+  const lastLeft=lastLabel.getBBox().x;
+  months.forEach((item,index)=>{
+    if(index===last)return;
+    const node=text(analyticsMonthLabel(item.month),{x:left+step*index,y:278,'text-anchor':index?'middle':'start'});
+    const box=node.getBBox();
+    if(box.x<previousRight+12||box.x+box.width+12>lastLeft){node.remove();return;}
+    previousRight=box.x+box.width;
+  });
+}
 function analyticsMonthSlices(){const box=$('analytics-month-slices');box.replaceChildren();for(const item of analyticsData.monthly){const button=document.createElement('button');button.type='button';button.className='analytics-month-chip';const value=analyticsType()==='income'?item.income:analyticsType()==='all'?item.net:item.outflow;button.innerHTML=`<span>${analyticsMonthLabel(item.month)}</span><strong>${eur(value)}</strong>`;button.addEventListener('click',()=>run(async()=>{const [year,month]=item.month.split('-').map(Number),last=new Date(Date.UTC(year,month,0)).getUTCDate(),monthStart=`${item.month}-01`,monthEnd=`${item.month}-${String(last).padStart(2,'0')}`;$('analytics-from').value=analyticsData.period.date_from&&analyticsData.period.date_from>monthStart?analyticsData.period.date_from:monthStart;$('analytics-to').value=analyticsData.period.date_to&&analyticsData.period.date_to<monthEnd?analyticsData.period.date_to:monthEnd;$('analytics-preset').value='custom';await analyticsLoad();}));box.append(button);}}
 function analyticsBars(){const box=$('analytics-category-bars');box.replaceChildren();const visible=analyticsVisibleCategories(),rows=visible.slice(0,8),total=visible.reduce((sum,item)=>sum+Number(item.amount),0)||1;$('analytics-bars-title').textContent=analyticsType()==='income'?'Größte Einnahmequellen':analyticsType()==='all'?'Größte Bereiche':'Größte Ausgabenbereiche';for(const item of rows){const button=document.createElement('button'),head=document.createElement('span'),track=document.createElement('span'),fill=document.createElement('span'),label=document.createElement('strong'),value=document.createElement('span');button.type='button';button.className='analytics-bar-row';label.textContent=item.label;value.textContent=`${eur(item.amount)} · ${(100*Number(item.amount)/total).toFixed(1).replace('.',',')} %`;head.append(label,value);track.className='analytics-bar-track';fill.className='analytics-bar-fill';fill.style.width=`${100*Number(item.amount)/Number(rows[0].amount)}%`;track.append(fill);button.append(head,track);button.addEventListener('click',()=>analyticsSelectParent(item.id));box.append(button);}if(!rows.length)box.textContent='Für diesen Datenschnitt sind keine bestätigten Kategorien vorhanden.';}
 function analyticsParents(){const box=$('analytics-categories');box.replaceChildren();const visible=analyticsVisibleCategories(),max=Math.max(1,...visible.map(item=>Number(item.amount)));for(const parent of visible){const wrapper=document.createElement('div'),button=document.createElement('button'),top=document.createElement('span'),name=document.createElement('strong'),amount=document.createElement('strong'),meta=document.createElement('small'),track=document.createElement('span'),fill=document.createElement('span'),children=document.createElement('div'),active=Boolean(analyticsParent&&analyticsParent.id===parent.id),key=encodeURIComponent(parent.id);wrapper.className='analytics-parent-item';wrapper.dataset.parentId=parent.id;button.id=`analytics-parent-${key}`;button.type='button';button.className='analytics-parent-card'+(active?' active':'');button.setAttribute('aria-expanded',String(active));button.setAttribute('aria-controls',`analytics-children-${key}`);name.textContent=parent.label;amount.textContent=eur(parent.amount);top.append(name,amount);meta.textContent=`${parent.children.length} Unterkategorien · ${parent.count} Buchungen · ${parent.document_count} Belegverknüpfungen`;track.className='analytics-card-track';fill.style.width=`${100*Number(parent.amount)/max}%`;track.append(fill);button.append(top,meta,track);button.addEventListener('click',()=>analyticsSelectParent(parent.id));children.id=`analytics-children-${key}`;children.className='analytics-parent-children';children.setAttribute('role','group');children.setAttribute('aria-label',`Unterkategorien von ${parent.label}`);children.hidden=!active;if(active)analyticsSubcategories(parent,children);wrapper.append(button,children);box.append(wrapper);}if(!box.children.length)box.textContent='Keine Kategorien im gewählten Datenschnitt.';}

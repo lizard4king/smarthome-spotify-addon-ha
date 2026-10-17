@@ -206,7 +206,7 @@ def _legacy_prefix(database, account_id, period):
             return (), []
         existing = store.db.execute(
             'SELECT t.external_id,t.date,t.amount,t.currency,c.counterparty,c.description '
-            'FROM transactions t LEFT JOIN transaction_context c '
+            'FROM active_transactions t LEFT JOIN transaction_context c '
             'ON c.account_id=t.account_id AND c.external_id=t.external_id '
             'WHERE t.account_id=? AND t.date>=? AND t.date<=?',
             (account_id, period.month_start.isoformat(), period.as_of.isoformat())).fetchall()

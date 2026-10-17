@@ -141,7 +141,7 @@
       if(['finanzguru_contract','source_contract'].includes(ref.type)){
         details.append(node('p','fc-caption',typeof ref.contract_label==='string'&&ref.contract_label?`Vertrag der Quelle: ${ref.contract_label}`:'Vertrag in der Finanzguru-Datei gekennzeichnet.'));
         details.append(node('p','fc-caption',candidate.interval_months?`Rhythmus aus der Quelle: alle ${candidate.interval_months} Monate`:'Rhythmus aus der Quelle nicht verlässlich zugeordnet.'));
-      }else details.append(node('p','fc-caption',ref.type==='budget_item'?`Budgetrevision ${ref.revision} · Position ${ref.item_id}`:ref.type==='category'?`Kategorie ${ref.category_id||ref.id||'offen'}`:'Verknüpfte Buchungsquelle'));
+      }else details.append(node('p','fc-caption',ref.type==='budget_item'?`Planstand ${ref.revision} · Position ${ref.item_id}`:ref.type==='category'?`Kategorie ${ref.category_id||ref.id||'offen'}`:'Verknüpfte Buchungsquelle'));
     }
     const bookings=node('ol','rc-evidence');for(const booking of candidate.bookings||[])bookings.append(node('li','',`${date(booking.date)} · ${money(booking.amount,candidate.currency)} · ${accountLabel(booking.account_id)} · ${booking.external_id}`));
     if(!bookings.children.length)details.append(node('p','muted','Keine Einzelbuchungen in dieser Antwort verfügbar.'));else details.append(bookings);

@@ -1,5 +1,9 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.61` adds immutable booking history, dated bank reconciliation,
+reversible classification rules, accounting reserve pots and a readable light/dark
+interface. Saved budget versions are labelled “Planstand”. No payments are initiated.
+
 Version `0.2.60` shows a file-based day-end balance when every posting on the day
 is proven by the same accepted full export and its recorded balances form a
 connected sequence with one final value. No table row order is assumed. Missing,

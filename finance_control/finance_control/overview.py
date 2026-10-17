@@ -2,6 +2,7 @@
 
 import calendar
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from . import approval_queue, budget
 from .core import money
@@ -31,7 +32,7 @@ def _task(kind, label, count, target, detail):
 
 def _classification_task(store, cutoff):
     row = store.db.execute(
-        "SELECT COUNT(*) FROM transactions t "
+        "SELECT COUNT(*) FROM active_transactions t "
         "LEFT JOIN classification_overrides o ON o.account_id=t.account_id AND o.external_id=t.external_id "
         "LEFT JOIN transfer_correction_members m ON m.account_id=t.account_id AND m.external_id=t.external_id "
         "WHERE t.date <= ? AND t.transfer_id='' AND m.pair_id IS NULL AND COALESCE(o.confirmed, 0)=0",
@@ -63,7 +64,7 @@ def _year_actuals(store, cutoff, year):
     if end >= start:
         from .transfer_corrections import effective_transfer_id
         rows = store.db.execute(
-            'SELECT t.*,m.pair_id AS correction_pair_id,c.description FROM transactions t '
+            'SELECT t.*,m.pair_id AS correction_pair_id,c.description FROM active_transactions t '
             'LEFT JOIN transfer_correction_members m '
             'ON m.account_id=t.account_id AND m.external_id=t.external_id '
             'LEFT JOIN transaction_context c '
@@ -105,7 +106,56 @@ def _with_compatible_breakdown(store, plan, stored):
     return current if stored_signature == current_signature else stored
 
 
-def _plan_overview(store, cutoff, status):
+def _reserve_overview(calculation, plan, cutoff, connected, opening, unavailable_reason=None):
+    """Attach only the existing, connected bank basis to whole-plan reserves."""
+    from .reserves import liquidity_at
+
+    source = calculation['reserves']
+    threshold = source['safety_threshold']
+    initial_amounts = [pot['opening_amount'] for pot in source['pots']]
+    initial_bound = (None if any(amount is None for amount in initial_amounts)
+                     else format(sum((Decimal(amount) for amount in initial_amounts), Decimal(0)), '.2f'))
+
+    def liquidity(row, balance):
+        result = liquidity_at(row, format(balance, '.2f') if connected else None, threshold)
+        if not connected:
+            result['unavailable_reason'] = unavailable_reason or 'plan_not_connected'
+        return result
+
+    initial = liquidity({'bound_total': initial_bound}, opening)
+    cumulative = {row['period']: Decimal(row['cumulative']) for row in calculation['rows']}
+    rows = [{**row, 'liquidity': liquidity(
+        row, opening + cumulative[row['period']] if connected else None)}
+        for row in source['rows']]
+    points = [(plan['start_month'] + '-01', initial)] + [
+        (row['period'], row['liquidity']) for row in rows]
+    complete = all(info['free_available'] is not None for _, info in points)
+    minimum = min(points, key=lambda point: Decimal(point[1]['free_available'])) if complete else None
+    maximum = (max(points, key=lambda point: Decimal(point[1]['safety_shortfall']))
+               if complete and threshold is not None else None)
+    result = {**source, 'available': complete,
+              'unavailable_reason': None if complete else initial['unavailable_reason'],
+              'rows': rows,
+              'selected_row': next((row for row in rows
+                                    if row['period'] == cutoff.strftime('%Y-%m')), None),
+              'initial_liquidity': initial,
+              'minimum_free_available': minimum[1]['free_available'] if minimum else None,
+              'minimum_period': minimum[0] if minimum else None,
+              'maximum_safety_shortfall': maximum[1]['safety_shortfall'] if maximum else None,
+              'maximum_shortfall_period': maximum[0] if maximum else None}
+    tasks = []
+    if initial_bound is None:
+        tasks.append(_task('reserve_opening_unknown', 'Anfangsbestand der Töpfe prüfen', 1,
+                           'planning', 'Mindestens ein Topf hat keinen bekannten Anfangsbestand; '
+                           'frei verfügbare Mittel und Reservewarnung sind nicht berechenbar.'))
+    if maximum and Decimal(maximum[1]['safety_shortfall']) > 0:
+        tasks.append(_task('reserve_shortfall', 'Sicherheitsreserve prüfen', 1, 'planning',
+                           f"Die frei verfügbaren Mittel unterschreiten die Sicherheitsreserve "
+                           f"um bis zu {maximum[1]['safety_shortfall']} EUR ({maximum[0]})."))
+    return result, tasks
+
+
+def _plan_overview(store, cutoff, status, reporting_history=None):
     snapshot = budget.load(store)
     if snapshot['plan'] is None:
         return None, []
@@ -130,6 +180,8 @@ def _plan_overview(store, cutoff, status):
                            'planning', f'{unconfirmed} Budgetpositionen sind unbestätigt.'))
     if status is None:
         overview['connection_reason'] = 'Kein angezeigter Kontostand verfügbar.'
+    elif 'reserves' in calculation and status.get('liquidity') is None:
+        overview['connection_reason'] = 'Kein angezeigter Kontostand verfügbar.'
     elif cutoff > _last_complete_month():
         overview['connection_reason'] = 'Der Monat des angezeigten Stands ist noch nicht vollständig.'
     elif not _month_end(cutoff):
@@ -151,6 +203,35 @@ def _plan_overview(store, cutoff, status):
     if not overview['connected']:
         tasks.append(_task('budget_connection', 'Budgetplan anschließen', 1, 'planning',
                            overview['connection_reason']))
+    if 'reserves' in calculation:
+        from .plan_actual import _account_balances
+        from .reporting_history import scope_for_month
+
+        scope = scope_for_month(store, plan['start_month'], reporting_history)
+        account_ids = plan.get('liquidity_accounts', [])
+        coverage = scope.get('available_from_by_account', {})
+        reserve_reason = None
+        balances = None
+        if scope['mode'] == 'individual':
+            reserve_reason = 'whole_plan_only'
+        elif not overview['connected']:
+            reserve_reason = 'plan_not_connected'
+        elif not account_ids:
+            reserve_reason = 'no_liquidity_accounts'
+        elif any(account_id in coverage and plan['start_month'] + '-01' < coverage[account_id]
+                 for account_id in account_ids):
+            reserve_reason = 'incomplete_source_coverage'
+        else:
+            balances = _account_balances(store, cutoff.isoformat(), account_ids)
+            if balances is None:
+                reserve_reason = 'missing_bank_balance'
+        overview['reserves'], reserve_tasks = _reserve_overview(
+            calculation, plan, cutoff, reserve_reason is None,
+            sum(balances.values(), money(0)) if balances is not None else None,
+            reserve_reason)
+        overview['reserves']['bank_basis'] = {
+            'type': 'ledger_projection', 'date': cutoff.isoformat(), 'account_ids': account_ids}
+        tasks.extend(reserve_tasks)
     return overview, tasks
 
 
@@ -185,14 +266,18 @@ def _primary_action(plan, tasks):
             'detail': plan['connection_reason'],
             'target': 'planning',
         }
+    reserve_task = next((task for task in tasks
+                         if task['kind'] in {'reserve_shortfall', 'reserve_opening_unknown'}), None)
+    if reserve_task is not None:
+        return {key: reserve_task[key] for key in ('label', 'detail', 'target')}
     return None
 
 
-def build(store, as_of, status, *, _today=None):
+def build(store, as_of, status, *, _today=None, reporting_history=None):
     """Return stable, read-only overview data for one cockpit state."""
     cutoff = date.fromisoformat(as_of)
     today = datetime.now().astimezone().date() if _today is None else _today
-    plan, tasks = _plan_overview(store, cutoff, status)
+    plan, tasks = _plan_overview(store, cutoff, status, reporting_history)
     for task in (_classification_task(store, cutoff), _document_task(store)):
         if task is not None:
             tasks.append(task)

@@ -117,7 +117,7 @@ def _import_validated(store, s, path, *, account_id, confirmed_source_account, s
             if tuple(previous) != expected_registry:
                 raise StatementError('Auszug, Kontozuordnung oder Kategorie widerspricht dem früheren Import.')
             existing_rows = store.db.execute(
-                'SELECT external_id,date FROM transactions WHERE account_id=? AND date>=? AND date<=?',
+                'SELECT external_id,date FROM active_transactions WHERE account_id=? AND date>=? AND date<=?',
                 (account_id, start.isoformat(), end.isoformat()),
             ).fetchall()
             if empty_point:
@@ -127,7 +127,7 @@ def _import_validated(store, s, path, *, account_id, confirmed_source_account, s
             elif {row['external_id'] for row in existing_rows} != {row['external_id'] for row in rows}:
                 raise StatementError('Früherer Auszugimport ist unvollständig oder enthält zusätzliche Buchungen.')
             for row in rows:
-                actual = store.db.execute('SELECT external_id,account_id,date,amount,currency,category,transfer_id FROM transactions WHERE account_id=? AND external_id=?', (account_id, row['external_id'])).fetchone()
+                actual = store.db.execute('SELECT external_id,account_id,date,amount,currency,category,transfer_id FROM active_transactions WHERE account_id=? AND external_id=?', (account_id, row['external_id'])).fetchone()
                 if actual is None or tuple(actual) != tuple(row[column] for column in columns):
                     raise StatementError('Früherer Auszugimport ist unvollständig oder verändert.')
             if binding is None:
@@ -135,13 +135,13 @@ def _import_validated(store, s, path, *, account_id, confirmed_source_account, s
             store.db.commit()
             return StatementImportResult(len(rows), 0)
         overlap = None if empty_point else store.db.execute('SELECT 1 FROM bank_statement_imports WHERE account_id=? AND NOT (booking_count=0 AND period_start=period_end) AND period_start<=? AND period_end>=?', (account_id, end.isoformat(), start.isoformat())).fetchone()
-        legacy = store.db.execute('SELECT 1 FROM transactions WHERE account_id=? AND date>=? AND date<=?', (account_id, start.isoformat(), end.isoformat())).fetchone()
+        legacy = store.db.execute('SELECT 1 FROM active_transactions WHERE account_id=? AND date>=? AND date<=?', (account_id, start.isoformat(), end.isoformat())).fetchone()
         if overlap is not None or legacy is not None:
             raise StatementError('Auszugszeitraum überschneidet vorhandene Buchungen; Abgleich erforderlich.')
         with localcontext() as context:
             context.prec = 40
             ledger_opening = Decimal(account['opening'])
-            for existing in store.db.execute('SELECT amount FROM transactions WHERE account_id=? AND date<?', (account_id, start.isoformat())):
+            for existing in store.db.execute('SELECT amount FROM active_transactions WHERE account_id=? AND date<?', (account_id, start.isoformat())):
                 ledger_opening += Decimal(existing['amount'])
             if ledger_opening != s.opening_balance or account['opening_date'] >= start.isoformat():
                 raise StatementError('Ledger-Anfangssaldo passt nicht zum Kontoauszug.')

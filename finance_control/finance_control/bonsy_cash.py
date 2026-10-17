@@ -37,7 +37,7 @@ def _withdrawals(store):
                   t.category AS source_category,o.category_id AS category,o.confirmed,
                   c.counterparty,c.description,
                   COALESCE(NULLIF(a.display_name,''),a.id) AS account_label
-           FROM transactions t
+           FROM active_transactions t
            JOIN accounts a ON a.id=t.account_id
            LEFT JOIN classification_overrides o
              ON o.account_id=t.account_id AND o.external_id=t.external_id
@@ -88,7 +88,7 @@ def _has_broad_exact_payment_candidate(
         return False
     rows = store.db.execute(
         f"""SELECT t.account_id,t.external_id,t.amount,t.date
-           FROM transactions t
+           FROM active_transactions t
            JOIN accounts a ON a.id=t.account_id
            LEFT JOIN transaction_context c
              ON c.account_id=t.account_id AND c.external_id=t.external_id
@@ -504,7 +504,7 @@ def overview(store, _data=None, *, _today=None):
             """SELECT l.account_id,l.external_id,l.allocated_amount,l.allocation_type,t.date,
                       COALESCE(NULLIF(a.display_name,''),a.id) AS account_label
                FROM classification_document_links l
-               JOIN transactions t USING(account_id,external_id)
+               JOIN active_transactions t USING(account_id,external_id)
                JOIN accounts a ON a.id=l.account_id
                WHERE l.document_id=? AND l.allocation_type IN ('payment','refund','evidence')
                ORDER BY t.date,l.account_id,l.external_id""",

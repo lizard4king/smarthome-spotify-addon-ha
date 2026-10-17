@@ -1,17 +1,21 @@
-#contracts-panel{margin:24px 0;padding:20px;border:1px solid #94a3b8;border-radius:12px;min-width:0}
+#contracts-panel{margin:24px 0;padding:20px;border:1px solid var(--fc-border);border-radius:12px;min-width:0}
 #contracts-panel[hidden]{display:none}
 #contracts-panel *{box-sizing:border-box}
-#contracts-panel h3,#contracts-panel h4{font-size:20px;line-height:1.4;margin:0 0 12px}
-#contracts-panel p,#contracts-panel label,#contracts-panel input,#contracts-panel select,#contracts-panel button,#contracts-panel summary,#contracts-panel legend{font-size:16px;line-height:1.5;overflow-wrap:anywhere}
+#contracts-panel h3,#contracts-panel h4{font-size:1.25rem;line-height:1.4;margin:0 0 12px}
+#contracts-panel p,#contracts-panel label,#contracts-panel input,#contracts-panel select,#contracts-panel button,#contracts-panel summary,#contracts-panel legend{font-size:1rem;line-height:1.5;overflow-wrap:anywhere}
 #contracts-panel p{margin:12px 0}
-#contracts-panel fieldset{min-width:0;margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:8px}
+#contracts-panel fieldset{min-width:0;margin:16px 0;padding:16px;border:1px solid var(--fc-border);border-radius:8px}
 #contracts-panel #contracts-fields{padding:0;border:0}
 .contracts-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 #contracts-panel label{display:flex;flex-direction:column;gap:6px;min-width:0}
 #contracts-panel input,#contracts-panel select{width:100%;min-width:0;min-height:44px}
 #contracts-panel button,#contracts-panel summary{min-height:44px;max-width:100%;white-space:normal}
 .contracts-phase button{margin-top:16px}
-.contracts-match{margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:8px;min-width:0}
+.contracts-match{margin:16px 0;padding:16px;border:1px solid var(--fc-border);border-radius:8px;min-width:0}
 .contracts-match details p{white-space:pre-wrap}
 .contracts-pagination{display:flex;gap:12px;flex-wrap:wrap}
 @media(max-width:640px){#contracts-panel{padding:12px;margin:20px 0}.contracts-grid{grid-template-columns:minmax(0,1fr)}#contracts-panel fieldset,.contracts-match{padding:12px}#contracts-panel button{width:100%}}
+
+/* Keep compact module controls usable without shrinking the existing layout. */
+#contracts-panel :is(button,summary,a.button){min-width:44px;min-height:44px;}
+@media(max-width:650px){#contracts-panel :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}

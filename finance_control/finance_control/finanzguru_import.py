@@ -11,6 +11,7 @@ from zipfile import BadZipFile
 from collections import Counter
 from datetime import UTC, date, datetime
 
+from .audit import import_operation
 from .core import money
 from .classification import apply_exact_rule_if_safe, exact_rule_match
 from .import_preview import (
@@ -103,7 +104,7 @@ def _mapped_row_metadata(staged, mapping, *, excluded_sources=(), date_to=None):
 def _persist_row_metadata(store, rows, source_sha256):
     for row in rows:
         ledger = store.db.execute(
-            'SELECT date,amount,currency FROM transactions WHERE account_id=? AND external_id=?',
+            'SELECT date,amount,currency FROM active_transactions WHERE account_id=? AND external_id=?',
             (row['account_id'], row['external_id'])).fetchone()
         if (ledger is None or ledger['date'] != row['booked_on']
                 or ledger['currency'] != row['currency']
@@ -504,7 +505,7 @@ def prepare(store, staged, choices):
         for ref in pair:
             transfer_ids[ref] = identity
     ledger = [tuple(row) for row in store.db.execute(
-        'SELECT account_id,external_id,date,amount,currency,category,transfer_id FROM transactions ORDER BY account_id,external_id')]
+        'SELECT account_id,external_id,date,amount,currency,category,transfer_id FROM active_transactions ORDER BY account_id,external_id')]
     existing = {(r[0], r[1]): r for r in ledger}
     existing_elsewhere = {r[1]: r[0] for r in ledger if r[1].startswith('fg:')}
     account_bindings = {}
@@ -567,14 +568,16 @@ def prepare(store, staged, choices):
             blockers.append(status)
         direction = 'income' if money(row['amount']) > 0 else 'expense'
         rule = None if status != 'new' or record[-1] else exact_rule_match(
-            store, row.get('counterparty', ''), row.get('description', ''), direction)
+            store, row.get('counterparty', ''), row.get('description', ''), direction,
+            booked_on=row['date'])
         detail.append({'reference': row['reference'], 'account_id': target, 'date': row['date'],
                        'amount': row['amount'], 'category': row['category'], 'status': status,
                        'transfer': bool(record[-1]),
                        'blocking_reason': ('cross_source_transfer_requires_reconciliation'
                                            if row['reference'] in cross_source_references else None),
                        'own_category': None if rule is None else rule['category'],
-                       'own_category_label': None if rule is None else rule['label']})
+                       'own_category_label': None if rule is None else rule['label'],
+                       'own_category_suggestion_only': bool(rule and rule['suggestion_only'])})
     # Include existing pair legs as well, so the original importer revalidates the complete group.
     records = sorted({tuple(r) for r in seen.values() if r[2] > accounts[r[0]]['opening_date']})
     text = io.StringIO(newline='')
@@ -585,7 +588,8 @@ def prepare(store, staged, choices):
     summary = {'counts': dict(counts), 'blockers': sorted(set(blockers)), 'rows': detail,
                'date_to': date_to,
                'auto_classification_count': sum(
-                   row['status'] == 'new' and row['own_category'] is not None for row in detail),
+                   row['status'] == 'new' and row['own_category'] is not None
+                   and not row['own_category_suggestion_only'] for row in detail),
                'new_net_amount': format(sum((money(r[3]) for r in proposed), money('0')), '.2f'),
                'ready': not blockers, 'ledger_written': False,
                'no_op': not active_sources}
@@ -617,6 +621,7 @@ def preview_batch(store, root, batch, choices):
     return prepare(store, staged, choices)[0]
 
 
+@import_operation
 def commit_batch(store, root, batch, choices, review_token):
     if not isinstance(choices, dict) or choices.get('mode', 'append') not in {'append', 'snapshot'}:
         raise ValueError('invalid_import_mode')

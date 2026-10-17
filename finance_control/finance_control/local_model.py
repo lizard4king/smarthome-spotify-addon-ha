@@ -17,6 +17,7 @@ from .classification import (
     normalize_counterparty,
     source_context_complete,
 )
+from .classification_rules import DECISION_ACTIONS, is_intermediary
 from .document_intake import DocumentIntakeError, read_document_source
 
 OLLAMA_CHAT_URL = 'http://127.0.0.1:11434/api/chat'
@@ -173,27 +174,51 @@ def suggest(store, data, *, client=None):
 
 
 def _independent_support(store, transaction, category):
-    """Count earlier non-model confirmations for this exact counterparty."""
+    """Count confirmations except model autos and proven current rule autos."""
     normalized = normalize_counterparty(transaction['counterparty'])
     if not normalized or not source_context_complete(
             transaction['counterparty'], transaction['description']):
         return 0
+    placeholders = ','.join('?' for _ in DECISION_ACTIONS)
     rows = store.db.execute(
-        """SELECT t.amount,c.counterparty,o.category_id,m.status AS model_status
+        f"""SELECT t.amount,c.counterparty,o.category_id,o.revision,
+                  m.status AS model_status,a.action AS decision_action,
+                  a.current AS decision_current
            FROM classification_overrides o
-           JOIN transactions t USING(account_id,external_id)
+           JOIN active_transactions t USING(account_id,external_id)
            JOIN transaction_context c USING(account_id,external_id)
            LEFT JOIN classification_model_reviews m USING(account_id,external_id)
            LEFT JOIN transfer_correction_members x USING(account_id,external_id)
+           LEFT JOIN classification_audit a ON a.id=(
+               SELECT last.id FROM classification_audit last
+               WHERE last.account_id=o.account_id AND last.external_id=o.external_id
+                 AND last.action IN ({placeholders}) ORDER BY last.id DESC LIMIT 1)
            WHERE o.confirmed=1 AND (t.transfer_id IS NULL OR t.transfer_id='')
-             AND x.pair_id IS NULL""").fetchall()
+             AND x.pair_id IS NULL""", DECISION_ACTIONS).fetchall()
     direction = 'income' if not str(transaction['amount']).startswith('-') else 'expense'
     same = [row['category_id'] for row in rows
             if row['model_status'] != 'auto_confirmed'
+            and not _current_rule_auto(row)
             and ('income' if not str(row['amount']).startswith('-') else 'expense') == direction
             and normalize_counterparty(row['counterparty']) == normalized]
     counts = Counter(same)
     return counts[category] if len(counts) == 1 else 0
+
+
+def _current_rule_auto(row):
+    """Legacy overrides without matching audit evidence retain their support."""
+    if row['decision_action'] != 'classification_auto_applied':
+        return False
+    try:
+        decision = json.loads(row['decision_current'])
+    except (TypeError, ValueError):
+        return False
+    return (isinstance(decision, dict)
+            and type(decision.get('rule_id')) is int and decision['rule_id'] > 0
+            and decision.get('confirmed') is True
+            and type(decision.get('revision')) is int
+            and decision['revision'] == row['revision']
+            and decision.get('category') == row['category_id'])
 
 
 def review_transactions(store, keys, *, client=None):
@@ -223,7 +248,9 @@ def review_transactions(store, keys, *, client=None):
         safe_category = not any(marker in proposal['category']
                                 for marker in ('UNKLAR', 'SONSTIGE'))
         auto_confirm = (proposal['confidence'] == 'high' and support >= 2
-                        and safe_category)
+                        and safe_category
+                        and not is_intermediary(
+                            transaction['counterparty'], transaction['description']))
         store.db.execute('BEGIN IMMEDIATE')
         try:
             current = store.db.execute(

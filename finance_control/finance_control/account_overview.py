@@ -8,6 +8,7 @@ from decimal import Decimal
 from .cash_components import explicit_cash_component
 from .classification import canonical_category_id
 from .core import money
+from .reconciliation import reconciliation_differences
 from .transfer_corrections import sql_transfer_predicate
 
 
@@ -20,7 +21,8 @@ def _fmt(value):
 
 def build_account_overview(store, month, snapshot, planned_by_item, *,
                            plan_available, reporting_scope, cash_activity,
-                           item_allocations=None, today=None, include_cash=True):
+                           item_allocations=None, today=None, include_cash=True,
+                           reconciliations=None):
     """Build account columns from raw postings; unknown balances stay unknown.
 
     A plan covers only active items explicitly assigned to the account. Cash is
@@ -36,7 +38,12 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
     accounts = store.db.execute(
         "SELECT id,owner,kind,currency,opening,opening_date,display_name "
         "FROM accounts ORDER BY id").fetchall()
-    plan_items = snapshot.get("plan", {}).get("items", []) if snapshot else []
+    if reconciliations is None:
+        reconciliations = reconciliation_differences(
+            store, [account["id"] for account in accounts
+                    if selected is None or account["id"] in selected], as_of.isoformat())
+    plan_items = [item for item in snapshot.get("plan", {}).get("items", [])
+                  if item["kind"] != "saving"] if snapshot else []
     items_by_id = {item["id"]: item for item in plan_items}
     item_allocations = item_allocations or {}
     assigned = defaultdict(list)
@@ -76,7 +83,7 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
         if start_known:
             previous = money(account["opening"])
             for row in store.db.execute(
-                    "SELECT amount FROM transactions WHERE account_id=? AND date<?",
+                    "SELECT amount FROM active_transactions WHERE account_id=? AND date<?",
                     (account_id, first.isoformat())):
                 previous += money(row["amount"])
         elif end_known:
@@ -107,7 +114,7 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
                 "c.counterparty,c.description,o.category_id,o.confirmed,"
                 "cat.label AS category_label,cat.transaction_type,"
                 f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
-                "FROM transactions t "
+                "FROM active_transactions t "
                 "LEFT JOIN transaction_context c USING(account_id,external_id) "
                 "LEFT JOIN classification_overrides o USING(account_id,external_id) "
                 "LEFT JOIN category_catalog cat ON cat.id=o.category_id "
@@ -202,6 +209,7 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
             "change": _fmt(inflow - outflow), "plan": account_plan,
             "plan_partial": account_plan is not None,
             "positions": positions, "points": points,
+            "reconciliation": reconciliations[account_id],
             "note": ("Rekonstruierter monetärer Buchsaldo; kein Depot-Marktwert."
                      if account["kind"] == "DEPOT" else None),
         })

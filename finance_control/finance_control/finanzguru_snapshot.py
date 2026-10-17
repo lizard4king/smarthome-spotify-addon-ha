@@ -1,7 +1,8 @@
 """Explicit full-export reconciliation of the current Finanzguru ledger.
 
 Only the source-account namespaces present in the reviewed workbook are changed.
-The event journal retains prior rows and dependent decisions before replacement.
+Prior booking versions remain immutable; the event journal also archives their
+dependent decisions and context before replacement.
 """
 import csv
 import hashlib
@@ -12,8 +13,10 @@ from collections import Counter
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from .audit import actor_for, import_operation
 from .classification import apply_exact_rule_if_safe
 from .core import money
+from .ledger import insert_transaction, void_transaction
 from .finanzguru_import import (digest, load_batch, selected_source_rows,
                                validate_selected_transfer_pairs, _mapped_row_metadata,
                                _persist_row_metadata, _original_identity_proofs)
@@ -24,7 +27,7 @@ _CHILD_TABLES = (
     'classification_document_links', 'transfer_correction_members',
     'classification_model_reviews', 'transfer_single_legs',
     'payment_mail_events', 'bonsy_cash_allocations',
-    'classification_model_rejections', 'booking_contract_links',
+    'classification_model_rejections', 'booking_contract_links', 'rejected_document_links',
 )
 # Contract decisions are planning provenance; only explicit reconciliation may
 # remove or retarget them. They must never follow generic child cleanup.
@@ -95,7 +98,7 @@ def _transfer_pair_state(store, key):
             if member_key == key:
                 continue
             transaction = store.db.execute(
-                'SELECT * FROM transactions WHERE account_id=? AND external_id=?',
+                'SELECT * FROM active_transactions WHERE account_id=? AND external_id=?',
                 member_key).fetchone()
             opposite.append({'transaction': None if transaction is None else dict(transaction),
                              'dependencies': _dependent_state(store, member_key)})
@@ -136,26 +139,26 @@ def _reviewable_transfer_dependency(store, key, old, existing, transfer_members,
 
 
 def _check_foreign_keys(store):
-    """Never delete a booking when a new dependent table escaped reconciliation."""
-    known = set(_CHILD_TABLES)
+    """Never replace a booking when a dependent table escaped reconciliation."""
+    known = set(_CHILD_TABLES) | {'transactions'}
     tables = [row[0] for row in store.db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
     for table in tables:
         foreign = store.db.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()
-        if any(row['table'] == 'transactions' for row in foreign) and table not in known:
+        if any(row['table'] in {'transactions', 'transaction_keys'} for row in foreign) and table not in known:
             raise ValueError('unknown_transaction_dependency')
 
 
 def _event(store, *, source, target, exported_at, sha, action, key=None,
            previous=None, current=None):
-    store.db.execute(
+    return store.db.execute(
         'INSERT INTO finanzguru_snapshot_events('
         'occurred_at,source_account,target_account,exported_at,source_sha256,'
         'action,account_id,external_id,previous,current) VALUES (?,?,?,?,?,?,?,?,?,?)',
         (datetime.now(UTC).isoformat(), source, target, exported_at, sha, action,
          None if key is None else key[0], None if key is None else key[1],
          None if previous is None else _json(previous),
-         None if current is None else _json(current)))
+         None if current is None else _json(current))).lastrowid
 
 
 def _source_context(store, root, existing, identity_keys=(), display_references=None):
@@ -413,7 +416,7 @@ def _plan(store, staged, choices, root):
     heads = {row['source_account']: dict(row) for row in store.db.execute(
         'SELECT * FROM finanzguru_snapshot_heads')}
     ledger = [dict(row) for row in store.db.execute(
-        'SELECT * FROM transactions ORDER BY account_id,external_id')]
+        'SELECT * FROM active_transaction_versions ORDER BY account_id,external_id')]
     contexts = [dict(row) for row in store.db.execute(
         'SELECT * FROM transaction_context ORDER BY account_id,external_id')]
     existing = {(row['account_id'], row['external_id']): row for row in ledger}
@@ -816,14 +819,14 @@ def _clear_dependents(store, key, *, remove):
         store.db.execute('UPDATE transfer_correction_pairs SET revoked_at=? WHERE id=? AND revoked_at IS NULL',
                          (stamp, pair_id))
         store.db.execute(
-            'INSERT INTO transfer_correction_audit(occurred_at,action,pair_id,current) VALUES (?,?,?,?)',
+            'INSERT INTO transfer_correction_audit(occurred_at,action,pair_id,current,actor) VALUES (?,?,?,?,?)',
             (stamp, 'transfer_correction_revoked', pair_id,
              _json({'id': pair_id, 'revoked_at': stamp, 'members': members,
-                    'reason': 'finanzguru_snapshot_reconciliation'})))
+                    'reason': 'finanzguru_snapshot_reconciliation'}), actor_for(store)))
     for table in _DELETE_CHILDREN:
         if table == 'transfer_correction_members':
             continue
-        if not remove and table in {'classification_model_rejections'}:
+        if not remove and table in {'classification_model_rejections', 'rejected_document_links'}:
             continue
         store.db.execute(f'DELETE FROM {table} WHERE account_id=? AND external_id=?', key)
     store.db.execute(
@@ -835,7 +838,7 @@ def _clear_dependents(store, key, *, remove):
 def _validate_transfers(store):
     from collections import defaultdict
     grouped = defaultdict(list)
-    for row in store.db.execute("SELECT * FROM transactions WHERE transfer_id != ''"):
+    for row in store.db.execute("SELECT * FROM active_transactions WHERE transfer_id != ''"):
         grouped[row['transfer_id']].append(row)
     for pair in grouped.values():
         if (len(pair) != 2 or pair[0]['account_id'] == pair[1]['account_id']
@@ -844,6 +847,7 @@ def _validate_transfers(store):
             raise ValueError('invalid_transfer_after_snapshot')
 
 
+@import_operation
 def commit_snapshot(store, root, batch, choices, review_token):
     folder, staged = load_batch(root, batch)
     store.db.execute('BEGIN IMMEDIATE')
@@ -916,19 +920,17 @@ def commit_snapshot(store, root, batch, choices, review_token):
             source = next(source for source, target in plan['mapping'].items()
                           if target == key[0] and key[1].startswith(_source_prefix(source)))
             dependencies = _clear_dependents(store, key, remove=True)
-            _event(store, source=source, target=key[0], exported_at=plan['exported_at'],
+            event_id = _event(store, source=source, target=key[0], exported_at=plan['exported_at'],
                    sha=staged['source_sha256'], action='removed', key=key,
                    previous={'transaction': dict(old), 'dependencies': dependencies})
-            store.db.execute('DELETE FROM transactions WHERE account_id=? AND external_id=?', key)
+            void_transaction(store, key, event_id, 'voided')
             changed['removed'] += 1
         for key, row in plan['desired'].items():
             source = next(source for source, target in plan['mapping'].items()
                           if target == key[0] and key[1].startswith(_source_prefix(source)))
             old = plan['existing'].get(key)
             if old is None:
-                store.db.execute(
-                    'INSERT INTO transactions(account_id,external_id,date,amount,currency,category,transfer_id,import_id) '
-                    'VALUES (?,?,?,?,?,?,?,?)',
+                insert_transaction(store,
                     (*key, row['date'], row['amount'], row['currency'], row['category'],
                      row['transfer_id'], import_id))
                 store.db.execute('INSERT INTO transaction_context VALUES (?,?,?,?)',
@@ -968,15 +970,31 @@ def commit_snapshot(store, root, batch, choices, review_token):
                         (*key, override[0]['revision'] + 1))
                     store.db.execute(
                         'INSERT INTO classification_audit('
-                        'occurred_at,action,account_id,external_id,previous,current) VALUES (?,?,?,?,?,?)',
+                        'occurred_at,action,account_id,external_id,previous,current,actor) VALUES (?,?,?,?,?,?,?)',
                         (datetime.now(UTC).isoformat(), 'snapshot_category_reset', *key,
                          _json(override[0]), _json({'category_id': None, 'confirmed': 0,
-                                                    'revision': override[0]['revision'] + 1})))
-            store.db.execute(
-                'UPDATE transactions SET date=?,amount=?,currency=?,category=?,transfer_id=?,import_id=? '
-                'WHERE account_id=? AND external_id=?',
-                (row['date'], row['amount'], row['currency'], row['category'],
-                 row['transfer_id'], import_id, *key))
+                                                    'revision': override[0]['revision'] + 1}), actor_for(store)))
+            event_id = _event(store, source=source, target=key[0], exported_at=plan['exported_at'],
+                             sha=staged['source_sha256'], action='updated', key=key,
+                             previous={'transaction': dict(old), 'context': prior_context,
+                                       'dependencies': dependencies}, current=(
+                                 row | {'transfer_name_change_review': plan['name_changes'][key]}
+                                 if plan['name_changes'].get(key, {}).get('kind') == 'manual' else row))
+            if economic:
+                # The source identity remains stable, but each economic booking
+                # keeps its own immutable values and original import receipt.
+                void_transaction(store, key, event_id, 'superseded')
+                insert_transaction(store,
+                                   (*key, row['date'], row['amount'], row['currency'],
+                                    row['category'], row['transfer_id'], import_id))
+            else:
+                # Source category and explicitly reviewed display-name changes
+                # are metadata. Their new source is recorded by the event;
+                # import_id continues to identify the original booking receipt.
+                store.db.execute(
+                    'UPDATE transactions SET category=?,transfer_id=? '
+                    'WHERE account_id=? AND external_id=? AND revision=?',
+                    (row['category'], row['transfer_id'], *key, old['revision']))
             store.db.execute(
                 'INSERT INTO transaction_context(account_id,external_id,counterparty,description) '
                 'VALUES (?,?,?,?) ON CONFLICT(account_id,external_id) DO UPDATE SET '
@@ -985,12 +1003,6 @@ def commit_snapshot(store, root, batch, choices, review_token):
             if economic:
                 auto_classified += apply_exact_rule_if_safe(
                     store, *key, allow_empty_override=True) is not None
-            _event(store, source=source, target=key[0], exported_at=plan['exported_at'],
-                   sha=staged['source_sha256'], action='updated', key=key,
-                   previous={'transaction': dict(old), 'context': prior_context,
-                             'dependencies': dependencies}, current=(
-                                 row | {'transfer_name_change_review': plan['name_changes'][key]}
-                                 if plan['name_changes'].get(key, {}).get('kind') == 'manual' else row))
             changed['updated'] += 1
         _validate_transfers(store)
         for source, target in plan['mapping'].items():

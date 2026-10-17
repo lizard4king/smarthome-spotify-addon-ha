@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
+from .audit import import_operation
 from .classification import (
     _audit,
     _cash_withdrawal_evidence,
@@ -101,7 +102,7 @@ def auto_link_timestamped_receipts(store, ids=None):
                 '''SELECT t.account_id,t.external_id,t.amount,t.category,t.transfer_id,
                           COALESCE(c.counterparty,'') AS counterparty,
                           COALESCE(c.description,'') AS description
-                   FROM transactions t
+                   FROM active_transactions t
                    LEFT JOIN transaction_context c USING(account_id,external_id)
                    LEFT JOIN transfer_correction_members m
                      ON m.account_id=t.account_id AND m.external_id=t.external_id
@@ -436,6 +437,7 @@ def _reconcile_excluded_receipts(store, entry_ids):
     return result
 
 
+@import_operation
 def import_workbook(store, database, path, *, confirm_exclusions=False):
     """Import structured receipts and products, then link only unique direct matches."""
     if type(confirm_exclusions) is not bool:

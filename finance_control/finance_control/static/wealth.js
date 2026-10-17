@@ -186,8 +186,36 @@ function wealthRenderHistory(history, selectedRevision) {
   $('wealth-history-load').disabled = !select.value;
 }
 
+function wealthResetComparison() {
+  const checkbox = $('wealth-differences-confirmed');
+  if (checkbox) checkbox.checked = false;
+  const label = $('wealth-differences-label');
+  if (label) label.hidden = true;
+  $('wealth-reconciliation')?.replaceChildren();
+}
+
+function wealthUpdateSave() {
+  $('wealth-save').disabled = !wealthReview?.result?.review_token
+    || (wealthReview.result.differences_confirmation_required === true && !$('wealth-differences-confirmed')?.checked);
+}
+
+function wealthRenderComparison(result) {
+  wealthResetComparison();
+  const list = $('wealth-reconciliation');
+  const names = new Map((result.ledger_positions || []).map(position => [position.account_id, position.label]));
+  if (list && window.financeReconciliation) for (const comparison of result.reconciliation || []) {
+    const card = document.createElement('article'); card.className = 'wealth-comparison-account';
+    const name = document.createElement('strong');
+    name.textContent = names.get(comparison.account_id) || comparison.account_id;
+    card.append(name); window.financeReconciliation(card, comparison); list.append(card);
+  }
+  const label = $('wealth-differences-label');
+  if (label) label.hidden = result.differences_confirmation_required !== true;
+}
+
 function wealthApply(result, {historical=false}={}) {
   wealthReview = null;
+  wealthResetComparison();
   wealthRevision = result.revision ?? null;
   const newestHistory = Math.max(0, ...(result.history || wealthHistory).map(item => Number(item.revision) || 0));
   wealthLatestRevision = Number(result.latest_revision ?? newestHistory ?? wealthLatestRevision ?? 0);
@@ -195,6 +223,7 @@ function wealthApply(result, {historical=false}={}) {
   wealthRenderPositions(result.manual_positions || []);
   wealthRenderGoals(result.goal_progress || []);
   wealthRenderTotals(result);
+  wealthRenderComparison(result);
   wealthRenderHistory(result.history, historical ? wealthRevision : null);
   $('wealth-revision').textContent = wealthRevision === null
     ? 'Noch nicht gespeichert'
@@ -207,6 +236,7 @@ function wealthInvalidate() {
   wealthEditVersion += 1;
   wealthRequest += 1;
   wealthReview = null;
+  wealthResetComparison();
   $('wealth-save').disabled = true;
   wealthSetStatus('Eingaben geändert. Bitte eine neue Vorschau berechnen.');
 }
@@ -255,6 +285,7 @@ async function wealthLoadRevision() {
 async function wealthPreview() {
   const draft = wealthDraft(), request = ++wealthRequest, version = wealthEditVersion;
   wealthReview = null;
+  wealthResetComparison();
   $('wealth-preview').disabled = true;
   $('wealth-save').disabled = true;
   wealthSetStatus('Vorschau wird berechnet …');
@@ -263,8 +294,9 @@ async function wealthPreview() {
     if (request !== wealthRequest || version !== wealthEditVersion) return false;
     wealthReview = {result, draft};
     wealthRenderTotals(result);
+    wealthRenderComparison(result);
     $('wealth-revision').textContent = `Vorschau für Revision ${result.next_revision}`;
-    $('wealth-save').disabled = !result.review_token;
+    wealthUpdateSave();
     wealthSetStatus(`Vorschau zum ${result.as_of || draft.as_of} geprüft. Speichern bleibt eine ausdrückliche Aktion.`);
     return true;
   } catch (error) {
@@ -278,12 +310,15 @@ async function wealthPreview() {
 async function wealthSave() {
   if (!wealthReview?.result?.review_token) throw new Error('Bitte zuerst eine aktuelle Vorschau berechnen.');
   const {draft, result:review} = wealthReview;
+  const differencesConfirmed = $('wealth-differences-confirmed')?.checked === true;
+  if (review.differences_confirmation_required === true && !differencesConfirmed)
+    throw new Error('Bitte die angezeigten Differenzen ausdrücklich bestätigen.');
   const request = ++wealthRequest, version = wealthEditVersion;
   $('wealth-preview').disabled = true;
   $('wealth-save').disabled = true;
   wealthSetStatus('Geprüfter Vermögensstand wird gespeichert …');
   try {
-    const result = await api('/api/wealth-save', {...draft, review_token:review.review_token, confirmed:true});
+    const result = await api('/api/wealth-save', {...draft, review_token:review.review_token, confirmed:true, differences_confirmed:differencesConfirmed});
     const history = [
       {revision:result.revision, as_of:result.as_of, created_at:result.created_at, net_worth:result.totals?.net_worth},
       ...wealthHistory.filter(item => Number(item.revision) !== Number(result.revision)),
@@ -314,8 +349,12 @@ $('wealth-position-add').addEventListener('click', () => {
   wealthInvalidate();
 });
 $('wealth-as-of').addEventListener('input', wealthInvalidate);
+$('wealth-differences-confirmed')?.addEventListener('change', wealthUpdateSave);
 $('wealth-history').addEventListener('change', () => {
   wealthRequest += 1;
+  wealthReview = null;
+  wealthResetComparison();
+  wealthUpdateSave();
   $('wealth-history-load').disabled = !$('wealth-history').value;
 });
 $('wealth-history-load').addEventListener('click', () => run(wealthLoadRevision));

@@ -1,0 +1,69 @@
+/* Shared semantic palette. Component styles consume these roles in both themes. */
+:root {
+  color-scheme: light;
+  --fc-bg: #f4f6fa;
+  --fc-surface: #ffffff;
+  --fc-surface-alt: #eaf0f3;
+  --fc-surface-hover: #dcebe7;
+  --fc-text: #172a37;
+  --fc-muted: #52616b;
+  --fc-border: #b9cbd4;
+  --fc-accent: #00665f;
+  --fc-accent-fill: #00665f;
+  --fc-accent-fill-hover: #004e49;
+  --fc-on-accent: #ffffff;
+  --fc-accent-soft: #e0f0eb;
+  --fc-positive: #17643b;
+  --fc-positive-bg: #e5f4e9;
+  --fc-negative: #9e2535;
+  --fc-negative-bg: #fff0f0;
+  --fc-warning: #714400;
+  --fc-warning-bg: #fff4df;
+  --fc-info: #174e70;
+  --fc-info-bg: #e7f1fa;
+  --fc-focus: #00665f;
+  --fc-chart-text: #172a37;
+  --fc-chart-grid: #b9cbd4;
+  --fc-ghost-text: #4b4b4b;
+  --fc-ghost-bg: #f5f5f5;
+  --fc-ghost-border: #8a8a8a;
+  --fc-ghost-hover-bg: #e8e8e8;
+  --fc-font-min: .8125rem;
+  --fc-touch-min: 44px;
+  /* Image-only tiles preserve original merchant logos without inversion. */
+  --fc-logo-surface: #ffffff;
+  --fc-logo-dark-surface: #18323c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --fc-bg: #101820;
+    --fc-surface: #18242e;
+    --fc-surface-alt: #213340;
+    --fc-surface-hover: #29483f;
+    --fc-text: #edf3f6;
+    --fc-muted: #b4c0c9;
+    --fc-border: #607887;
+    --fc-accent: #83e4d6;
+    --fc-accent-fill: #83e4d6;
+    --fc-accent-fill-hover: #b0f4e8;
+    --fc-on-accent: #10241f;
+    --fc-accent-soft: #203d35;
+    --fc-positive: #79d99b;
+    --fc-positive-bg: #173626;
+    --fc-negative: #ff9eaa;
+    --fc-negative-bg: #47232c;
+    --fc-warning: #f4c778;
+    --fc-warning-bg: #3c301b;
+    --fc-info: #a7d7ff;
+    --fc-info-bg: #21374c;
+    --fc-focus: #83e4d6;
+    --fc-chart-text: #edf3f6;
+    --fc-chart-grid: #607887;
+    --fc-ghost-text: #d0d0d0;
+    --fc-ghost-bg: #252525;
+    --fc-ghost-border: #7c7c7c;
+    --fc-ghost-hover-bg: #333333;
+  }
+}

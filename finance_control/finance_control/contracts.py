@@ -197,19 +197,19 @@ def portfolio(store, data):
     for document, contract in selected:
         booking_total = store.db.execute(
             'SELECT COUNT(*) FROM classification_document_links l '
-            "WHERE l.document_id=? AND NOT EXISTS (SELECT 1 FROM classification_audit a "
-            "WHERE a.action='document_link_rejected' AND a.account_id=l.account_id "
+            "WHERE l.document_id=? AND NOT EXISTS (SELECT 1 FROM rejected_document_links a "
+            "WHERE a.account_id=l.account_id "
             'AND a.external_id=l.external_id AND a.document_id=l.document_id)',
             (document['id'],)).fetchone()[0]
         rows = store.db.execute(
             'SELECT l.account_id,l.external_id,l.allocated_amount,l.allocation_type,'
             't.date,t.amount,t.currency,c.counterparty,c.description '
             'FROM classification_document_links l '
-            'JOIN transactions t ON t.account_id=l.account_id AND t.external_id=l.external_id '
+            'JOIN active_transactions t ON t.account_id=l.account_id AND t.external_id=l.external_id '
             'LEFT JOIN transaction_context c ON c.account_id=t.account_id '
             'AND c.external_id=t.external_id '
-            "WHERE l.document_id=? AND NOT EXISTS (SELECT 1 FROM classification_audit a "
-            "WHERE a.action='document_link_rejected' AND a.account_id=l.account_id "
+            "WHERE l.document_id=? AND NOT EXISTS (SELECT 1 FROM rejected_document_links a "
+            "WHERE a.account_id=l.account_id "
             'AND a.external_id=l.external_id AND a.document_id=l.document_id) '
             'ORDER BY t.date DESC,l.account_id,l.external_id '
             'LIMIT ?', (document['id'], _PORTFOLIO_LIMIT + 1)).fetchall()
@@ -237,7 +237,7 @@ def portfolio(store, data):
 def _candidate_rows(store, contract, document):
     query = (
         'SELECT t.*,c.counterparty,c.description,COALESCE(o.revision,0) AS revision '
-        'FROM transactions t JOIN accounts a ON a.id=t.account_id '
+        'FROM active_transactions t JOIN accounts a ON a.id=t.account_id '
         'LEFT JOIN transaction_context c USING(account_id,external_id) '
         'LEFT JOIN classification_overrides o USING(account_id,external_id) '
         "LEFT JOIN category_catalog cat ON cat.id=o.category_id "

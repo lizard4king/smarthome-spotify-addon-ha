@@ -42,7 +42,7 @@ def _source(store, end):
     transactions = []
     for transaction in store.db.execute(
             'SELECT account_id, external_id, date, amount, currency, category, transfer_id '
-            'FROM transactions WHERE date <= ? ORDER BY account_id, date, external_id',
+            'FROM active_transactions WHERE date <= ? ORDER BY account_id, date, external_id',
             (end.isoformat(),)):
         item = dict(transaction)
         item['effective_transfer_id'] = effective_transfer_id(store, item)
@@ -59,8 +59,8 @@ def _checklist(definitions, transactions, start, end, store):
             counts[transaction['account_id']] += 1
     imports = [dict(row) for row in store.db.execute(
         'SELECT imports.id, imports.imported_at, COUNT(*) AS transaction_count '
-        'FROM imports JOIN transactions ON transactions.import_id=imports.id '
-        'WHERE transactions.date BETWEEN ? AND ? '
+        'FROM imports JOIN active_transactions t ON t.import_id=imports.id '
+        'WHERE t.date BETWEEN ? AND ? '
         'GROUP BY imports.id, imports.imported_at ORDER BY imports.id',
         (start.isoformat(), end.isoformat()))]
     late_imports = [entry for entry in imports if entry['imported_at'][:10] > end.isoformat()]
@@ -104,7 +104,7 @@ def _transaction_rows(store, start, end):
              ELSE t.account_id || ' · ' || a.display_name END AS account_label,
         t.external_id,t.date,t.amount,t.currency,t.category AS source_category,t.transfer_id,
         c.counterparty,c.description,o.category_id,o.confirmed,o.revision,cat.label AS category_label
-        FROM transactions t
+        FROM active_transactions t
         JOIN accounts a ON a.id=t.account_id
         LEFT JOIN transaction_context c ON (c.account_id=t.account_id AND c.external_id=t.external_id)
         LEFT JOIN classification_overrides o ON (o.account_id=t.account_id AND o.external_id=t.external_id)

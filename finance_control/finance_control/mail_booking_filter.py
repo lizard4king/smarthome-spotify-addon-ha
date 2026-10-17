@@ -20,7 +20,7 @@ def booking_match_statuses(store, documents, max_days=45):
     payments = []
     rows = store.db.execute(
         "SELECT t.*,coalesce(c.counterparty,'') AS counterparty,"
-        "coalesce(c.description,'') AS description FROM transactions t "
+        "coalesce(c.description,'') AS description FROM active_transactions t "
         "LEFT JOIN transaction_context c USING(account_id,external_id) "
         "WHERE t.date>='2026-01-01' AND t.currency='EUR' "
         "AND NOT EXISTS (SELECT 1 FROM classification_document_links l "

@@ -3,6 +3,7 @@ import json
 from datetime import UTC, date, datetime
 
 from .core import money
+from .audit import actor_for
 
 
 _SOURCE_TRANSFER_CATEGORIES = frozenset({
@@ -91,7 +92,7 @@ def save_single_leg(store, data):
     if not all(key):
         raise ValueError('invalid_single_leg_transfer')
     transaction = store.db.execute(
-        'SELECT * FROM transactions WHERE account_id=? AND external_id=?', key).fetchone()
+        'SELECT * FROM active_transactions WHERE account_id=? AND external_id=?', key).fetchone()
     if transaction is None:
         raise ValueError('unknown_transaction')
     if effective_transfer_id(store, transaction):
@@ -105,10 +106,10 @@ def save_single_leg(store, data):
             'INSERT INTO transfer_single_legs(account_id,external_id,reason,created_at,revision) '
             'VALUES (?,?,?,?,1)', (*key, current['reason'], created_at))
         store.db.execute(
-            'INSERT INTO transfer_single_leg_audit(occurred_at,action,account_id,external_id,current) '
-            'VALUES (?,?,?,?,?)',
+            'INSERT INTO transfer_single_leg_audit(occurred_at,action,account_id,external_id,current,actor) '
+            'VALUES (?,?,?,?,?,?)',
             (created_at, 'single_leg_transfer_confirmed', *key,
-             json.dumps(current, sort_keys=True)))
+             json.dumps(current, sort_keys=True), actor_for(store)))
     return {'transfer': current}
 
 
@@ -118,7 +119,7 @@ def transfer_partner(store, transaction):
     if transaction['transfer_id']:
         partner = store.db.execute(
             'SELECT t.account_id,t.external_id,t.date,t.amount,a.display_name '
-            'FROM transactions t JOIN accounts a ON a.id=t.account_id '
+            'FROM active_transactions t JOIN accounts a ON a.id=t.account_id '
             'WHERE t.transfer_id=? AND (t.account_id!=? OR t.external_id!=?) '
             'ORDER BY t.date,t.account_id,t.external_id LIMIT 1',
             (transaction['transfer_id'], transaction['account_id'],
@@ -132,7 +133,7 @@ def transfer_partner(store, transaction):
             'JOIN transfer_correction_members other ON other.pair_id=current.pair_id '
             'AND (other.account_id!=current.account_id '
             'OR other.external_id!=current.external_id) '
-            'JOIN transactions t ON t.account_id=other.account_id '
+            'JOIN active_transactions t ON t.account_id=other.account_id '
             'AND t.external_id=other.external_id '
             'JOIN accounts a ON a.id=t.account_id '
             'WHERE current.account_id=? AND current.external_id=? '
@@ -176,7 +177,7 @@ def _key(value):
 
 
 def _transaction(store, key):
-    row = store.db.execute('SELECT * FROM transactions WHERE account_id=? AND external_id=?', key).fetchone()
+    row = store.db.execute('SELECT * FROM active_transactions WHERE account_id=? AND external_id=?', key).fetchone()
     if row is None:
         raise ValueError('unknown_transaction')
     if row['transfer_id'] or effective_transfer_id(store, row):
@@ -198,7 +199,7 @@ def suggestions(store, data):
     first = _transaction(store, (data['account_id'], data['external_id']))
     candidates = []
     for second in store.db.execute(
-            'SELECT * FROM transactions WHERE account_id != ? AND currency=? AND amount=? '
+            'SELECT * FROM active_transactions WHERE account_id != ? AND currency=? AND amount=? '
             'AND transfer_id=\'\' ORDER BY date,account_id,external_id',
             (first['account_id'], first['currency'], format(-money(first['amount']), '.2f'))):
         try:
@@ -224,7 +225,7 @@ def pending_suggestions(store):
     rows = [dict(row) for row in store.db.execute(
         "SELECT t.*,coalesce(c.counterparty,'') AS counterparty,"
         "coalesce(c.description,'') AS description "
-        "FROM transactions t "
+        "FROM active_transactions t "
         "LEFT JOIN transaction_context c USING(account_id,external_id) "
         "LEFT JOIN transfer_correction_members m USING(account_id,external_id) "
         "WHERE t.transfer_id='' AND m.pair_id IS NULL AND t.currency='EUR' "
@@ -322,9 +323,9 @@ def save(store, data):
             {'account_id': first_key[0], 'external_id': first_key[1], 'revision': 1},
             {'account_id': second_key[0], 'external_id': second_key[1], 'revision': 1}],
             'effective_transfer_id': f'correction:{pair_id}'}
-        store.db.execute('INSERT INTO transfer_correction_audit(occurred_at,action,pair_id,current) VALUES (?,?,?,?)',
+        store.db.execute('INSERT INTO transfer_correction_audit(occurred_at,action,pair_id,current,actor) VALUES (?,?,?,?,?)',
                          (created_at, 'transfer_correction_confirmed', pair_id,
-                          json.dumps(current, sort_keys=True)))
+                          json.dumps(current, sort_keys=True), actor_for(store)))
         store.db.commit()
     except Exception:
         store.db.rollback()
@@ -376,9 +377,9 @@ def revoke(store, data):
                          (revoked_at, pair['id']))
         current = {'id': pair['id'], 'revision': pair['revision'], 'revoked_at': revoked_at,
                    'members': members}
-        store.db.execute('INSERT INTO transfer_correction_audit(occurred_at,action,pair_id,current) VALUES (?,?,?,?)',
+        store.db.execute('INSERT INTO transfer_correction_audit(occurred_at,action,pair_id,current,actor) VALUES (?,?,?,?,?)',
                          (revoked_at, 'transfer_correction_revoked', pair['id'],
-                          json.dumps(current, sort_keys=True)))
+                          json.dumps(current, sort_keys=True), actor_for(store)))
         store.db.commit()
     except Exception:
         store.db.rollback()
