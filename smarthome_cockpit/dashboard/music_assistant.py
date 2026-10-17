@@ -56,7 +56,11 @@ def _valid_uri(uri: object) -> bool:
 
 
 class MusicAssistant:
-    def __init__(self):
+    def __init__(self, *, timeout_seconds=8):
+        if (type(timeout_seconds) not in {int, float} or not math.isfinite(timeout_seconds)
+                or not 0 < timeout_seconds <= 8):
+            raise ValueError("Invalid Music Assistant timeout.")
+        self.timeout_seconds = float(timeout_seconds)
         self.url = os.getenv("MUSIC_ASSISTANT_URL", "").rstrip("/")
         self.token = os.getenv("MUSIC_ASSISTANT_TOKEN", "")
         self.allow_playback = os.getenv("MUSIC_ASSISTANT_ALLOW_PLAYBACK", "").casefold() == "true"
@@ -83,7 +87,7 @@ class MusicAssistant:
             "Content-Type": "application/json", "Accept": "application/json",
         }, method="POST" if data is not None else "GET")
         try:
-            with self.opener.open(request, timeout=8) as response:
+            with self.opener.open(request, timeout=self.timeout_seconds) as response:
                 body = response.read(limit + 1)
                 if len(body) > limit:
                     raise MusicAssistantError("Music-Assistant-Antwort ist zu groß.")

@@ -82,11 +82,21 @@ Browser ab und wird erst bei einer freigegebenen Geräteabnahme bestätigt.
 
 ## Quellenabgleich und Veröffentlichung
 
-Dieser Entwicklungsschritt basiert auf dem veröffentlichten Distributionsstand.
-Eine ältere uncommittete SmartHome-Quellkopie wurde bewusst nicht überschrieben.
-Vor einer Installation muss ein abweichender, bereits produktiv laufender Stand
-gegen die Änderungen abgeglichen werden. Die Add-on-Version wird deshalb in
-diesem Schritt nicht erhöht; ein Draft-PR allein ist keine Installationsfreigabe.
+Der Integrationsstand `0.1.18` führt den Bibliotheksausbau mit Cockpit `0.1.17`
+zusammen. Lumis signierte Sprachantworten, Raum-Musikaktionen, Temperaturstatus,
+Raumzieloptionen und Schutz gegen doppelte Aufträge bleiben erhalten. Ein
+konfigurierbares MA-Zeitlimit bleibt zusätzlich zu den Bibliotheksmethoden
+verfügbar. `codex_control.py` und `home_assistant.py` stammen aus der geprüften
+Lumi-Konsolidierung vom 17.10.2026; deren relevante laufende Steuerungsdateien
+wurden gegen den Export v4 vom 16.10. lesend per Prüfsumme abgeglichen.
+
+Der Host-Port bleibt standardmäßig gesperrt. Der vorhandene geschützte Zugang
+muss auch die neuen Metadaten- und Audiorouten abdecken. `Origin`-Prüfungen sind
+keine Benutzeranmeldung. Die Konfiguration bleibt für Browseraudio zunächst
+gesperrt; konkreter Medienpfad und lesende Einbindung müssen auf HA geprüft
+sein. Installationsvorbereitung und Rückweg stehen in
+[Installationsplan](music-library-installation.md). Ein Draft-PR allein ist keine
+Installationsfreigabe.
 
 Die verwendeten MA-Bibliotheksaufrufe wurden gegen den öffentlichen Source Tag
 [2.10.5](https://github.com/music-assistant/server/tree/2.10.5) geprüft. Die

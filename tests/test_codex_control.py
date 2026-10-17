@@ -87,7 +87,8 @@ def test_ambiguous_failure_is_cached_and_capacity_keeps_old_operations():
         headers, raw = signed(value, nonce)
         assert instance.process("/api/codex/control", headers, raw)[0] == 503
     assert len(attempts) == 1
-    instance.operations.update({f"{i:032x}": (1600, "digest", 503, {}) for i in range(31)})
+    # Lumi retains 256 operation receipts; fill the remaining 255 slots.
+    instance.operations.update({f"{i:032x}": (1600, "digest", 503, {}) for i in range(255)})
     value["request_id"] = "f" * 32
     headers, raw = signed(value, "f" * 32)
     assert instance.process("/api/codex/control", headers, raw)[0] == 403

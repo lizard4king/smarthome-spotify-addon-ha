@@ -107,6 +107,14 @@ def _load_options_fallback() -> None:
             os.environ[env_name] = ",".join(value)
     _load_private_music_fallback(options)
 
+    # Preserve the installed Lumi contract: persisted options are authoritative
+    # for explicit room-to-player and room-to-answer target mappings.
+    for key, env_name in (("codex_music_targets_json", "CODEX_MUSIC_TARGETS_JSON"),
+                          ("codex_answer_targets_json", "CODEX_ANSWER_TARGETS_JSON")):
+        value = options.get(key, "{}")
+        if isinstance(value, str):
+            os.environ[env_name] = value
+
 def main() -> None:
     _load_options_fallback()
     print(
