@@ -5,6 +5,9 @@ import io
 import json
 import re
 import secrets
+import tempfile
+from xml.etree.ElementTree import ParseError
+from zipfile import BadZipFile
 from collections import Counter
 from datetime import UTC, date, datetime
 
@@ -309,6 +312,89 @@ def load_batch(root, batch):
     if staged.get('version', 1) >= 2 and staged.get('metadata_sha256') != stage_metadata_digest(staged):
         raise ValueError('staged_metadata_changed')
     return folder, staged
+
+
+def _original_identity_proofs(root, source_sha256, accepted_rows):
+    """Reparse hash-bound originals; never treat mutable stage JSON as identity proof.
+
+    Only hashes leave this helper. The optional export IBAN is neither staged nor
+    persisted in the ledger. Missing, ambiguous or malformed evidence fails closed.
+    """
+    from openpyxl import load_workbook
+    from defusedxml.common import DefusedXmlException
+
+    try:
+        sources = {row['source_account'] for row in accepted_rows}
+        expected = {(row['source_account'], row['external_id']): row for row in accepted_rows}
+        if len(expected) != len(accepted_rows):
+            return {}
+        for archive_stage in sorted(root.glob('*/stage.json')):
+            # Stage metadata is only a locator; SHA and reparse establish proof.
+            try:
+                if archive_stage.stat().st_size > MAX_BYTES:
+                    continue
+                locator = json.loads(archive_stage.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(locator, dict) or locator.get('source_sha256') != source_sha256:
+                continue
+            original = archive_stage.parent / 'source.xlsx'
+            if not original.resolve().is_relative_to(root.resolve()):
+                continue
+            if not 0 < original.stat().st_size <= MAX_BYTES:
+                return {}
+            raw = original.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != source_sha256:
+                continue
+            with tempfile.TemporaryDirectory(prefix='.identity-', dir=root) as temporary:
+                staged = stage_workbook(raw, temporary)
+                folder, reparsed = load_batch(temporary, staged['batch'])
+                if reparsed['blockers']:
+                    return {}
+                actual = [row for row in reparsed['rows'] if row['source_account'] in sources]
+                if (len(actual) != len(expected)
+                        or any(expected.get((row['source_account'], row['external_id'])) != row
+                               for row in actual)):
+                    return {}
+                book = load_workbook(folder / 'source.xlsx', read_only=True,
+                                     data_only=False, keep_links=False)
+                proofs = {}
+                try:
+                    by_reference = {row['reference']: row for row in actual}
+                    for index, sheet in enumerate(book, 1):
+                        sheet.reset_dimensions()
+                        values = sheet.iter_rows(values_only=True)
+                        headers = _headers(next(values, ()))
+                        for number, cells in enumerate(values, 2):
+                            row = by_reference.get(f'{index}:{number}')
+                            if row is None:
+                                continue
+                            raw_row = dict(zip(headers, cells))
+                            iban = raw_row.get('IBAN Beguenstigter/Auftraggeber')
+                            if not isinstance(iban, str):
+                                continue
+                            iban = ''.join(iban.split()).upper()
+                            if not re.fullmatch(r'[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}', iban):
+                                continue
+                            lengths = {'AT': 20, 'BE': 16, 'CH': 21, 'DE': 22, 'ES': 24,
+                                       'FR': 27, 'GB': 22, 'IT': 27, 'LU': 20, 'NL': 18,
+                                       'PL': 28, 'PT': 25}
+                            if len(iban) != lengths.get(iban[:2]):
+                                continue
+                            numeric = ''.join(str(ord(c) - 55) if c.isalpha() else c
+                                              for c in iban[4:] + iban[:4])
+                            if int(numeric) % 97 != 1:
+                                continue
+                            proofs[(row['source_account'], row['external_id'])] = {
+                                'identity_sha256': digest(iban),
+                                'source_sha256': source_sha256, 'row_sha256': digest(row)}
+                finally:
+                    book.close()
+                return proofs
+    except (OSError, ValueError, KeyError, TypeError, ArithmeticError, BadZipFile, ParseError, SyntaxError,
+            DefusedXmlException):
+        return {}
+    return {}
 
 
 def selected_source_rows(staged, choices):

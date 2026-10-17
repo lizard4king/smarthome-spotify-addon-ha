@@ -16,7 +16,7 @@ from .classification import apply_exact_rule_if_safe
 from .core import money
 from .finanzguru_import import (digest, load_batch, selected_source_rows,
                                validate_selected_transfer_pairs, _mapped_row_metadata,
-                               _persist_row_metadata)
+                               _persist_row_metadata, _original_identity_proofs)
 
 
 _CHILD_TABLES = (
@@ -127,9 +127,10 @@ def _event(store, *, source, target, exported_at, sha, action, key=None,
          None if current is None else _json(current)))
 
 
-def _source_context(store, root, existing):
+def _source_context(store, root, existing, identity_keys=()):
     """Find the last accepted raw context for each still present booking."""
     baseline = {}
+    proof_cache = {}
     accounts = {row['id']: row for row in store.accounts()}
     imports = [dict(row) for row in store.db.execute(
         'SELECT id,digest,imported_at,source FROM imports ORDER BY id DESC')]
@@ -165,7 +166,7 @@ def _source_context(store, root, existing):
             if (not isinstance(rows, list) or not isinstance(choices, dict)
                     or not isinstance(manifest.get('source_sha256'), str)):
                 continue
-            candidates = [(choices, rows, False)]
+            candidates = [(choices, rows, False, manifest['source_sha256'])]
             imported_records = None
         else:
             try:
@@ -185,10 +186,10 @@ def _source_context(store, root, existing):
                         if _receipt_precedes_import(stamp, receipt, imported_at)]
             # The receipt is written before imports.imported_at. A failed later
             # attempt can have the same CSV digest but different raw context.
-            candidates = [(receipt.get('choices'), staged['rows'], True)
+            candidates = [(receipt.get('choices'), staged['rows'], True, staged['source_sha256'])
                           for _, receipt, staged in sorted(
                               receipts, key=_receipt_order_key, reverse=True)]
-        for prior_choices, rows, append in candidates:
+        for prior_choices, rows, append, original_sha in candidates:
             if not isinstance(prior_choices, dict):
                 continue
             mapping = prior_choices.get('mapping')
@@ -196,6 +197,7 @@ def _source_context(store, root, existing):
             if (not isinstance(mapping, dict)
                     or (cutoff is not None and not isinstance(cutoff, str))):
                 continue
+            candidate_proof_key = None
             for row in rows:
                 if not isinstance(row, dict):
                     continue
@@ -218,6 +220,18 @@ def _source_context(store, root, existing):
                                  'currency': 'EUR',
                                  'counterparty': row.get('counterparty', ''),
                                  'description': row.get('description', '')}
+                # CSV digests do not bind append receipts to their original XLSX.
+                # Only a digest-bound full manifest can prove historical IBAN identity.
+                if (not append and key in identity_keys
+                        and (existing[key]['transfer_id'] or _transfer_pair_state(store, key))):
+                    if candidate_proof_key is None:
+                        candidate_proof_key = (original_sha, digest(rows))
+                    if candidate_proof_key not in proof_cache:
+                        proof_cache[candidate_proof_key] = _original_identity_proofs(archive, original_sha, rows)
+                    proof = proof_cache[candidate_proof_key].get((row['source_account'], identifier))
+                    if proof:
+                        baseline[key]['identity_proof'] = proof
+                        baseline[key]['category'] = row.get('category', '')
     return baseline
 
 
@@ -360,7 +374,7 @@ def _plan(store, staged, choices, root):
     selected_existing_keys = {
         key for key in existing
         if selected_prefix_targets.get(key[1].rsplit(':', 1)[0] + ':') == key[0]}
-    source_context = _source_context(store, root, existing)
+    source_context = _source_context(store, root, existing, selected_existing_keys)
     accounts_by_id, ids_by_booking = {}, {}
     for old in ledger:
         accounts_by_id.setdefault(old['external_id'], set()).add(old['account_id'])
@@ -368,6 +382,8 @@ def _plan(store, staged, choices, root):
             (old['account_id'], old['date'], old['amount']), []).append(old['external_id'])
     context_by_key = {(row['account_id'], row['external_id']): row for row in contexts}
     desired, detail, counts = {}, [], Counter()
+    name_changes = {}
+    new_identity_proofs = None
     if unselected_rows:
         counts['source_not_selected'] = len(unselected_rows)
         for row in unselected_rows:
@@ -420,6 +436,33 @@ def _plan(store, staged, choices, root):
             for name in ('counterparty', 'description'):
                 values[name] = old_context.get(name, '')
         old = existing.get(key)
+        if ('selected_sources' in choices and old is not None and (old['transfer_id'] or any(
+                    pair['pair'] and pair['pair'].get('revoked_at') is None
+                    for pair in _transfer_pair_state(store, key)))
+                and (transfer_members.get(old['transfer_id'], set()) - selected_existing_keys
+                     or any((member['account_id'], member['external_id']) not in selected_existing_keys
+                            for pair in _transfer_pair_state(store, key) for member in pair['members']))
+                and previous_source is not None and previous_source.get('identity_proof')
+                and values['counterparty'] != previous_source['counterparty']
+                and all(values[name] == previous_source[name] for name in
+                        ('date', 'amount', 'currency', 'description'))
+                and all(old[name] == values[name] for name in ('date', 'amount', 'currency'))
+                and all(old_context.get(name, '') == previous_source[name]
+                        for name in ('counterparty', 'description'))
+                and not values['transfer_id']):
+            from .transfer_corrections import source_declares_transfer
+            if (source_declares_transfer(previous_source) == source_declares_transfer(values)
+                    == source_declares_transfer({'category': old['category'],
+                                                'description': old_context.get('description', '')})):
+                if new_identity_proofs is None:
+                    new_identity_proofs = _original_identity_proofs(
+                        Path(root), staged['source_sha256'], staged['rows'])
+                new_proof = new_identity_proofs.get((source, row['external_id']))
+                if (new_proof and new_proof['identity_sha256']
+                        == previous_source['identity_proof']['identity_sha256']):
+                    name_changes[key] = {'previous': previous_source['identity_proof'],
+                                         'current': new_proof}
+                    values['transfer_id'] = old['transfer_id']
         if ('selected_sources' in choices and old is not None
                 and old['transfer_id'] and not values['transfer_id']
                 and transfer_members.get(old['transfer_id'], set()) - selected_existing_keys
@@ -496,7 +539,8 @@ def _plan(store, staged, choices, root):
         context = context_by_key.get(key) or {}
         economic = new is None or (old is not None and (
             any(old[name] != new[name] for name in ('date', 'amount', 'currency', 'transfer_id'))
-            or any(context.get(name, '') != new[name] for name in ('counterparty', 'description'))
+            or any(context.get(name, '') != new[name] for name in ('counterparty', 'description')
+                   if name != 'counterparty' or key not in name_changes)
             or source_declares_transfer({
                 'category': old['category'], 'description': context.get('description', '')
             }) != source_declares_transfer(new)))
@@ -521,7 +565,8 @@ def _plan(store, staged, choices, root):
                 name for name in ('date', 'amount', 'currency', 'transfer_id')
                 if old[name] != new[name]] + [
                 name for name in ('counterparty', 'description')
-                if context.get(name, '') != new[name]] + ([
+                if context.get(name, '') != new[name]
+                and (name != 'counterparty' or key not in name_changes)] + ([
                     'transfer_declaration'] if source_declares_transfer({
                         'category': old['category'], 'description': context.get('description', '')
                     }) != source_declares_transfer(new) else [])
@@ -608,6 +653,8 @@ def _plan(store, staged, choices, root):
                     'direct_bank_targets': sorted(directly_bound),
                     'direct_bank_sources': sorted(direct_sources),
                     'active_transfer_pairs': active_pairs,
+                    'name_change_proofs': {key[0] + '\0' + key[1]: name_changes[key]
+                                           for key in sorted(name_changes)},
                     'cross_source_references': sorted(cross_source_references),
                     'accounts': list(accounts.values()), 'ledger': ledger,
                     'contexts': contexts,
@@ -623,11 +670,13 @@ def _plan(store, staged, choices, root):
     report = {'counts': dict(counts), 'blockers': sorted(set(blockers)), 'rows': detail,
               'transfer_dependencies': transfer_dependencies,
               'contract_dependencies': contract_dependencies,
+              'preserved_transfer_name_changes': len(name_changes),
               'date_to': cutoff, 'new_net_amount': format(new_total, '.2f'),
               'net_change': format(net_change, '.2f'), 'ready': not blockers,
               'ledger_written': False, 'review_token': token,
               'auto_classification_count': 0, 'no_op': not active_mapping}
     return report, {'mapping': active_mapping, 'desired': desired, 'existing': existing,
+                    'name_changes': name_changes,
                     'removed': removed, 'heads': heads, 'fingerprint': fingerprint,
                     'source_fingerprints': source_fingerprints,
                     'exported_at': exported_at, 'replay': replay, 'metadata_only': metadata_only,
@@ -787,7 +836,8 @@ def commit_snapshot(store, root, batch, choices, review_token):
             economic = (any(old[name] != row[name] for name in
                             ('date', 'amount', 'currency', 'transfer_id'))
                         or any(prior_context[name] != row[name]
-                               for name in ('counterparty', 'description'))
+                               for name in ('counterparty', 'description')
+                               if name != 'counterparty' or key not in plan['name_changes'])
                         or source_transfer_changed)
             dependencies = _dependent_state(store, key)
             if economic:

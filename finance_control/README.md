@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.58` preserves an existing transfer through a counterparty display-name
+change only with matching valid IBAN evidence from both verified originals.
+Changed amounts, dates, payment purposes or missing proof remain blocked.
+Skipped bank accounts remain unchanged. The evidence is rechecked before writing.
+
 Version `0.2.57` refreshes the shared account snapshot immediately after an
 explicit balance assignment. Moving from administration to accounts therefore
 shows the newly saved balance without a full-page reload or another bank read.
