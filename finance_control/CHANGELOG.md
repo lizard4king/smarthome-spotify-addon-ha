@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.58
+
+- Preserve an existing cross-account transfer through a counterparty display-name change only when the same valid counterparty IBAN is proven from both hash-verified accepted and incoming originals.
+- Keep missing identity evidence and changed payment data blocked; retain skipped bank accounts and revalidate the evidence at commit.
+
 ## 0.2.57
 
 - Refresh the shared account snapshot after explicitly saving additional bank balances, without another bank request.
