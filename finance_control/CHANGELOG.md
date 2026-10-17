@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.62
+
+- Reuse bounded immutable day-end proof calculations while checking current source, metadata and ledger evidence on every request.
+- Publish an existing private PayPal installment plan into the household forecast only after its owner confirms the account and current source revision.
+- Preserve exact due dates and final rates; keep booked payments, explicit assignments and conflicting schedules from creating duplicate projected debits.
+- Add readable mobile account-link controls and keep private credit principal and interest details outside the shared forecast.
+
 ## 0.2.61
 
 - Preserve booking originals and decision history; reconcile the ledger against dated bank evidence.

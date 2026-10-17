@@ -7,6 +7,7 @@ A projection is conditional on recorded balance and imported ledger completeness
 no budget is converted into a second payment and no transfer is inferred.
 """
 import calendar
+from bisect import bisect_left, bisect_right
 import json
 from datetime import date, timedelta
 from decimal import Decimal
@@ -228,6 +229,93 @@ def _doc_schedule(document, contract, setting, evidence):
     return result
 
 
+def _credit_events(schedule, bookings, cutoff, lower, upper, membership):
+    """Exact source dates and amounts; a bank match also needs its reference.
+
+    Seven days is a collection-date tolerance, never a claim that two equal
+    amounts belong together. The common claim resolver below rejects ambiguity.
+    """
+    events = []
+    for payment in schedule['exact_payments']:
+        expected = payment['date']
+        if not lower <= expected <= upper:
+            continue
+        matches = [b for b in bookings if b['account_id'] == schedule['account_id']
+                      and b['currency'] == schedule['currency'] and not b['transfer_id']
+                      and money(b['amount']) < 0
+                      and abs((date.fromisoformat(b['date'])-date.fromisoformat(expected)).days) <= 7
+                      and contracts._reference_present(schedule['reference'], b['counterparty']+' '+b['description'])]
+        # An explicit existing decision owns the booking. Keep the loan open
+        # rather than stealing that actual or debiting it again in the future.
+        blocked = [b for b in matches if (b['account_id'], b['external_id']) in membership]
+        candidates = [b for b in matches if (b['account_id'], b['external_id']) not in membership
+                      and money(b['amount']) == money(payment['amount'])]
+        warnings = ['paypal_credit_booking_assignment_conflict'] if blocked else []
+        if any(money(b['amount']) != money(payment['amount']) for b in matches):
+            # A reference-identical early debit contradicts the saved regular
+            # rate. Do not charge the full virtual rate again or invent a remainder.
+            warnings.append('partial_payment_conflict')
+        events.append({'id': f"{schedule['id']}:{expected}", 'rule_id': schedule['id'],
+                       'document_id': None, 'label': schedule['label'], 'expected_date': expected,
+                       'observed_date': None, 'amount': payment['amount'],
+                       'expected_amount': payment['amount'], 'observed_amount': None,
+                       'currency': schedule['currency'], 'account_id': schedule['account_id'],
+                       'status': 'expected' if expected > cutoff else 'unresolved',
+                       'estimated': False, 'date_estimated': False, 'amount_estimated': False,
+                       'basis': schedule['basis'], 'matched_bookings': [],
+                       'warnings': warnings,
+                       '_reference': schedule['reference'], '_candidates': candidates, '_linked_candidates': []})
+    return events
+
+
+def _credit_collisions(events):
+    """Do not add a second virtual debit for a possibly competing payment row.
+
+    A same-account rate with no distinct identifying reference near another due
+    date is a warning, not a match. Different identified plans remain separate. Two
+    distinct booked payments are proof of separate movements; otherwise the
+    unbooked rows stay unresolved. This intentionally prefers a visible gap in
+    a conditional forecast over silently charging a loan twice.
+    """
+    grouped = {}
+    for event in events:
+        grouped.setdefault((event['account_id'], event['currency']), []).append(event)
+    for group in grouped.values():
+        group.sort(key=lambda event: event['expected_date'])
+        days = [date.fromisoformat(e['expected_date']).toordinal() for e in group]
+        for credit in group:
+            if credit['basis'] != 'confirmed_paypal_credit':
+                continue
+            day = date.fromisoformat(credit['expected_date']).toordinal()
+            due = date.fromisoformat(credit['expected_date'])
+            month_first = due.replace(day=1).toordinal()
+            month_last = due.replace(day=calendar.monthrange(due.year, due.month)[1]).toordinal()
+            # A reference-identical monthly rule can use a different guessed
+            # collection day. It must not double the exact source-plan debit.
+            for other in group[bisect_left(days, min(day-7, month_first)):
+                               bisect_right(days, max(day+7, month_last))]:
+                if credit['rule_id'] == other['rule_id'] and credit['document_id'] == other['document_id']:
+                    continue
+                if money(other['amount']) >= 0:
+                    continue
+                left, right = credit['_reference'].casefold(), other['_reference'].casefold()
+                same_reference = (contracts._reference_present(left, right)
+                                  or contracts._reference_present(right, left))
+                if not same_reference and contracts._reference_present(right, right):
+                    continue
+                if not same_reference and abs(date.fromisoformat(other['expected_date']).toordinal()-day) > 7:
+                    continue
+                if money(credit['expected_amount']) != money(other['expected_amount']) and not same_reference:
+                    continue
+                if credit['status'] == other['status'] == 'booked':
+                    continue
+                for event in (credit, other):
+                    if event['status'] != 'booked':
+                        event['status'] = 'unresolved'
+                        if 'competing_payment_schedule' not in event['warnings']:
+                            event['warnings'].append('competing_payment_schedule')
+
+
 def view(store, data):
     """Read-only JSON forecast. Account points are conditional ledger projections.
 
@@ -272,6 +360,10 @@ def view(store, data):
     schedules.extend(_doc_schedule(d, c, settings.get(d['id']), full_rows[d['id']])
                      if c['configured'] else _unconfigured_schedule(d)
                      for d, c in active_contracts)
+    # These exact dates are published into the shared household forecast only
+    # after the plan owner explicitly confirms the account and source revision.
+    from .paypal_credit_forecast import forecast_schedules
+    schedules.extend(forecast_schedules(store, as_of=cutoff))
     membership = {(r['account_id'], r['external_id']): dict(r)
                   for r in store.db.execute('SELECT * FROM booking_contract_links')}
     detected_candidates = recurring_detection.detect(store, as_of=cutoff, known_schedules=schedules)
@@ -283,7 +375,8 @@ def view(store, data):
                         if (b['account_id'], b['external_id']) in membership
                         and membership[(b['account_id'], b['external_id'])]['decision'] == 'confirmed'}
         if linked_rules:
-            candidate['status'] = 'covered'
+            if candidate['status'] != 'blocked':
+                candidate['status'] = 'covered'
             candidate['covered_by'].extend({'type': 'booking_contract_rule', 'id': rid}
                                            for rid in sorted(linked_rules))
     if data['account_id']:
@@ -308,6 +401,9 @@ def view(store, data):
     events = []
     for schedule in schedules:
         if not schedule['active'] or schedule['missing_fields']:
+            continue
+        if schedule['basis'] == 'confirmed_paypal_credit':
+            events.extend(_credit_events(schedule, bookings, cutoff, matching_lower, matching_upper, membership))
             continue
         phases = schedule['phases'] if schedule['document_id'] else [{
             'valid_from': schedule['valid_from'], 'valid_to': schedule['valid_to'],
@@ -348,6 +444,7 @@ def view(store, data):
                                'account_id': schedule['account_id'], 'status': 'expected' if expected > cutoff else 'unresolved',
                                'estimated': schedule['estimated'], 'date_estimated': schedule['date_estimated'],
                                'amount_estimated': schedule['amount_estimated'], 'basis': schedule['basis'],
+                               '_reference': schedule['reference'],
                                'matched_bookings': [], 'warnings': [], '_candidates': candidates, '_linked_candidates': linked_candidates})
     # Include neighbouring due dates outside the returned range in ownership:
     # March 31 belongs to April 1 even if a view ends on March 31.
@@ -388,6 +485,9 @@ def view(store, data):
             event.update(status='unresolved', warnings=['ambiguous_booking_match'])
         elif event['status'] == 'unresolved':
             event['warnings'].append('past_payment_unresolved')
+    _credit_collisions(events)
+    for event in events:
+        event.pop('_reference', None)
     events = [event for event in events if lower <= event['expected_date'] <= upper]
     events.sort(key=lambda e: (e['expected_date'], e['id']))
     # A virtual intermediate balance uses this explicit logical event order,
@@ -435,6 +535,9 @@ def view(store, data):
                             else 'recorded_balance_missing')
         if any(e['account_id'] == aid and e['status'] == 'unresolved' for e in events):
             warnings.append('unresolved_payments_excluded')
+        for schedule in schedules:
+            if schedule['account_id'] == aid and schedule.get('basis') == 'confirmed_paypal_credit':
+                warnings.extend(w for w in schedule.get('warnings', []) if w not in warnings)
         accounts.append({'account_id': aid, 'label': account.get('display_name') or aid,
                          'currency': account['currency'], 'recorded_balance': recorded,
                          'as_of_balance': format(current, '.2f') if current is not None else None,

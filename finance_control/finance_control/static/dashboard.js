@@ -679,6 +679,11 @@
     recorded_balance_ambiguous:'Widersprüchliche Kontostände; Projektion unbekannt.',
     balance_rollforward_ledger_completeness_unverified:'Fortschreibung aus importierten Buchungen; Vollständigkeit nicht bestätigt.',
     unresolved_payments_excluded:'Ungeklärte Zahlungen sind nicht eingerechnet.',
+    paypal_credit_source_stale:'PayPal-Planstand geändert; Kontozuordnung erneut bestätigen. Raten sind nicht eingerechnet.',
+    paypal_credit_account_ineligible:'Zahlungskonto passt nicht zur Laufzeit des PayPal-Plans; Raten sind nicht eingerechnet.',
+    competing_payment_schedule:'Möglicherweise doppelte Zahlungsreihe; ungeklärte Raten sind nicht eingerechnet.',
+    paypal_credit_booking_assignment_conflict:'Eine passende Buchung ist ausdrücklich anders eingeordnet; PayPal-Ratenzuordnung offen.',
+
     projection_conditional_on_imported_ledger:'Die Prognose setzt vollständige importierte Buchungen voraus.',
     transfers_not_inferred:'Umbuchungen werden nicht automatisch ergänzt.',
     budgets_not_payment_events:'Budgets sind Grenzen und keine zusätzlichen Zahlungen.'
@@ -723,7 +728,7 @@
     add(name, 'small', 'fd-row-account', `${accountName(ownAccount || {})} · ${event.currency}`);
     add(row, 'td', 'fd-forecast-status-label', 'Virtuell · Erwartet');
     add(row, 'td', 'fd-forecast-origin', event.basis === 'auto_detected'
-      ? 'Automatisch erkannt · geschätzt' : event.document_id ? 'Bestätigter Vertrag' : 'Bestätigte Regel');
+      ? 'Automatisch erkannt · geschätzt' : event.basis === 'confirmed_paypal_credit' ? 'Bestätigter PayPal-Ratenplan' : event.document_id ? 'Bestätigter Vertrag' : 'Bestätigte Regel');
     add(row, 'td', 'fd-forecast-amount', money(event.amount,event.currency,true));
     const account = (forecast.data.accounts || []).find(item =>
       String(item.account_id) === String(event.account_id) && item.currency === event.currency);
