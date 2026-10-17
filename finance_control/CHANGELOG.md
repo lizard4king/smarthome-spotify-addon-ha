@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.59
+
+- Allow an explicit per-booking review of display changes on an existing transfer when automatic IBAN evidence is unavailable.
+- Bind each decision to verified originals, unchanged payment data and the existing pair; reject stale or ineligible decisions before writing.
+- Keep automatic matching strict and skipped bank accounts unchanged.
+
 ## 0.2.58
 
 - Preserve an existing cross-account transfer through a counterparty display-name change only when the same valid counterparty IBAN is proven from both hash-verified accepted and incoming originals.
