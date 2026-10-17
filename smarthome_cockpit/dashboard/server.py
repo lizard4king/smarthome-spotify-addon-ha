@@ -58,6 +58,22 @@ class CockpitHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def send_head(self):
+        # Static HTML must revalidate so releases can change their asset URLs.
+        # The flag is scoped to the stdlib static handler, including its 304 path;
+        # API, audio and artwork handlers retain their own cache policies.
+        path = urlsplit(self.path).path
+        self._revalidate_static_html = path.endswith(("/", ".html", ".htm"))
+        try:
+            return super().send_head()
+        finally:
+            self._revalidate_static_html = False
+
+    def end_headers(self) -> None:
+        if getattr(self, "_revalidate_static_html", False):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def _send_json(self, status: int, payload: object) -> None:
         encoded = _json_bytes(payload)
         self.send_response(status)
