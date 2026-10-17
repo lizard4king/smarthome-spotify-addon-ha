@@ -27,6 +27,18 @@ def _party_key(value):
     return _canonical_counterparty(value)
 
 
+def _contract_marker_label(value):
+    """Return source-label semantics without changing the retained raw value."""
+    if value is None:
+        return None
+    normalized = value.strip().casefold()
+    if normalized == 'nein':
+        return 'negative'
+    if normalized == 'ja':
+        return 'boolean'
+    return 'descriptive'
+
+
 def _month(value):
     return value.year*12+value.month-1
 
@@ -55,8 +67,12 @@ def detect(store, *, as_of, known_schedules):
     if store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='finanzguru_row_metadata'").fetchone():
         for row in store.db.execute('SELECT m.* FROM finanzguru_row_metadata m JOIN transactions t USING(account_id,external_id) '
                 'WHERE m.booked_on=t.date AND m.currency=t.currency AND t.date<=?', (as_of,)):
-            if row['contract_id'] or row['contract_label']:
+            label_kind = _contract_marker_label(row['contract_label'])
+            # An explicit negative label vetoes even a populated ID. Keep the
+            # source row intact, but do not grant it marker-backed confidence.
+            if label_kind != 'negative' and (row['contract_id'] or row['contract_label']):
                 marker = dict(row)
+                marker['_label_kind'] = label_kind
                 key = (row['account_id'], row['external_id'])
                 identity = (row['contract_id'], row['contract_label'], row['cadence_raw'], row['interval_months'])
                 if not any((m['contract_id'], m['contract_label'], m['cadence_raw'], m['interval_months']) == identity for m in markers[key]):
@@ -112,7 +128,9 @@ def detect(store, *, as_of, known_schedules):
             iid, source = assigned[0]['item_id'], 'budget_allocations'
         elif markers.get(key):
             marker = markers[key][0]
-            iid = ('finanzguru_contract', marker['contract_id'] or marker['contract_label'])
+            marker_identity = marker['contract_id'] or (
+                row['party'] if marker.get('_label_kind') == 'boolean' else marker['contract_label'])
+            iid = ('finanzguru_contract', marker_identity)
             source = 'finanzguru_contract_marker'
             row['marker'] = marker
             row['conflicting_marker'] = len(markers[key]) > 1
@@ -182,6 +200,8 @@ def detect(store, *, as_of, known_schedules):
             if schedule.get('requires_contract_setup') and _party_key(schedule['label']) == party:
                 refs.append({'type': 'document', 'document_id': schedule['document_id']})
         covered = []
+        effective_marker_label = (marker['contract_label'] if marker and marker.get('_label_kind') == 'descriptive'
+                                  else None)
         for row in evidence:
             covered.extend({'type': 'document', 'document_id': did} for did in links.get((aid, row['external_id']), set()))
         for schedule in known_schedules:
@@ -193,7 +213,12 @@ def detect(store, *, as_of, known_schedules):
             if (schedule.get('account_id') != aid or schedule.get('currency') != currency
                     or schedule.get('amount') is None or (money(schedule['amount']) > 0) != positive):
                 continue
-            same_label = _party_key(schedule['label']) in {party, _party_key(item['label']) if item else _party_key(marker['contract_label']) if marker and marker['contract_label'] else party}
+            relevant_labels = {party}
+            if item:
+                relevant_labels.add(_party_key(item['label']))
+            elif effective_marker_label:
+                relevant_labels.add(_party_key(effective_marker_label))
+            same_label = _party_key(schedule['label']) in relevant_labels
             same_ref = any(contracts._reference_present(schedule.get('reference', ''), r['description'] or '') for r in evidence)
             same_payment = (money(schedule['amount']) == amount and schedule.get('day_of_month') == day
                             and schedule.get('interval_months') == interval)
@@ -221,7 +246,7 @@ def detect(store, *, as_of, known_schedules):
             warnings.append('missing_recurring_period')
         status = 'covered' if covered else 'needs_review' if overdue or source_review else 'stable'
         stable_id = 'auto:' + hashlib.sha256('|'.join(str(v) for v in identity).encode()).hexdigest()[:20]
-        candidates.append({'id': stable_id, 'label': item['label'] if item else marker['contract_label'] if marker and marker['contract_label'] else recent[-1]['counterparty'],
+        candidates.append({'id': stable_id, 'label': item['label'] if item else effective_marker_label or recent[-1]['counterparty'],
                            'account_id': aid, 'currency': currency, 'amount': format(amount, '.2f'),
                            'day_of_month': day, 'interval_months': interval, 'valid_from': max(recent[0]['date'], item['start_month']+'-01') if item else recent[0]['date'],
                            'valid_to': (item['end_month']+'-'

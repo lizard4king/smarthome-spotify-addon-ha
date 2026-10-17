@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.56
+
+- Show confirmed contract sources, payment phases, existing rules and missing fields in a bounded, mobile-readable inventory.
+- Interpret Finanzguru ja/nein contract flags without using them as names or granting negative flags marker confidence.
+- Explicitly map successful additional bank balance reads to existing accounts, independently of transaction imports.
+- Retain immutable owner-bound balance evidence and recheck active users, connection revisions, currencies and source conflicts before display.
+- Prefer the newest qualified bank observation on the same bank date; preserve missing and genuinely zero balances separately.
+
 ## 0.2.55
 
 - Start the chronological booking timeline at Today and extend future grayscale virtual contract payments while scrolling, with an accessible manual fallback.

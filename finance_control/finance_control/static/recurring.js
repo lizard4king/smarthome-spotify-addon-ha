@@ -9,6 +9,60 @@
   const money = (value,currency='EUR') => value===null || value===undefined ? 'Unbekannt' : new Intl.NumberFormat('de-DE',{style:'currency',currency}).format(value);
   const button = (text, handler, cls='secondary') => { const n=node('button',cls,text); n.type='button'; n.addEventListener('click',handler); return n; };
   const link = (text, target) => { const n=node('a','fc-text-link',text);n.href='#'+target;return n; };
+  const inventory = {page:0, request:0, data:null, error:null, loading:false, open:false};
+  const inventoryRoot = node('details','rc-inventory');
+  inventoryRoot.id='contract-inventory';
+  inventoryRoot.addEventListener('toggle',()=>{inventory.open=inventoryRoot.open;});
+  function renderInventory() {
+    inventoryRoot.open=inventory.open;
+    inventoryRoot.setAttribute('aria-busy',String(inventory.loading));
+    inventoryRoot.replaceChildren(node('summary','',`Quelleninventar bestätigter Vertragsbelege${inventory.data?' · '+inventory.data.total:''}`));
+    inventoryRoot.append(node('p','fc-caption','Gespeicherte Bestätigungen und offene Angaben. Buchungsnachweise ergänzen keine Vertragsbedingungen.'));
+    if(inventory.loading)inventoryRoot.append(node('p','muted','Quelleninventar wird geladen …'));
+    if(inventory.error){const error=node('div','rc-inventory-error');error.setAttribute('role','alert');error.append(node('p','','Quelleninventar konnte nicht aktualisiert werden. Angezeigte Angaben stammen gegebenenfalls aus dem letzten Abruf.'),button('Inventar erneut laden',()=>void loadInventory()));inventoryRoot.append(error);}
+    if(!inventory.data)return;
+    if(!inventory.data.contracts.length)inventoryRoot.append(node('p','muted','Keine bestätigten Vertragsbelege auf dieser Seite.'));
+    for(const item of inventory.data.contracts){
+      const detail=node('details','rc-inventory-item');detail.dataset.documentId=item.document_id;
+      detail.append(node('summary','',`${item.provider} · ${item.title} · ${item.contract.configured?'Vertragsangaben gespeichert':'Vertragsangaben offen'}`));
+      const body=node('div','rc-inventory-body');
+      body.append(node('p','fc-caption',`Beleg #${item.document_id} · Revision ${item.document_revision} · Beleg bestätigt`),node('p','rc-inventory-source','Quelle: '+item.source_reference));
+      body.append(button('Quelle und Beleg öffnen',async()=>{try{await classificationOpenComparison(item.document_id);}catch(error){errorBox(body,error);}}));
+      const contract=item.contract;
+      if(contract.configured){
+        body.append(node('p','',`Bestätigter Vertragsbeginn: ${date(contract.valid_from)} · Ende: ${contract.valid_to?date(contract.valid_to):'offen'}`));
+        if(contract.reference)body.append(node('p','fc-caption','Vertragsreferenz: '+contract.reference));
+      }
+      for(const phase of contract.phases||[])body.append(node('p','rc-phase',`Bestätigte Phase: ${money(phase.amount,'EUR')} je Zahlung · alle ${phase.interval_months} Monate · ${date(phase.valid_from)} bis ${phase.valid_to?date(phase.valid_to):'offen'}`));
+      if(item.rule_conflict)body.append(node('p','notice','Mehrere gespeicherte Zahlungsregeln: Zuordnung prüfen.'));
+      else if(item.rule){
+        const rule=item.rule;
+        body.append(node('p','rc-inventory-rule',`Bestätigte Zahlungsregel #${rule.id} · ${rule.active?'aktiv':'inaktiv'} · ${accountLabel(rule.account_id)} · ${rule.currency} · Zahlungstag ${rule.day_of_month}`));
+      }else body.append(node('p','muted','Keine bestätigte Zahlungsregel hinterlegt.'));
+      const missing=item.missing_fields||[];
+      body.append(node('p',missing.length?'notice':'fc-caption',missing.length?'Offene Pflichtfelder: '+missing.map(key=>item.missing_field_labels?.[key]||phrase(key)).join(', '):'Keine offenen Pflichtfelder laut gespeichertem Stand.'));
+      const evidence=node('details','rc-inventory-evidence');
+      evidence.append(node('summary','',`Bestätigte Buchungsnachweise (${item.booking_total})`));
+      const bookings=node('ol','rc-evidence');
+      for(const booking of item.bookings||[])bookings.append(node('li','',`${date(booking.date)} · ${money(booking.amount,booking.currency)} · ${accountLabel(booking.account_id)} · ${booking.counterparty||'Gegenpartei offen'} · ${booking.external_id}`));
+      evidence.append(bookings);
+      if(!item.booking_total)evidence.append(node('p','muted','Keine wirksamen Buchungsnachweise hinterlegt.'));
+      if(item.bookings_truncated)evidence.append(node('p','fc-caption',`Angezeigt: ${item.bookings.length} von ${item.booking_total} Nachweisen.`));
+      body.append(evidence);detail.append(body);inventoryRoot.append(detail);
+    }
+    const navigation=node('div','rc-inventory-navigation');
+    const previous=button('Vorherige Belege',()=>void loadInventory(inventory.data.page-1));
+    const next=button('Weitere Belege',()=>void loadInventory(inventory.data.page+1));
+    previous.disabled=inventory.loading||inventory.data.page===0;
+    next.disabled=inventory.loading||inventory.data.page+1>=inventory.data.pages;
+    navigation.append(previous,node('span','fc-caption',`Seite ${inventory.data.pages?inventory.data.page+1:0} von ${inventory.data.pages} · ${inventory.data.page_size} Belege je Seite`),next);inventoryRoot.append(navigation);
+  }
+  async function loadInventory(page=inventory.page) {
+    const request=++inventory.request;inventory.page=page;inventory.loading=true;inventory.error=null;renderInventory();
+    try{const data=await api('/api/contracts-inventory',{page});if(request!==inventory.request)return;inventory.data=data;}
+    catch(error){if(request===inventory.request)inventory.error=error;}
+    finally{if(request===inventory.request){inventory.loading=false;renderInventory();}}
+  }
   const phrases = {
     invalid_forecast_range:'Wähle einen Zeitraum von 0 bis höchstens 366 Tagen; das Enddatum muss am oder nach dem Startdatum liegen.', unsupported_cadence:'Der Zahlungsrhythmus aus der Quelle wird nicht unterstützt. Bitte vor einer Übernahme prüfen.', unsupported_source_cadence:'Der Zahlungsrhythmus aus der Quelle wird nicht unterstützt. Bitte vor einer Übernahme prüfen.', insufficient_recurring_history:'Es liegen noch zu wenige passende Buchungen für eine verlässliche Fortschreibung vor.', insufficient_source_history:'Es liegen noch zu wenige passende Buchungen für eine verlässliche Fortschreibung vor.', conflicting_contract_markers:'Die Vertragskennzeichnungen der Quelle widersprechen sich. Keine automatische Fortschreibung.', conflicting_source_markers:'Die Vertragskennzeichnungen der Quelle widersprechen sich. Keine automatische Fortschreibung.', ambiguous_source_history:'Die Buchungshistorie lässt sich keiner eindeutigen Vertragsreihe zuordnen.', large_amount_variation:'Die Buchungsbeträge schwanken stark; Betrag vor einer Übernahme prüfen.', missing_recurring_period:'Eine erwartete Periode fehlt. Diese Reihe wird nicht fortgeschrieben.', end_date_unknown:'Ein Enddatum ist nicht bekannt. Weitere Zahlungen bleiben eine Annahme.', auto_detected:'Automatisch aus wiederkehrenden Buchungen erkannt · geschätzt', confirmed_manual:'Bestätigte manuelle Regel', linked_history:'Termin aus verknüpften Zahlungen geschätzt', confirmed_document_setting:'Bestätigte Vertragskonfiguration',
     projection_conditional_on_imported_ledger:'Die Prognose setzt vollständige importierte Buchungen voraus.', transfers_not_inferred:'Umbuchungen werden nicht automatisch ergänzt.', budgets_not_payment_events:'Budgets sind Ausgabengrenzen und werden nicht als zusätzliche Zahlungen eingeplant.',
@@ -111,7 +165,7 @@
       if(item.basis)card.append(node('p','fc-caption',phrase(item.basis)));
       const candidate=(view.data.candidates||[]).find(c=>c.id===(item.candidate_id||item.id));if(automatic(item))card.append(provenance(candidate||item));
       const actions=node('div','rc-actions');if(automatic(item)){actions.append(button('Als Regel übernehmen',()=>adopt(candidate||item)));}else if(item.requires_contract_setup){actions.append(button('Vertragsangaben ergänzen',async()=>{try{await classificationOpenComparison(item.document_id);}catch(error){errorBox(card,error);}}));}else actions.append(button(item.document_id?'Konfigurieren':'Bearbeiten',()=>openEditor(item)));if(!automatic(item)&&item.id && item.active!==false)actions.append(button('Deaktivieren',()=>disableRule(item)));if(item.document_id&&!item.requires_contract_setup)actions.append(link('Vertragsbeleg','documents'));card.append(actions);grid.append(card);
-    }if(!grid.children.length)grid.append(node('p','muted','Noch keine regelmäßigen Zahlungen. Erfasse eine Zahlung oder bestätige einen Vertragsbeleg.'));contracts.append(grid,link('Vertrag aus Beleg erfassen','documents'));fragment.append(contracts);
+    }if(!grid.children.length)grid.append(node('p','muted','Noch keine regelmäßigen Zahlungen. Erfasse eine Zahlung oder bestätige einen Vertragsbeleg.'));contracts.append(grid,link('Vertrag aus Beleg erfassen','documents'));fragment.append(contracts,inventoryRoot);
     const scheduled=new Set((view.data.schedules||[]).map(item=>item.candidate_id||item.id));const candidates=(view.data.candidates||[]).filter(item=>!scheduled.has(item.id));const reviews=candidates.filter(item=>item.status==='needs_review');if(reviews.length){const review=node('section','rc-candidate-review');review.append(node('h3','','Erkannte Reihen zur Prüfung'));const cards=node('div','rc-card-grid');for(const candidate of reviews)cards.append(candidateCard(candidate));review.append(cards);fragment.append(review);}const covered=candidates.filter(item=>item.status==='covered');if(covered.length){const details=node('details','rc-limits');details.append(node('summary','',`${covered.length} bereits abgedeckte Buchungsreihen`));for(const candidate of covered)details.append(candidateCard(candidate));fragment.append(details);}
     const timeline=node('section','fc-home-panel rc-timeline');timeline.append(node('h3','','Zahlungskalender'));const status=field(timeline,'status','Zahlungen anzeigen','select','');for(const [value,text] of [['all','Alle'],['expected','Erwartet'],['booked','Gebucht'],['unresolved','Offen']]){const o=node('option','',text);o.value=value;status.append(o);}status.value=view.status;status.addEventListener('change',()=>{view.status=status.value;renderEvents(list);});const list=node('div','rc-events');timeline.append(node('p','fc-caption','Gebuchte Zahlungen des laufenden Monats und erwartete Zahlungen im Prognosezeitraum. Termine können geschätzt sein.'),list);renderEvents(list);fragment.append(timeline);
     const forecasts=node('section','rc-forecasts');forecasts.append(node('h3','','Kontostände vorausgeschaut'));
@@ -125,6 +179,8 @@
   }
   window.financeRecurringLoad = async () => {
     const root=document.getElementById('recurring-root');if(!root)return;const request=++view.request;root.setAttribute('aria-busy','true');if(!view.data&&!root.children.length)root.append(node('p','muted','Zahlungen und Kontoprognose werden geladen …'));
+    if(!root.contains(inventoryRoot))root.append(inventoryRoot);
+    void loadInventory();
     try{const data=await api('/api/recurring-view',{as_of:view.as_of,until:view.until,account_id:view.account_id});if(request!==view.request)return;view.data=data;render();}
     catch(error){if(request===view.request)errorBox(root,error,()=>void window.financeRecurringLoad());}finally{if(request===view.request)root.setAttribute('aria-busy','false');}
   };

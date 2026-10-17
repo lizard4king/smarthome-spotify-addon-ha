@@ -1,5 +1,13 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.56` adds a confirmed-contract source inventory with explicit missing
+payment fields and interprets Finanzguru contract flags without treating ja/nein
+as contract names. Successful additional bank balances can be explicitly assigned
+to existing accounts. These owner- and revision-bound immutable observations
+provide current balances only; they grant no transaction-import authority.
+Unknown balances remain unknown. Actual account availability and missing contract
+terms still require evidence; this release does not manufacture either.
+
 Version `0.2.55` starts the chronological booking timeline at Today, with past
 bookings above and grayscale virtual contract payments below. Multiple accounts
 retain their own currencies and balances. Every calculated movement balance

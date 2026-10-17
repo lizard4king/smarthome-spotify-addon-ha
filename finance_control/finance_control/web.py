@@ -31,6 +31,7 @@ from .administration import Administration, AdministrationError
 from .server_banking import ServerBanking
 from .server_balance_gateway import ServerBalanceGateway
 from .server_balance_jobs import ServerBalanceJobs
+from .server_balance_mappings import ServerBalanceMappings
 from .server_transactions_gateway import ServerTransactionsGateway
 from .server_postbank_jobs import ServerPostbankJobs
 from .server_bank_refresh import ServerBankRefresh
@@ -409,10 +410,11 @@ class Cockpit:
                     raise ValueError('unknown_recurring_action')
                 return actions[action](store, data)
             if route.startswith('/api/contracts-'):
-                from . import contracts
+                from . import contract_inventory, contracts
                 actions = {'load': contracts.load, 'save': contracts.save,
                            'matches': contracts.matches, 'link': contracts.link,
-                           'portfolio': contracts.portfolio}
+                           'portfolio': contracts.portfolio,
+                           'inventory': contract_inventory.view}
                 action = route.removeprefix('/api/contracts-')
                 if action not in actions:
                     raise ValueError('unknown_contract_action')
@@ -764,7 +766,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
         administration, server_banking = _server_administration(app.database)
     else:
         administration = server_banking = None
-    bank_jobs = (ServerBalanceJobs(ServerBalanceGateway(administration, bank_product_id))
+    bank_jobs = (ServerBalanceJobs(ServerBalanceGateway(administration, bank_product_id),
+                                  ServerBalanceMappings(administration, app.database))
                  if administration is not None else None)
     postbank_jobs = (ServerPostbankJobs(
         ServerTransactionsGateway(administration, bank_product_id), app.database)
@@ -1542,6 +1545,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     return self.reply(200, bank_jobs.start(self.management_user, data))
                 if action == 'bank-balances-state':
                     return self.reply(200, bank_jobs.state(self.management_user, data))
+                if action == 'bank-balances-confirm':
+                    return self.reply(200, bank_jobs.confirm(self.management_user, data))
                 if action == 'postbank-targets':
                     return self.reply(200, postbank_jobs.targets(self.management_user, data))
                 if action == 'postbank-read':

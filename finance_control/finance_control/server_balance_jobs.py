@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from datetime import datetime, timezone
 import threading
 import time
 from uuid import uuid4
@@ -27,8 +29,9 @@ _ERROR_CODES = frozenset({
 class ServerBalanceJobs:
     """Keep only bounded status/results in RAM; the gateway owns bank validation."""
 
-    def __init__(self, gateway):
+    def __init__(self, gateway, mappings=None):
         self.gateway = gateway
+        self.mappings = mappings
         self._lock = threading.Lock()
         self._jobs = {}
         self._active = None
@@ -54,7 +57,8 @@ class ServerBalanceJobs:
             result = _validated_output(json.dumps(raw, ensure_ascii=False,
                                                   separators=(',', ':')).encode('utf-8'))
             if result['status'] == 'ok':
-                status, value = 'complete', {'result': result}
+                status, value = 'complete', {'result': result,
+                                           'retrieved_at': datetime.now(timezone.utc).isoformat()}
             else:
                 status, value = 'error', {'code': result['code']}
                 if 'diagnostic' in result:
@@ -79,7 +83,7 @@ class ServerBalanceJobs:
             raise AdministrationError('confirmation_required')
         connection_id, revision = _id(data['id']), _revision(data['revision'])
         try:
-            owner_id, _bank_id, _bank_code = self.gateway._connection(
+            owner_id, bank_id, _bank_code = self.gateway._connection(
                 actor, connection_id, revision)
             _id(owner_id)
         except AdministrationError:
@@ -93,6 +97,7 @@ class ServerBalanceJobs:
             job_id = uuid4().hex
             self._jobs[job_id] = {'job_id': job_id, 'owner_id': owner_id,
                                   'connection_id': connection_id, 'revision': revision,
+                                  'bank_id': bank_id,
                                   'status': 'running', 'finished_at': None}
             self._active = job_id
             try:
@@ -130,6 +135,8 @@ class ServerBalanceJobs:
             if job is None:
                 raise AdministrationError('unknown_bank_job', 404)
             response = {'job_id': job_id, 'status': job['status']}
+            if self.mappings is not None:
+                response['mapping_available'] = True
             if job['status'] == 'complete':
                 response['result'] = job['result']
             elif job['status'] == 'error':
@@ -137,3 +144,45 @@ class ServerBalanceJobs:
                 if 'diagnostic' in job:
                     response['diagnostic'] = job['diagnostic']
             return response
+
+    def confirm(self, actor, data):
+        """Hand only server-held, completed results to explicit balance adoption."""
+        if type(data) is not dict or set(data) != {'job_id', 'confirmed', 'mappings'}:
+            raise AdministrationError('balance_mapping_invalid')
+        if data['confirmed'] is not True:
+            raise AdministrationError('confirmation_required')
+        job_id = _id(data['job_id'])
+        if (type(data['mappings']) is not list or not data['mappings']
+                or len(data['mappings']) > 20
+                or any(type(item) is not dict
+                       or set(item) != {'account_fingerprint', 'account_id'}
+                       for item in data['mappings'])):
+            raise AdministrationError('balance_mapping_invalid')
+        if self.mappings is None:
+            raise AdministrationError('bank_read_unavailable', 503)
+        with self._lock:
+            self._prune()
+            job = self._jobs.get(job_id)
+            if job is None or type(actor) is not dict or actor.get('id') != job['owner_id']:
+                raise AdministrationError('unknown_bank_job', 404)
+            if job['status'] != 'complete':
+                raise AdministrationError('bank_job_not_complete', 409)
+            context = {key: job[key] for key in ('job_id', 'owner_id', 'connection_id',
+                                                'revision', 'bank_id', 'retrieved_at')}
+            context['accounts'] = deepcopy(job['result']['accounts'])
+        try:
+            owner_id, bank_id, _bank_code = self.gateway._connection(
+                actor, context['connection_id'], context['revision'])
+        except AdministrationError:
+            raise
+        except Exception:
+            raise AdministrationError('bank_read_unavailable', 503) from None
+        if owner_id != context['owner_id'] or bank_id != context['bank_id']:
+            raise AdministrationError('stale_revision', 409)
+        # Recheck TTL after authorization; neither client amounts nor client
+        # identity fields ever enter the trusted service context.
+        with self._lock:
+            self._prune()
+            if self._jobs.get(job_id) is not job:
+                raise AdministrationError('unknown_bank_job', 404)
+        return self.mappings.commit(actor, deepcopy(data), context)

@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from .core import money
+from .server_balance_mappings import target_compatible
 
 
 def summarize(account_rows, balances):
@@ -89,6 +90,31 @@ def latest_by_account(store, account_rows, *, as_of=None):
             + (' AND b.booked_on<=?' if as_of is not None else ''), parameters):
         candidates.append(_candidate(row['account_id'], row['currency'], row['amount'],
                                      row['booked_on'], row['retrieved_at'], 'bank'))
+    # Additional balance-only confirmations never grant a transaction import.
+    # Revalidate current ownership, registration, target metadata and existing
+    # source bindings before exposing immutable observations as current balances.
+    for row in store.db.execute(
+            'SELECT e.account_id,e.amount,e.currency,e.booked_on,e.retrieved_at,'
+            'e.bank_id,a.kind,a.institution '
+            'FROM server_bank_balance_evidence e '
+            'JOIN server_bank_balance_bindings b ON b.connection_id=e.connection_id '
+            'AND b.account_fingerprint=e.account_fingerprint AND b.account_id=e.account_id '
+            'AND b.owner_id=e.owner_id AND b.bank_id=e.bank_id '
+            'AND b.connection_revision=e.connection_revision '
+            'JOIN app_bank_connections c ON c.id=b.connection_id AND c.user_id=b.owner_id '
+            "AND c.status!='REVOKED' AND c.revision=e.connection_revision AND c.bank_id=e.bank_id "
+            'JOIN app_users u ON u.id=b.owner_id AND u.active=1 '
+            'JOIN accounts a ON a.id=e.account_id AND a.currency=e.currency '
+            f'WHERE e.account_id IN ({placeholders}) '
+            'AND NOT EXISTS (SELECT 1 FROM bank_source_accounts s '
+            'WHERE s.account_id=e.account_id AND s.provider!=e.bank_id) '
+            'AND NOT EXISTS (SELECT 1 FROM server_bank_refresh_bindings r '
+            'WHERE r.account_id=e.account_id AND (r.connection_id!=e.connection_id '
+            'OR r.account_fingerprint!=e.account_fingerprint OR r.bank_id!=e.bank_id))'
+            + (' AND e.booked_on<=?' if as_of is not None else ''), parameters):
+        if target_compatible(row, row['bank_id']):
+            candidates.append(_candidate(row['account_id'], row['currency'], row['amount'],
+                                         row['booked_on'], row['retrieved_at'], 'bank'))
     for row in store.db.execute(
             'SELECT p.account_id,p.closing_balance,p.currency,p.as_of '
             'FROM ing_period_imports p JOIN bank_source_accounts s '
@@ -123,8 +149,10 @@ def latest_by_account(store, account_rows, *, as_of=None):
         if balance['currency'] != wanted[account_id]:
             continue
         previous = result.get(account_id)
-        if (previous is None or (balance['booked_on'], balance['source'] == 'bank')
-                > (previous['booked_on'], previous['source'] == 'bank')):
+        if (previous is None or (balance['booked_on'], balance['source'] == 'bank',
+                                 balance['retrieved_at'] or '')
+                > (previous['booked_on'], previous['source'] == 'bank',
+                   previous['retrieved_at'] or '')):
             result[account_id] = balance
 
     # File evidence is a fallback only. Any qualified bank or bound statement

@@ -79,6 +79,13 @@
     vault_unavailable: 'Der sichere Serverspeicher ist derzeit nicht verfügbar.',
     bank_product_unavailable: 'Die FinTS-Produktkennung fehlt auf dem Server.',
     invalid_bank_auth_selection: 'Die gewählte TAN-Methode oder das TAN-Gerät ist für diese Bank nicht verfügbar.',
+    unknown_bank_job: 'Der Abruf ist abgelaufen. Lies die Kontostände erneut.',
+    bank_job_not_complete: 'Der Abruf ist noch nicht erfolgreich abgeschlossen.',
+    balance_mapping_invalid: 'Die Kontoauswahl ist ungültig. Prüfe die ausgewählten Konten.',
+    balance_mapping_not_found: 'Ein ausgewähltes Bankkonto gehört nicht zu diesem Abruf.',
+    balance_mapping_conflict: 'Die Kontozuordnung hat sich geändert. Prüfe die Verwaltung und lies erneut.',
+    invalid_target: 'Das ausgewählte Bestandskonto ist für diesen Kontostand nicht geeignet.',
+    source_binding_conflict: 'Dieses Konto ist bereits einer anderen Bankquelle zugeordnet.',
     };
     const base = typeof code === 'string' && Object.hasOwn(messages, code)
       ? messages[code] : 'Kontostände konnten nicht abgerufen werden. Bitte prüfe den Serverstatus.';
@@ -155,11 +162,12 @@
     }
 
     let busy = false;
-    const controls = () => root.querySelectorAll('button,input');
+    const controls = () => root.querySelectorAll('button,input,select');
     const setBusy = value => {
       busy = value;
       controls().forEach(control => {
-        control.disabled = value || (control.classList.contains('fsb-read-button') && control.dataset.credentialsPresent !== 'true');
+        control.disabled = value || (control.classList.contains('fsb-read-button') && control.dataset.credentialsPresent !== 'true') ||
+          (control.classList.contains('fsb-confirm-balances') && (control.dataset.selectionReady !== 'true' || control.dataset.completed === 'true'));
       });
     };
     const refresh = () => {
@@ -209,6 +217,55 @@
       if (!list.childElementCount) list.append(node('p', 'Der Abruf enthielt keine Kontostände.', 'fsb-notice'));
       container.append(list);
       return readCount;
+    };
+
+    const showMappings = (container, jobId, accounts) => {
+      const ledgerState = typeof state !== 'undefined' ? state : window.state;
+      const targets = Array.isArray(ledgerState?.accounts) ? ledgerState.accounts : [];
+      const panel = node('div', '', 'fsb-mappings');
+      panel.append(node('p', 'Wähle für jeden gewünschten Kontostand das vorhandene Bestandskonto. Keine Zuordnung wird automatisch vorgeschlagen. Übernommen wird nur der Saldo, keine Buchungen.', 'fsb-notice'));
+      const choices = [];
+      for (const account of accounts) {
+        if (!account || typeof account.fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(account.fingerprint) ||
+            typeof account.amount !== 'string' || account.amount.length>80 || !/^-?[0-9]+(?:\.[0-9]+)?$/.test(account.amount) ||
+            typeof account.currency !== 'string' || !/^[A-Z]{3}$/.test(account.currency) ||
+            typeof account.booked_on !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(account.booked_on)) continue;
+        const label = node('label', `${safeText(account.masked_account,64) || 'Bankkonto'} · ${account.amount} ${account.currency}`);
+        const select = node('select');select.className='fsb-balance-target';
+        const blank = node('option','Nicht übernehmen');blank.value='';select.append(blank);
+        const seen = new Set();
+        for (const target of targets) {
+          if (!target || typeof target.id !== 'string' || seen.has(target.id) || target.currency !== account.currency) continue;
+          seen.add(target.id);
+          const option = node('option', `${target.display_name || target.id} · ${target.institution || 'Institut offen'}`);
+          option.value=target.id;select.append(option);
+        }
+        const selectedLabel=node('small','Keine Zuordnung ausgewählt.','fsb-selected-target');
+        select.addEventListener('change',()=>{selectedLabel.textContent=select.value?select.selectedOptions[0].textContent:'Keine Zuordnung ausgewählt.';});
+        select.value='';label.append(select,selectedLabel);panel.append(label);
+        choices.push({fingerprint:account.fingerprint,select});
+      }
+      if (!choices.length) return;
+      const message = node('p','','fsb-form-message');message.setAttribute('role','status');
+      const confirm = node('button','Ausgewählte Kontostände übernehmen','fsb-confirm-balances');confirm.type='button';
+      confirm.dataset.selectionReady='false';confirm.disabled=true;
+      for (const choice of choices) choice.select.addEventListener('change',()=>{
+        confirm.dataset.selectionReady=String(choices.some(item=>item.select.value!==''));setBusy(busy);
+      });
+      confirm.addEventListener('click',async()=>{
+        if (busy || !isCurrent() || confirm.dataset.completed==='true') return;
+        const mappings = choices.filter(item=>item.select.value!=='').map(item=>({account_fingerprint:item.fingerprint,account_id:item.select.value}));
+        if (!mappings.length) return;
+        setBusy(true);setStatus(message,'Ausgewählte Kontostände werden übernommen.');
+        try {
+          const result = await window.api('/api/administration/bank-balances-confirm',{job_id:jobId,confirmed:true,mappings});
+          if (!isCurrent()) return;
+          confirm.dataset.completed='true';setStatus(message,`${result.saved} Kontostände übernommen. Es wurden keine Buchungen angelegt.`);
+          refresh();
+        } catch(error) {if(isCurrent())setStatus(message,balanceError(error?.code),true);}
+        finally {if(isCurrent())setBusy(false);}
+      });
+      panel.append(confirm,message);container.append(panel);
     };
 
     const readBalances = async (connection, credentialPresent, tanMethod, tanMedium, readStatus, results) => {
@@ -261,6 +318,7 @@
         if (state?.status === 'complete' && state.result?.status === 'ok' && Array.isArray(state.result.accounts)) {
           const errors = Array.isArray(state.result.account_errors) ? state.result.account_errors : [];
           const readCount = showBalances(results, state.result.accounts, errors);
+          if (state.mapping_available === true) showMappings(results, job.job_id, state.result.accounts);
           const message = readCount === 0 ? 'Es wurden keine Kontostände gelesen.'
             : (errors.length ? `${readCount} Kontostände gelesen, ${errors.length} nicht abrufbar.`
               : 'Kontostände wurden gelesen.');
