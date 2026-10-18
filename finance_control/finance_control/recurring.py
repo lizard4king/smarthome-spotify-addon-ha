@@ -48,8 +48,12 @@ def save(store, data):
         raise
 
 
-def _save_within_transaction(store, data):
-    """Validate/save inside the caller's atomic transaction; never commit here."""
+def _save_within_transaction(store, data, *, amount_derivation=None):
+    """Save and audit the complete rule in the caller's transaction.
+
+    amount_derivation is internal, server-validated provenance supplied by the
+    booking workflow; it is never accepted as part of a public rule payload.
+    """
     if not isinstance(data, dict) or set(data) != _FIELDS or data['confirmed'] is not True:
         raise ValueError('explicit_recurring_confirmation_required')
     rid, revision = data['id'], contracts._revision(data['revision'])
@@ -88,6 +92,13 @@ def _save_within_transaction(store, data):
             payload['amount_derivation'] = previous['amount_derivation']
     elif revision != 0:
         raise ValueError('stale_recurring_revision')
+    if amount_derivation is not None:
+        if (data['document_id'] is not None or not isinstance(amount_derivation, dict)
+                or amount_derivation.get('amount_estimated') is not True
+                or amount_derivation.get('amount') != payload['amount']
+                or amount_derivation.get('currency') != payload['currency']):
+            raise ValueError('invalid_amount_derivation')
+        payload['amount_derivation'] = amount_derivation
     if data['document_id'] is not None:
         document = contracts._document(store, data['document_id'])
         if document['status'] != 'confirmed' or not contracts._load(store, document)['configured']:
@@ -119,6 +130,9 @@ def _save_within_transaction(store, data):
         store.db.execute('UPDATE recurring_rules SET revision=revision+1,payload=?,active=1,updated_at=? '
                          'WHERE id=?', (json.dumps(payload), now, rid))
     result = _row(store.db.execute('SELECT * FROM recurring_rules WHERE id=?', (rid,)).fetchone())
+    if amount_derivation is not None:
+        store.db.execute('INSERT INTO contract_amount_estimates(rule_id,rule_revision,payload,created_at) VALUES (?,?,?,?)',
+                         (rid, result['revision'], json.dumps(amount_derivation), now))
     _audit(store, 'recurring_saved', result, previous=previous)
     return result
 

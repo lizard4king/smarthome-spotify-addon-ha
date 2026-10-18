@@ -301,14 +301,8 @@ def _change(store, data, *, reject):
                     old = recurring._row(old_row)
                     if any(rule[k] != old[k] for k in ('valid_from', 'valid_to')):
                         raise ValueError('estimate_preserves_contract_term')
-            rule_id = recurring._save_within_transaction(store, rule)['id']
+            rule_id = recurring._save_within_transaction(store, rule, amount_derivation=estimate)['id']
             if estimate is not None:
-                saved = store.db.execute('SELECT payload,revision FROM recurring_rules WHERE id=?', (rule_id,)).fetchone()
-                payload = json.loads(saved['payload'])
-                payload['amount_derivation'] = estimate
-                store.db.execute('UPDATE recurring_rules SET payload=? WHERE id=?', (json.dumps(payload), rule_id))
-                store.db.execute('INSERT INTO contract_amount_estimates(rule_id,rule_revision,payload,created_at) VALUES (?,?,?,?)',
-                                 (rule_id, saved['revision'], json.dumps(estimate), _now()))
                 for source in estimate['bookings']:
                     source_id = (source['account_id'], source['external_id'])
                     if source_id == identity:

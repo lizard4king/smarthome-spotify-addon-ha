@@ -51,7 +51,10 @@
           node('strong', money(balance.amount, balance.currency), 'fc-home-paypal-amount'));
         const bankDate = date(balance.reference_date);
         const retrievedAt = balance.retrieved_at || result.value.retrieved_at;
-        row.append(node('small', `${bankDate ? 'Stand ' + bankDate : 'Abruf ' + (date(retrievedAt?.slice(0, 10)) || 'heute')}`, 'fc-home-paypal-meta muted'));
+        const retrievalDate = typeof retrievedAt === 'string' && Number.isFinite(Date.parse(retrievedAt))
+          ? date(retrievedAt.slice(0, 10)) : null;
+        row.append(node('small', bankDate ? 'Stand ' + bankDate
+          : retrievalDate ? 'Abruf ' + retrievalDate : 'Zeitpunkt unbekannt', 'fc-home-paypal-meta muted'));
         const evidence = node('details', undefined, 'fc-home-paypal-evidence');
         evidence.append(node('summary', 'Hinweis'));
         evidence.append(node('p', `${bankDate ? 'Bankstichtag ' + bankDate : 'Kein Bankstichtag geliefert'}; Abruf ${retrieved(retrievedAt)}.`, 'fc-home-paypal-meta muted'));
