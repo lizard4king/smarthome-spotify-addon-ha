@@ -25,7 +25,7 @@ RUN apt-get update \
     && printf '%s\n' "$features" | grep -Eq '^apply_patch_freeform[[:space:]]+removed[[:space:]]+false$'
 
 WORKDIR /app
-COPY __init__.py app.py voice_bridge.py control_client.py action_schema.json lumi_assistant.py lumi_context.py ./
+COPY __init__.py app.py voice_bridge.py control_client.py action_schema.json lumi_assistant.py lumi_context.py lumi_knowledge.py lumi_notion_sync.py lumi_notion_write.py lumi_notion_commands.py lumi_notion_catalog.py lumi_notion_runtime.py ./
 
 RUN python3 -c 'import subprocess; from app import make_query_command; command = make_query_command(structured=True); command.insert(-1, "--help"); subprocess.run(command, check=True, stdout=subprocess.DEVNULL)'
 

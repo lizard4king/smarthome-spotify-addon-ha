@@ -31,6 +31,15 @@
     "lumi_memory_enabled": "bool",
     "lumi_memory_owner_keys": [
       "str"
+    ],
+    "lumi_knowledge_enabled": "bool",
+    "lumi_notion_page_ids": [
+      "str"
+    ],
+    "lumi_notion_workspace_enabled": "bool",
+    "lumi_notion_write_enabled": "bool",
+    "lumi_notion_owner_keys": [
+      "str"
     ]
   },
   "tmpfs": true,
@@ -50,6 +59,11 @@
     "voice_model": "",
     "voice_reasoning_effort": "low",
     "lumi_memory_enabled": false,
-    "lumi_memory_owner_keys": []
+    "lumi_memory_owner_keys": [],
+    "lumi_knowledge_enabled": false,
+    "lumi_notion_page_ids": [],
+    "lumi_notion_workspace_enabled": false,
+    "lumi_notion_write_enabled": false,
+    "lumi_notion_owner_keys": []
   }
 }
