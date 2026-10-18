@@ -21,7 +21,8 @@ def test_explicit_create_preserves_wire_request_id(service):
     reply = service.handle('Notiz in Haus speichern: Filter wechseln', 'wire-42', authorized=True)
     assert 'gespeichert' in reply
     service.writer.create_note.assert_called_once_with(
-        PAGE, 'Filter wechseln', 'Filter wechseln', 'wire-42', explicit_instruction=True)
+        PAGE, 'Filter wechseln', 'Filter wechseln', 'wire-42', explicit_instruction=True,
+        title_already_in_text=True)
 
 
 def test_explicit_update_requires_block_and_target(service):

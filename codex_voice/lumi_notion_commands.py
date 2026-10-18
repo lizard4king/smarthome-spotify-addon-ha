@@ -9,7 +9,7 @@ from uuid import UUID
 
 class NotionWriterProtocol(Protocol):
     def create_note(self, page_id: str, title: str, text: str, request_id: str,
-                    *, explicit_instruction: bool) -> dict: ...
+                    *, explicit_instruction: bool, title_already_in_text: bool = False) -> dict: ...
 
     def update_note(self, page_id: str, block_id: str, text: str, request_id: str,
                     *, explicit_instruction: bool) -> dict: ...
@@ -64,7 +64,8 @@ class NotionCommandService:
                                                  request_id, explicit_instruction=True)
             else:
                 result = self.writer.create_note(page_id, content.splitlines()[0][:120], content,
-                                                 request_id, explicit_instruction=True)
+                                                 request_id, explicit_instruction=True,
+                                                 title_already_in_text=True)
         except Exception:
             return "Der Notion-Schreibstatus ist unklar. Bitte prüfe den Auftrag, bevor du ihn erneut erteilst."
         status = result.get('status') if isinstance(result, dict) else None

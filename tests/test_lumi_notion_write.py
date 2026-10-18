@@ -4,6 +4,7 @@ import json
 import pytest
 
 from codex_voice.lumi_notion_write import NotionWriter
+from codex_voice.lumi_notion_commands import NotionCommandService
 
 PAGE = '11111111-1111-1111-1111-111111111111'
 BLOCK = '22222222-2222-2222-2222-222222222222'
@@ -49,12 +50,44 @@ def test_confirmed_create_is_persistent_and_bound_to_content(tmp_path):
     result = service.create_note(PAGE, 'Titel', 'Inhalt', 'request_001', explicit_instruction=True)
     assert result['status'] == 'confirmed'
     assert result['block_id'] == BLOCK
+    payload = json.loads(calls[0][2])
+    assert payload['children'][0]['paragraph']['rich_text'][0]['text']['content'] == 'Titel\nInhalt'
     reopened = writer(tmp_path, [], calls)
     assert reopened.create_note(PAGE, 'Titel', 'Inhalt', 'request_001',
                                 explicit_instruction=True) == result
     assert len(calls) == 1
     with pytest.raises(ValueError, match='different content'):
         reopened.create_note(PAGE, 'Titel', 'Anders', 'request_001', explicit_instruction=True)
+
+
+@pytest.mark.parametrize('content', ['Filter wechseln', 'Filter wechseln\nDanach prüfen.',
+                                    'L' * 140 + '\nZweite Zeile.'])
+def test_command_create_stores_exact_content_once_and_retains_deduplication(tmp_path, content):
+    calls = []
+    service = writer(tmp_path, [({'object': 'list', 'results': [block(content)]}, 200, None)], calls)
+    commands = NotionCommandService(service, {'Haus': PAGE})
+    question = 'Notiz in Haus speichern: ' + content
+    answer = commands.handle(question, 'request_exact', authorized=True)
+    assert 'gespeichert' in answer
+    payload = json.loads(calls[0][2])
+    assert payload['children'] == [{'object': 'block', 'type': 'paragraph', 'paragraph': {
+        'rich_text': [{'type': 'text', 'text': {'content': content}}]}}]
+    reopened = NotionCommandService(writer(tmp_path, [], calls), {'Haus': PAGE})
+    assert reopened.handle(question, 'request_exact', authorized=True) == answer
+    assert len(calls) == 1
+    with pytest.raises(ValueError, match='different content'):
+        service.create_note(PAGE, content.splitlines()[0][:120], content + '!', 'request_exact',
+                            explicit_instruction=True, title_already_in_text=True)
+
+
+@pytest.mark.parametrize('value', [None, 0, 1, 'true', [], {}])
+def test_title_already_in_text_requires_boolean(tmp_path, value):
+    calls = []
+    service = writer(tmp_path, [], calls)
+    with pytest.raises(ValueError, match='must be a boolean'):
+        service.create_note(PAGE, 'Titel', 'Inhalt', 'request_bool', explicit_instruction=True,
+                            title_already_in_text=value)
+    assert not calls
 
 
 @pytest.mark.parametrize('response', [TimeoutError('secret'),

@@ -1,5 +1,6 @@
 """Current Lumi + Notion boundaries, entirely synthetic and offline."""
 import json
+import time
 from dataclasses import replace
 from unittest.mock import Mock
 
@@ -9,6 +10,8 @@ from codex_voice import app, lumi_notion_runtime
 from codex_voice.lumi_assistant import LumiSettings, parse_settings
 from codex_voice.lumi_context import ContextStore
 from codex_voice.lumi_notion_commands import NotionCommandService
+from codex_voice.lumi_notion_credentials import NotionCredentials
+from codex_voice.voice_bridge import VoiceJobs
 
 OWNER, OTHER, SESSION = 'a' * 64, 'b' * 64, 'c' * 64
 PAGE = '11111111-1111-4111-8111-111111111111'
@@ -55,8 +58,13 @@ def test_tokens_never_enter_subprocess_environment(monkeypatch):
 @pytest.mark.parametrize('enabled', [False, True])
 def test_main_starts_only_enabled_runtime_and_closes_it(tmp_path, monkeypatch, enabled):
     settings = LumiSettings(notion_workspace_enabled=enabled)
+    startup_order = []
+    def load_credentials(_path):
+        startup_order.append('credentials')
+        return NotionCredentials('synthetic-read', 'synthetic-write')
+    monkeypatch.setattr(app, 'load_notion_credentials', load_credentials)
     for name in ('prepare_private_directories', 'prepare_lumi_directory', 'drop_privileges'):
-        monkeypatch.setattr(app, name, Mock())
+        monkeypatch.setattr(app, name, Mock(side_effect=lambda name=name: startup_order.append(name)))
     monkeypatch.setattr(app, 'VOICE_MODEL_SETTINGS', None)
     monkeypatch.setattr(app, 'load_voice_model_settings', lambda: ('', 'low'))
     monkeypatch.setattr(app, 'load_authorized_user_ids', lambda: frozenset())
@@ -74,8 +82,11 @@ def test_main_starts_only_enabled_runtime_and_closes_it(tmp_path, monkeypatch, e
     prepare = Mock(return_value=notion)
     monkeypatch.setattr(lumi_notion_runtime, 'prepare_runtime', prepare)
     app.main()
+    assert startup_order[0] == 'credentials'
+    assert startup_order.index('credentials') < startup_order.index('drop_privileges')
     if enabled:
         prepare.assert_called_once()
+        assert prepare.call_args.kwargs == {'read_token': 'synthetic-read', 'write_token': 'synthetic-write'}
         notion.start.assert_called_once()
         notion.close.assert_called_once()
     else:
@@ -92,6 +103,53 @@ def test_disabled_notion_ignores_even_a_present_cache(tmp_path):
     instance.query_lumi('Was steht dort?', memory=memory())
     instance._lumi_knowledge.search.assert_not_called()
     assert SOURCE not in instance.query.call_args.kwargs['_conversation_prompt']
+
+
+@pytest.mark.parametrize('question', ['Wie speichert Notion Notizen?', COMMAND])
+def test_default_disabled_notion_preserves_model_conversation(tmp_path, question):
+    instance = runtime(tmp_path)
+    instance._lumi_settings = LumiSettings()
+    instance._lumi_notion_commands = Mock()
+    assert not instance.handles_lumi_locally(question)
+    assert instance.query_lumi(question, memory=memory()) == 'Private Antwort.'
+    instance.query.assert_called_once()
+    assert question in instance.query.call_args.kwargs['_conversation_prompt']
+    instance._lumi_notion_commands.handle.assert_not_called()
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_forget_remains_local_with_notion_disabled_or_enabled(tmp_path, enabled):
+    instance = runtime(tmp_path)
+    instance._lumi_settings = LumiSettings(notion_workspace_enabled=enabled)
+    question = 'Lösche meinen Gesprächsverlauf!'
+    assert instance.handles_lumi_locally(question)
+    assert 'gelöscht' in instance.query_lumi(question, memory=memory())
+    instance.query.assert_not_called()
+
+
+@pytest.mark.parametrize('question', ['Wie speichert Notion Notizen?', COMMAND])
+def test_enabled_notion_commands_remain_local_without_model_login(tmp_path, question):
+    instance = runtime(tmp_path)
+    instance._lumi_notion_commands = None
+    instance.authenticated = Mock(return_value=False)
+    assert instance.handles_lumi_locally(question)
+    jobs = VoiceJobs(instance)
+    try:
+        status, submitted = jobs.submit(OWNER, 'local-without-login', question, memory=memory())
+        assert status == 202
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            _, result = jobs.result(OWNER, submitted['job_id'])
+            if result['state'] != 'pending':
+                break
+            time.sleep(0.005)
+        assert result['state'] == 'done'
+        assert ('ausdrücklichen Befehl' in result['answer'] if question != COMMAND
+                else 'Ziel ist nicht freigegeben' in result['answer'])
+    finally:
+        jobs.close()
+    instance.query.assert_not_called()
+    instance.authenticated.assert_not_called()
 
 
 @pytest.mark.parametrize('person', [OTHER, ''])
@@ -130,7 +188,8 @@ def test_explicit_write_precedes_model_planner_and_history(tmp_path):
     assert instance.handles_lumi_locally(COMMAND)
     assert 'gespeichert' in instance.query_lumi_request(COMMAND, memory=memory(), request_id='wire-id')
     writer.create_note.assert_called_once_with(PAGE, 'Filter wechseln', 'Filter wechseln',
-                                             'wire-id', explicit_instruction=True)
+                                             'wire-id', explicit_instruction=True,
+                                             title_already_in_text=True)
     instance.query.assert_not_called()
     instance._control_client.context.assert_not_called()
     instance._control_client.execute.assert_not_called()

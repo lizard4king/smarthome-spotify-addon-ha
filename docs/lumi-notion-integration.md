@@ -1,6 +1,6 @@
 # Notion im aktuellen Lumi-Stand
 
-Stand 18.10.2026: Die vorhandene Notion-Umsetzung ist gezielt auf den Lumi-Stand aus Add-on-PR #61 (`0db95d1`) übertragen. Die aktuelle `app.py` bleibt Grundlage. Die Integration umfasst sechs Module, Einstellungen, Start-/Beenden-Anbindung und Docker COPY. Dieses Paket ist noch kein Deployment; die Versionsnummer bleibt bis zur getrennten Releasevorbereitung unverändert.
+Stand 18.10.2026: Die vorhandene Notion-Umsetzung ist gezielt auf den Lumi-Stand aus Add-on-PR #61 (`0db95d1`) übertragen. Die aktuelle `app.py` bleibt Grundlage. Die Integration umfasst sechs Module, Einstellungen, Start-/Beenden-Anbindung und Docker COPY. Die Installation wird als Codex Voice 0.1.14 vorbereitet. Music Alexa bleibt bei 0.1.9; die vorhandenen Lumi-Funktionen bleiben Grundlage.
 
 ## Verhalten und Erhalt bestehender Funktionen
 
@@ -16,7 +16,7 @@ Die authentifizierte ursprüngliche Anfragekennung wird an den Absender gebunden
 
 ## Einstellungen und Zugänge
 
-Alle neuen Funktionen bleiben standardmäßig ausgeschaltet. Bestehende Konfigurationen ohne diese Felder bleiben gültig.
+Alle neuen Funktionen bleiben standardmäßig ausgeschaltet. Bestehende Konfigurationen ohne diese Felder bleiben gültig. Der eigenständige Modus `lumi_knowledge_enabled` liest ausschließlich einen bereits separat befüllten lokalen Cache; er startet keinen Abruf. Ohne diesen vorbereiteten Cache liefert er keine Quellen. Die hier vorgesehene Servereinrichtung nutzt stattdessen `lumi_notion_workspace_enabled`, dessen Hintergrunddienst Katalog und Inhalte selbst abgleicht.
 
 | Einstellung | Standard / Bedeutung |
 |---|---|
@@ -26,9 +26,11 @@ Alle neuen Funktionen bleiben standardmäßig ausgeschaltet. Bestehende Konfigur
 | `lumi_notion_write_enabled` | `false`; erfordert zusätzlich Workspace-Modus und berechtigten Sprecher. |
 | `lumi_notion_owner_keys` | Leer; separate geprüfte Sprecherfreigaben für private Notion-Inhalte. |
 
-Der bestehende serverseitige Übergabevertrag verwendet `LUMI_NOTION_READ_TOKEN` und `LUMI_NOTION_WRITE_TOKEN`. Diese Namen sind keine Add-on-Optionsfelder. Zugänge werden weder in Git noch im Chat, in Modellkontexten oder Logs gespeichert. Die feste Unterprozessumgebung reicht sie nicht an Codex weiter. Die Python-Laufzeit hält sie während des Betriebs im Arbeitsspeicher; sichere Speicherlöschung wird nicht behauptet.
+Die Home-Assistant-Konfiguration enthält zwei zusätzliche Passwortfelder: `lumi_notion_read_token` und `lumi_notion_write_token`. Ein eigener Notion-Serverzugang wird vom Nutzer direkt in diese geschützten Felder eingegeben; der Desktop-Connector wird nicht als Credentialquelle verwendet. Ein eigener nur lesender Zugang für das erste Feld ist möglich. Bei einem einzigen Serverzugang mit Lesen, Einfügen und Ändern kann derselbe Zugang in beide Felder eingetragen werden. Seitenzugriff erhält die Notion-Verbindung ausdrücklich über ihre Inhaltsfreigabe. Benutzerinformationen und Kommentare sind nicht erforderlich.
 
-Ein sicherer Home-Assistant-Übergabeweg für diese beiden Zugänge ist noch gesondert einzurichten. Das Integrationspaket richtet keine Zugänge ein, liest keine echten Tokens und erweitert keine Sprecherfreigaben, Ports, Host-, Docker- oder GitHub-Rechte. Ohne aktivierte Funktionen beziehungsweise nötigen Zugang wird keine Notion-Verbindung aufgebaut.
+Beim Start schützt der Root-Prozess die Optionsdatei gegen Zugriff durch den Codex-Benutzer und liest die beiden Zugänge vor dem Wechsel zum unprivilegierten Benutzer ein. Nur der Notion-Adapter erhält sie ausdrücklich im Arbeitsspeicher. Die frühere Übergabe über `LUMI_NOTION_READ_TOKEN` und `LUMI_NOTION_WRITE_TOKEN` wird nicht mehr verwendet. Die feste Unterprozessumgebung enthält keine Notion-Zugänge. Weder Prompts noch API-Antworten oder Logs geben Tokens aus.
+
+Die Passwortfelder maskieren die Anzeige; sie ersetzen keine verschlüsselte Secret-Verwaltung. Home-Assistant-Administratoren und entsprechend berechtigte Sicherungen können die gespeicherten Optionen weiterhin erreichen. Sicherungen müssen daher geschützt bleiben. Die Python-Laufzeit hält Tokens während des Betriebs im Arbeitsspeicher; sichere Speicherlöschung oder Isolation gegen eine vollständige Kompromittierung des Dienstes wird nicht behauptet. Es entstehen keine zusätzlichen Mounts, Ports, Host-, Docker- oder GitHub-Rechte. Fehlende oder ungültige Notion-Zugänge deaktivieren Notion, ohne die übrigen Lumi-Funktionen abzuschalten; eine nicht sicher schützbare Optionsdatei verhindert aus Sicherheitsgründen den Start.
 
 ## Fehler und Grenzen
 
@@ -42,4 +44,4 @@ Netzwerk- oder Verarbeitungsfehler erhalten den letzten verfügbaren Textstand. 
 
 Die Übernahme und Regressionstests verwenden ausschließlich synthetische Identitäten, Daten und Netzwerkantworten. Sie prüfen getrennte Sprecherfreigaben, lokale Suche, fehlende Zugänge, Widerruf, unvollständige Ergebnisse, Wiederholung nach Neustart, unklare Schreibresultate, Unterprozessumgebung sowie Erhalt von Gesprächskontext, langen Antworten und einmaliger Aktionsausführung. Ein normales lesendes Claude-CLI-Review erfasst den vollständigen Änderungssatz.
 
-Vor einer Installation folgen Releaseversion und Paketprüfung. Anschließend sind eigene Notion-Integration/Seitenfreigaben und sichere serverseitige Zugangseinrichtung nötig. Lesen und Schreiben werden getrennt aktiviert und mit einem benannten Ziel geprüft. Ein Rückweg deaktiviert die neuen Funktionen und verwendet den gesicherten vorherigen Laufzeitstand, ohne bestehende Gesprächsdaten zu überschreiben. Echte Notion-, Server- und Echo-Abnahme bleiben bis dahin offen. [SmartHome-Issue #58](https://github.com/lizard4king/SmartHome/issues/58).
+Vor einer Installation folgen Paketprüfung, normale Claude-CLI-Prüfung und Sicherung des aktuellen Serverstandes. Anschließend sind eigene Notion-Verbindung, Seitenfreigaben und die einmalige Eingabe der Zugänge in Home Assistant nötig. Lesen und Schreiben werden getrennt aktiviert und mit einem benannten Ziel geprüft. Ein Rückweg deaktiviert die neuen Funktionen und verwendet den gesicherten vorherigen Laufzeitstand, ohne bestehende Gesprächsdaten zu überschreiben. Echte Notion-, Server- und Echo-Abnahme bleiben bis dahin offen. [SmartHome-Issue #58](https://github.com/lizard4king/SmartHome/issues/58).

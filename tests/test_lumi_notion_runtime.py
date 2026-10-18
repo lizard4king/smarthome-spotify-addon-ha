@@ -41,7 +41,8 @@ def test_owner_can_write_with_conversation_memory_disabled(runtime):
         COMMAND, memory={'person_key': OWNER, 'session_key': SESSION}, request_id='wire-id')
     assert 'gespeichert' in answer
     runtime._lumi_notion_commands.writer.create_note.assert_called_once_with(
-        PAGE, 'Filter wechseln', 'Filter wechseln', 'wire-id', explicit_instruction=True)
+        PAGE, 'Filter wechseln', 'Filter wechseln', 'wire-id', explicit_instruction=True,
+        title_already_in_text=True)
     runtime.query.assert_not_called()
 
 
@@ -237,7 +238,8 @@ def test_fresh_catalog_supplies_writer_allowlist_and_request_id(orchestrated):
     writer_factory.assert_called_once_with(
         instance.directory / 'notion-writes.sqlite3', 'synthetic-write', [PAGE])
     writer_factory.return_value.create_note.assert_called_once_with(
-        PAGE, 'Filter wechseln', 'Filter wechseln', 'wire-id', explicit_instruction=True)
+        PAGE, 'Filter wechseln', 'Filter wechseln', 'wire-id', explicit_instruction=True,
+        title_already_in_text=True)
 
 
 @pytest.mark.parametrize('elapsed', [900, 901, -1])

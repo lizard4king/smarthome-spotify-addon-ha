@@ -21,9 +21,11 @@ from urllib.parse import urlsplit
 try:
     from .voice_bridge import make_server as make_voice_server
     from .control_client import ControlClient, validate_plan
+    from .lumi_notion_credentials import load_credentials as load_notion_credentials
 except ImportError:
     from voice_bridge import make_server as make_voice_server
     from control_client import ControlClient, validate_plan
+    from lumi_notion_credentials import load_credentials as load_notion_credentials
 
 
 CODEX_BIN = "/usr/local/bin/codex"
@@ -1334,11 +1336,13 @@ class CodexRuntime:
     def query_lumi_request(self, question: str, *, memory: dict, request_id: str) -> str:
         return self.query_lumi(question, memory=memory, request_id=request_id)
 
-    @staticmethod
-    def handles_lumi_locally(question: str) -> bool:
+    def handles_lumi_locally(self, question: str) -> bool:
         """Explicit local commands do not require model login or planning."""
         if is_forget_request(question):
             return True
+        settings = getattr(self, "_lumi_settings", LumiSettings())
+        if not settings.notion_workspace_enabled:
+            return False
         try:
             from .lumi_notion_commands import NotionCommandService
         except ImportError:
@@ -1383,19 +1387,20 @@ class CodexRuntime:
                 return "Der Gesprächsspeicher ist gerade nicht erreichbar. Die Löschung ist nicht bestätigt."
             return ("Dein gespeicherter Gesprächsverlauf wurde gelöscht."
                     if scope == "person" else "Der Kontext dieser Sitzung wurde gelöscht.")
-        # Parse only the current utterance before a model or control planner sees it.
-        try:
-            from .lumi_notion_commands import NotionCommandService
-        except ImportError:
-            from lumi_notion_commands import NotionCommandService
-        commands = getattr(self, "_lumi_notion_commands", None)
         authorized = bool(memory["person_key"]) and memory["person_key"] in settings.notion_owner_keys
-        if commands is None or not settings.notion_workspace_enabled:
-            commands = NotionCommandService(None, {})
-        command_answer = commands.handle(question, request_id, authorized=(
-            authorized and settings.notion_workspace_enabled and settings.notion_write_enabled))
-        if command_answer is not None:
-            return command_answer
+        if settings.notion_workspace_enabled:
+            # Parse only the current utterance before a model or control planner sees it.
+            try:
+                from .lumi_notion_commands import NotionCommandService
+            except ImportError:
+                from lumi_notion_commands import NotionCommandService
+            commands = getattr(self, "_lumi_notion_commands", None)
+            if commands is None:
+                commands = NotionCommandService(None, {})
+            command_answer = commands.handle(question, request_id, authorized=(
+                authorized and settings.notion_write_enabled))
+            if command_answer is not None:
+                return command_answer
         with self._lumi_context_lock:
             generation = self._lumi_forget_generation
             try:
@@ -1679,6 +1684,8 @@ def prepare_lumi_directory() -> None:
 
 def main() -> None:
     global VOICE_MODEL_SETTINGS
+    # Protect HA password options before any configuration reader or UID drop.
+    notion_credentials = load_notion_credentials(OPTIONS_FILE)
     VOICE_MODEL_SETTINGS = load_voice_model_settings()
     prepare_private_directories()
     authorized_user_ids = load_authorized_user_ids()
@@ -1720,7 +1727,9 @@ def main() -> None:
                 max_pages=10000 if lumi_settings.notion_workspace_enabled else 100,
                 max_total_bytes=32 * 1024 * 1024 if lumi_settings.notion_workspace_enabled else 2 * 1024 * 1024)
             if lumi_settings.notion_workspace_enabled:
-                notion_runtime = prepare_runtime(LUMI_DATA_DIR, lumi_settings, runtime._lumi_knowledge)
+                notion_runtime = prepare_runtime(LUMI_DATA_DIR, lumi_settings, runtime._lumi_knowledge,
+                    read_token=notion_credentials.read_token,
+                    write_token=notion_credentials.write_token)
                 runtime._lumi_notion_commands = notion_runtime
                 notion_runtime.start()
             else:

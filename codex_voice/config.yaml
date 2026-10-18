@@ -40,7 +40,9 @@
     "lumi_notion_write_enabled": "bool",
     "lumi_notion_owner_keys": [
       "str"
-    ]
+    ],
+    "lumi_notion_read_token": "password",
+    "lumi_notion_write_token": "password"
   },
   "tmpfs": true,
   "apparmor": true,
@@ -50,7 +52,7 @@
   "full_access": false,
   "privileged": [],
   "slug": "codex_voice",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "options": {
     "authorized_user_ids": [],
     "voice_bridge_secret": "",
@@ -64,6 +66,8 @@
     "lumi_notion_page_ids": [],
     "lumi_notion_workspace_enabled": false,
     "lumi_notion_write_enabled": false,
-    "lumi_notion_owner_keys": []
+    "lumi_notion_owner_keys": [],
+    "lumi_notion_read_token": "",
+    "lumi_notion_write_token": ""
   }
 }

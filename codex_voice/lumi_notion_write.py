@@ -58,12 +58,16 @@ class NotionWriter:
                                'result TEXT NOT NULL)')
             connection.commit()
 
-    def create_note(self, page_id, title, text, request_id, *, explicit_instruction=False):
-        """Append one note paragraph; title and body remain plain text."""
+    def create_note(self, page_id, title, text, request_id, *, explicit_instruction=False,
+                    title_already_in_text=False):
+        """Append plain text; omit a separate title only when it is derived from text."""
         if not isinstance(title, str) or not title.strip() or len(title) > 200:
             raise ValueError('title must contain 1 to 200 characters')
-        return self._write('create', page_id, None, title + '\n' + text
-                           if isinstance(text, str) else text, request_id,
+        if not isinstance(title_already_in_text, bool):
+            raise ValueError('title_already_in_text must be a boolean')
+        content = (title + '\n' + text
+                   if not title_already_in_text and isinstance(text, str) else text)
+        return self._write('create', page_id, None, content, request_id,
                            explicit_instruction)
 
     def update_note(self, page_id, block_id, text, request_id, *, explicit_instruction=False):

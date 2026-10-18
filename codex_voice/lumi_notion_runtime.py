@@ -1,7 +1,6 @@
 """Server-owned periodic catalog/cache refresh and explicit write boundary."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import threading
 import time
@@ -92,9 +91,9 @@ class NotionRuntime:
         self._stop.set()
 
 
-def prepare_runtime(directory, settings, store):
-    """Environment is read only by server code, never inherited by Codex CLI."""
+def prepare_runtime(directory, settings, store, *, read_token='', write_token=''):
+    """Accept only explicitly loaded server credentials; never read environments."""
     return NotionRuntime(directory, store,
-                         read_token=os.environ.get("LUMI_NOTION_READ_TOKEN", ""),
-                         write_token=os.environ.get("LUMI_NOTION_WRITE_TOKEN", ""),
+                         read_token=read_token,
+                         write_token=write_token,
                          write_enabled=settings.notion_write_enabled)
