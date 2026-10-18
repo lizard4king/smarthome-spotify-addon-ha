@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.66` carries verified PayPal date provenance into the actual dashboard
+booking snapshot. The chronological list and booking details therefore retain
+the explicit transaction-date label in both presentation styles. Stored
+transactions and the conservative balance boundaries remain unchanged.
+
 Version `0.2.65` preserves an explicitly labelled PayPal transaction date when
 the provider supplies no booking date. It never substitutes malformed dates or
 infers dated ledger balances, reconciliation or forecast balances from that

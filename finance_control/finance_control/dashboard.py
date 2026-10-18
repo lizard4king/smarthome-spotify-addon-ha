@@ -20,6 +20,17 @@ class DashboardConfigurationError(ValueError):
     """The reporting configuration is invalid for the dashboard."""
 
 
+def _bounded_transaction_date_bases(store, selected_keys):
+    """Collect proven date bases without exceeding SQLite's pair-parameter limit."""
+    keys = sorted(set(selected_keys))
+    result = {}
+    batch_size = 400
+    for offset in range(0, len(keys), batch_size):
+        result.update(_transaction_date_bases(
+            store, set(keys[offset:offset + batch_size])))
+    return result
+
+
 def build(store, as_of, accounts=None, *, reporting_history=None,
           current_balances=None, reconciliations=None):
     """Return account movements through ``as_of`` without household netting.
@@ -72,10 +83,9 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
             row["account_id"]: row["last_booking_date"] for row in latest_rows}
         latest_paypal_keys = sorted({(row["account_id"], row["external_id"])
                                     for row in latest_rows if row["external_id"] is not None})
-        for offset in range(0, len(latest_paypal_keys), 400):
-            last_transaction_date_accounts.update(
-                account_id for account_id, _ in _transaction_date_bases(
-                    store, set(latest_paypal_keys[offset:offset + 400])))
+        last_transaction_date_accounts.update(
+            account_id for account_id, _ in _bounded_transaction_date_bases(
+                store, latest_paypal_keys))
     for row in account_rows:
         row["current_balance"] = current_balances.get(row["id"])
         row["last_booking_date"] = last_booking_by_account.get(row["id"])
@@ -89,6 +99,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                                        row["display_name"].casefold(), row["id"]))
     selected = {row["id"] for row in account_rows}
     bookings = []
+    paypal_candidates = []
     if selected:
         # Load the taxonomy once so each booking can expose its authoritative
         # root-to-leaf path without parsing category labels.
@@ -128,7 +139,7 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
         query = (
             "SELECT t.account_id,t.external_id,t.date,t.amount,t.currency,"
             "t.category,c.counterparty,c.description,o.category_id,o.confirmed,"
-            "o.account_id AS override_present,"
+            "o.account_id AS override_present,p.external_id AS paypal_registry_external_id,"
             "cat.label AS override_label,cat.transaction_type,a.kind AS account_kind,"
             f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
             "FROM active_transactions t "
@@ -136,6 +147,8 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
             "LEFT JOIN transaction_context c USING(account_id,external_id) "
             "LEFT JOIN classification_overrides o USING(account_id,external_id) "
             "LEFT JOIN category_catalog cat ON cat.id=o.category_id "
+            "LEFT JOIN paypal_source_transactions p ON p.account_id=t.account_id "
+            "AND p.external_id=t.external_id "
             f"WHERE t.date BETWEEN ? AND ? AND t.account_id IN ({placeholders}) "
             "ORDER BY t.date DESC,t.account_id,t.external_id")
         params = (month + "-01", day.isoformat(), *account_ids)
@@ -185,6 +198,17 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                             "category_path": category_path(cash_id, cash_label)}]
                     )
             bookings.append(booking)
+            if row["paypal_registry_external_id"] is not None:
+                paypal_candidates.append(booking)
+    # The timeline uses its own booking payload, independently of classification.
+    # Preserve only registry provenance that still matches the active ledger.
+    date_bases = _bounded_transaction_date_bases(
+        store, {(booking["account_id"], booking["external_id"])
+                for booking in paypal_candidates})
+    for booking in paypal_candidates:
+        basis = date_bases.get((booking["account_id"], booking["external_id"]))
+        if basis is not None:
+            booking["date_basis"] = basis
     from .booking_contracts import attach_context
     attach_context(store, bookings, day.isoformat())
     attach_day_balances(store, bookings, account_rows, current_balances)
