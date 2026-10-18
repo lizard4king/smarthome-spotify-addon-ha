@@ -269,11 +269,10 @@
   const currentBalanceText = account => {
     const balance = account?.current_balance;
     if (!balance || typeof balance !== 'object' || balance.amount === null || balance.amount === undefined) {
-      return {amount:'Kontostand nicht verfügbar', stand:'Kein belegter Stand'};
+      return {amount:'—', stand:''};
     }
-    const retrieved = balance.retrieved_at ? ` · abgerufen ${date(balance.retrieved_at)}` : '';
     return {amount:money(balance.amount, balance.currency || account.currency),
-      stand:`Stand: ${date(balance.booked_on) || 'unbekannt'}${retrieved}`};
+      stand:date(balance.booked_on) ? `Stand ${date(balance.booked_on)}` : ''};
   };
   const accountName = account => account.display_name || account.id || 'Konto';
   const kindName = kind => ({CHECKING:'Girokonto',CURRENT:'Girokonto',SAVINGS:'Sparkonto',CASH:'Bargeld',CREDIT_CARD:'Kreditkarte',DEPOT:'Depot',INVESTMENT:'Depot'}[String(kind || '').toUpperCase()] || kind || 'Konto');
@@ -335,23 +334,29 @@
     const name = add(summary, 'span', 'fd-account-name');
     name.append(window.financeAccountIcon(account));
     name.append(document.createTextNode(accountName(account)));
-    add(summary, 'small', 'fd-account-kind', `${account.owner_label || account.owner || 'Ohne Zuordnung'} · ${kindName(account.kind)} · ${count} erfasste Buchung${count === 1 ? '' : 'en'}`);
+    const accountKindSummary = `${account.owner_label || account.owner || 'Ohne Zuordnung'} · ${kindName(account.kind)} · ${count} erfasste Buchung${count === 1 ? '' : 'en'}`;
     const latestIsTransactionDate = account.last_booking_date_basis === 'transaction_date';
     const latestDate = account.last_booking_date ? date(account.last_booking_date) : 'unbekannt';
     const latestTransactionText = `Letzter Umsatz: ${latestDate} · PayPal-Transaktionsdatum`;
-    add(summary, 'small', 'fd-account-last-booking', latestIsTransactionDate ? latestTransactionText : `Letzte Buchung: ${latestDate}`);
+    const latestBookingSummary = latestIsTransactionDate ? latestTransactionText : `Letzte Buchung: ${latestDate}`;
     const balance = currentBalanceText(account);
     const balanceBox = add(summary, 'span', 'fd-account-balance');
-    add(balanceBox, 'strong', `fd-account-amount ${tone(account.current_balance?.amount)}`, balance.amount);
-    add(balanceBox, 'small', 'fd-account-balance-date', balance.stand);
-    if (window.financeReconciliation) window.financeReconciliation(summary, account.reconciliation);
+    const amount = add(balanceBox, 'strong', `fd-account-amount ${tone(account.current_balance?.amount)}`, balance.amount);
+    if (!account.current_balance || account.current_balance.amount === null || account.current_balance.amount === undefined)
+      amount.setAttribute('aria-label', `Kontostand fehlt für ${accountName(account)}`);
+    if (balance.stand) add(balanceBox, 'small', 'fd-account-balance-date', balance.stand);
     const body = add(card, 'div', 'fd-account-body');
-    add(body, 'p', 'fd-account-freshness', latestIsTransactionDate ? latestTransactionText : `Letzte erfasste Buchung: ${latestDate}`);
     body.append(metrics(account));
-    if (account.note) add(body, 'p', 'fd-account-note', account.note);
+    const evidence = add(body, 'details', 'fd-account-evidence');
+    add(evidence, 'summary', '', 'Daten & Abgleich');
+    add(evidence, 'p', 'fd-account-kind', accountKindSummary);
+    add(evidence, 'p', 'fd-account-freshness fd-account-last-booking', latestBookingSummary);
+    if (account.note) add(evidence, 'p', 'fd-account-note', account.note);
+    if (window.financeReconciliation) window.financeReconciliation(evidence, account.reconciliation);
     if (!account.current_balance || account.current_balance.amount === null || account.current_balance.amount === undefined) {
-      const nextAction = add(body, 'a', 'fc-text-link', 'Konto prüfen');
-      nextAction.href = '#wealth';
+      const nextAction = add(body, 'button', 'fd-account-balance-action', 'Bankabruf öffnen');
+      nextAction.type = 'button';
+      nextAction.addEventListener('click', () => window.financeBankRefresh?.openDetails?.());
     }
     if (area === 'category-outflows') summary.addEventListener('click', () => pick(id));
     card.addEventListener('toggle', () => { if (card.open) expandedAccounts.add(id); else expandedAccounts.delete(id); });
@@ -909,6 +914,30 @@
     }
     if (!transactionDate) add(body, 'p', 'fd-booking-balance-note', movement ? 'Berechnet je Buchung. Die Reihenfolge innerhalb eines Tages ist anhand der external_id angenommen, nicht von der Bank bestätigt. Die Berechnung setzt vollständige importierte Buchungen voraus und bleibt unabhängig von Buchungsfiltern.' : 'Tagesstand; keine belegte Reihenfolge innerhalb eines Tages. Die Berechnung setzt vollständige importierte Buchungen voraus.');
     window.financeBookingContracts?.mount(body,item);
+    const transferActionMode = !item.is_transfer ? 'confirm'
+      : item.single_leg_transfer ? 'revoke' : null;
+    if (item.external_id != null && transferActionMode) {
+      const transferAction = add(body, 'div', 'fd-booking-transfer-action');
+      const transferButton = add(transferAction, 'button', `fd-booking-transfer-${transferActionMode}`,
+        transferActionMode === 'revoke' ? 'Umbuchung aufheben' : 'Umbuchung bestätigen');
+      transferButton.type = 'button';
+      transferButton.addEventListener('click', () => {
+        if (typeof window.BookingTransfers?.open !== 'function') {
+          let error = transferAction.querySelector('[role="alert"]');
+          if (!error) {
+            error = add(transferAction, 'p', 'fd-booking-transfer-error', 'Die Umbuchungsbestätigung ist derzeit nicht verfügbar.');
+            error.setAttribute('role', 'alert');
+            error.setAttribute('aria-live', 'polite');
+          }
+          return;
+        }
+        const host = document.createElement('div');
+        host.className = 'fd-booking-transfer-host';
+        transferAction.append(host);
+        window.BookingTransfers.open(host, item.account_id, item.external_id,
+          transferActionMode === 'revoke' ? 'revoke' : undefined);
+      });
+    }
     if (!knownBalance) add(body, 'p', 'fd-booking-balance-note', transactionDate ? 'PayPal-Transaktionsdatum: kein Nachweis eines Tagesendstands.' : 'Der Tagesstand ist ohne eindeutige Saldenbasis oder bei bekannten Datenlücken nicht verfügbar.');
     const originalAmount = add(body, 'div', 'fd-booking-original-amount');
     add(originalAmount, 'span', '', 'Originalbetrag');
@@ -1149,6 +1178,9 @@
     else if (typeof cockpitNavigate === 'function') cockpitNavigate('dashboard');
     if (snapshot) {area = 'dashboard'; paint();}
   };
+  document.addEventListener('finance-booking-transfer-changed', () => {
+    if (typeof window.financeRefreshAfterImport === 'function') void window.financeRefreshAfterImport();
+  });
   // app.js reloads the active area after refresh(). Hidden dashboards are
   // loaded on navigation, avoiding duplicate and invisible DOM rebuilds.
 })();

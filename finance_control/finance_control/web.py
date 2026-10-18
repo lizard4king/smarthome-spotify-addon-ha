@@ -353,6 +353,8 @@ class Cockpit:
             if route.startswith('/api/transfer-correction-'):
                 from . import transfer_corrections
                 actions = {'suggestions': transfer_corrections.suggestions, 'save': transfer_corrections.save,
+                           'single-leg-preview': transfer_corrections.preview_single_leg,
+                           'single-leg-revoke': transfer_corrections.revoke_single_leg,
                            'single-leg-save': transfer_corrections.save_single_leg,
                            'get': transfer_corrections.get, 'revoke': transfer_corrections.revoke}
                 action = route.removeprefix('/api/transfer-correction-')
@@ -413,8 +415,8 @@ class Cockpit:
                 return actions[action](store, data)
             if route.startswith('/api/booking-contract-'):
                 from . import booking_contracts
-                actions = {'view': booking_contracts.view, 'save': booking_contracts.save,
-                           'reject': booking_contracts.reject}
+                actions = {'view': booking_contracts.view, 'preview': booking_contracts.preview,
+                           'save': booking_contracts.save, 'reject': booking_contracts.reject}
                 action = route.removeprefix('/api/booking-contract-')
                 if action not in actions:
                     raise ValueError('unknown_booking_contract_action')
@@ -1400,6 +1402,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/booking_editor.js': ('booking_editor.js', 'text/javascript; charset=utf-8'),
                       '/booking_editor.css': ('booking_editor.css', 'text/css; charset=utf-8'),
                       '/booking-contracts.js': ('booking-contracts.js', 'text/javascript; charset=utf-8'),
+                      '/booking-transfers.js': ('booking-transfers.js', 'text/javascript; charset=utf-8'),
+                      '/booking-transfers.css': ('booking-transfers.css', 'text/css; charset=utf-8'),
                       '/booking-contracts.css': ('booking-contracts.css', 'text/css; charset=utf-8'),
                       '/classification_mobile.css': ('classification_mobile.css', 'text/css; charset=utf-8'),
                       '/bonsy.js': ('bonsy.js', 'text/javascript; charset=utf-8'),
@@ -1517,10 +1521,19 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 if (urlsplit(self.path).path == '/api/fg-commit' and
                         isinstance(error, ValueError) and str(error) == 'review_stale_or_blocked'):
                     return self.reply(409, {'error': 'review_stale_or_blocked'})
+                if urlsplit(self.path).path.startswith('/api/transfer-correction-single-leg-'):
+                    code = str(error) if isinstance(error, ValueError) else 'invalid_single_leg_transfer'
+                    statuses = {'stale_single_leg_preview': 409, 'effective_transfer_already_set': 409,
+                                'single_leg_not_set': 409, 'single_leg_overlapping_transfer': 409,
+                                'single_leg_requires_idle_transaction': 409, 'unknown_transaction': 404,
+                                'invalid_single_leg_transfer': 400}
+                    if code not in statuses:
+                        code = 'invalid_single_leg_transfer'
+                    return self.reply(statuses[code], {'error': code})
                 if urlsplit(self.path).path.startswith('/api/booking-contract-'):
                     if isinstance(error, ValueError) and str(error) in {
                             'stale_booking_contract_revision', 'stale_recurring_revision',
-                            'stale_document_revision', 'duplicate_recurring_schedule'}:
+                            'stale_document_revision', 'stale_amount_estimate', 'duplicate_recurring_schedule'}:
                         return self.reply(409, {'error': str(error)})
                     return self.reply(400, {'error': str(error)})
                 if urlsplit(self.path).path.startswith('/api/recurring-'):

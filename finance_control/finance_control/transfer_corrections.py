@@ -1,5 +1,7 @@
 """Additive, confirmed corrections for imported internal transfers."""
+import hashlib
 import json
+import secrets
 from datetime import UTC, date, datetime
 
 from .core import money
@@ -78,30 +80,81 @@ def effective_transfer_id(store, transaction):
     return None if row is None else f"correction:{row['pair_id']}"
 
 
+def _single_leg_key(data):
+    if (not isinstance(data, dict)
+            or not isinstance(data.get('account_id'), str)
+            or not isinstance(data.get('external_id'), str)
+            or not 0 < len(data['account_id'].strip()) <= 120
+            or not 0 < len(data['external_id'].strip()) <= 240):
+        raise ValueError('invalid_single_leg_transfer')
+    return data['account_id'].strip(), data['external_id'].strip()
+
+
+def preview_single_leg(store, data):
+    """Read current source evidence; a fingerprint binds the later confirmation."""
+    fields = {'account_id', 'external_id'}
+    if (not isinstance(data, dict) or set(data) not in (fields, fields | {'mode'})
+            or ('mode' in data and data['mode'] != 'revoke')):
+        raise ValueError('invalid_single_leg_transfer')
+    revoke = data.get('mode') == 'revoke'
+    key = _single_leg_key(data)
+    row = store.db.execute(
+        "SELECT t.*,coalesce(c.counterparty,'') counterparty,coalesce(c.description,'') description "
+        'FROM active_transaction_versions t LEFT JOIN transaction_context c USING(account_id,external_id) '
+        'WHERE t.account_id=? AND t.external_id=?', key).fetchone()
+    if row is None:
+        raise ValueError('unknown_transaction')
+    account = store.db.execute('SELECT id,display_name,currency FROM accounts WHERE id=?', (key[0],)).fetchone()
+    corrections = [dict(item) for item in store.db.execute(
+        'SELECT m.*,p.revision AS pair_revision,p.revoked_at FROM transfer_correction_members m '
+        'JOIN transfer_correction_pairs p ON p.id=m.pair_id WHERE m.account_id=? AND m.external_id=? '
+        'ORDER BY m.pair_id', key)]
+    single = store.db.execute('SELECT * FROM transfer_single_legs WHERE account_id=? AND external_id=?', key).fetchone()
+    if revoke:
+        if single is None:
+            raise ValueError('single_leg_not_set')
+        if row['transfer_id'] or source_declares_transfer(row) or any(item['revoked_at'] is None for item in corrections):
+            raise ValueError('single_leg_overlapping_transfer')
+    elif effective_transfer_id(store, row):
+        raise ValueError('effective_transfer_already_set')
+    generation = store.db.execute('SELECT max(id) FROM transfer_single_leg_audit WHERE account_id=? AND external_id=?', key).fetchone()[0]
+    basis = {'transaction': dict(row), 'account': dict(account), 'corrections': corrections,
+             'single_leg': dict(single) if single else None, 'audit_generation': generation,
+             'mode': 'revoke' if revoke else 'confirm'}
+    fingerprint = hashlib.sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()
+    transaction = {field: row[field] for field in ('account_id', 'external_id', 'date', 'amount', 'currency',
+                                                   'counterparty', 'description')}
+    transaction['account_label'] = account['display_name'] or account['id']
+    result = {'transaction': transaction, 'fingerprint': fingerprint}
+    if revoke:
+        result['single_leg'] = dict(single)
+    return result
+
+
 def save_single_leg(store, data):
     """Mark a proven one-sided ledger movement as a transfer without inventing a partner."""
-    if (not isinstance(data, dict) or set(data) != {'account_id', 'external_id', 'reason', 'confirmed'}
+    fields = {'account_id', 'external_id', 'reason', 'confirmed'}
+    if (not isinstance(data, dict) or set(data) not in (fields, fields | {'fingerprint'})
             or data['confirmed'] is not True or not isinstance(data['reason'], str)
             or not data['reason'].strip() or len(data['reason'].strip()) > 120):
         raise ValueError('invalid_single_leg_transfer')
-    if (not isinstance(data['account_id'], str) or not isinstance(data['external_id'], str)
-            or len(data['account_id'].strip()) > 120
-            or len(data['external_id'].strip()) > 240):
+    key = _single_leg_key(data)
+    if 'fingerprint' in data and (not isinstance(data['fingerprint'], str)
+            or len(data['fingerprint']) != 64
+            or any(char not in '0123456789abcdef' for char in data['fingerprint'])):
         raise ValueError('invalid_single_leg_transfer')
-    key = (data['account_id'].strip(), data['external_id'].strip())
-    if not all(key):
-        raise ValueError('invalid_single_leg_transfer')
-    transaction = store.db.execute(
-        'SELECT * FROM active_transactions WHERE account_id=? AND external_id=?', key).fetchone()
-    if transaction is None:
-        raise ValueError('unknown_transaction')
-    if effective_transfer_id(store, transaction):
-        raise ValueError('effective_transfer_already_set')
     created_at = datetime.now(UTC).isoformat()
     current = {'account_id': key[0], 'external_id': key[1],
                'reason': data['reason'].strip(), 'revision': 1,
                'effective_transfer_id': f'single:{key[0]}:{key[1]}'}
-    with store.db:
+    if store.db.in_transaction:
+        raise ValueError('single_leg_requires_idle_transaction')
+    store.db.execute('BEGIN IMMEDIATE')
+    try:
+        # Hold the SQLite writer lock across revalidation and the additive write.
+        plan = preview_single_leg(store, dict(zip(('account_id', 'external_id'), key)))
+        if 'fingerprint' in data and not secrets.compare_digest(data['fingerprint'], plan['fingerprint']):
+            raise ValueError('stale_single_leg_preview')
         store.db.execute(
             'INSERT INTO transfer_single_legs(account_id,external_id,reason,created_at,revision) '
             'VALUES (?,?,?,?,1)', (*key, current['reason'], created_at))
@@ -110,6 +163,41 @@ def save_single_leg(store, data):
             'VALUES (?,?,?,?,?,?)',
             (created_at, 'single_leg_transfer_confirmed', *key,
              json.dumps(current, sort_keys=True), actor_for(store)))
+        store.db.commit()
+    except BaseException:
+        store.db.rollback()
+        raise
+    return {'transfer': current}
+
+
+def revoke_single_leg(store, data):
+    """Remove only an explicit single-leg current state, retaining source and audit."""
+    if (not isinstance(data, dict)
+            or set(data) != {'account_id', 'external_id', 'reason', 'confirmed', 'fingerprint'}
+            or data['confirmed'] is not True or not isinstance(data['reason'], str)
+            or not 0 < len(data['reason'].strip()) <= 120
+            or not isinstance(data['fingerprint'], str) or len(data['fingerprint']) != 64
+            or any(char not in '0123456789abcdef' for char in data['fingerprint'])):
+        raise ValueError('invalid_single_leg_transfer')
+    key = _single_leg_key(data)
+    if store.db.in_transaction:
+        raise ValueError('single_leg_requires_idle_transaction')
+    store.db.execute('BEGIN IMMEDIATE')
+    try:
+        plan = preview_single_leg(store, {**dict(zip(('account_id', 'external_id'), key)), 'mode': 'revoke'})
+        if not secrets.compare_digest(data['fingerprint'], plan['fingerprint']):
+            raise ValueError('stale_single_leg_preview')
+        current = {'account_id': key[0], 'external_id': key[1], 'reason': data['reason'].strip(),
+                   'previous': plan['single_leg'], 'effective_transfer_id': None}
+        store.db.execute('DELETE FROM transfer_single_legs WHERE account_id=? AND external_id=?', key)
+        store.db.execute('INSERT INTO transfer_single_leg_audit('
+            'occurred_at,action,account_id,external_id,current,actor) VALUES (?,?,?,?,?,?)',
+            (datetime.now(UTC).isoformat(), 'single_leg_transfer_revoked', *key,
+             json.dumps(current, sort_keys=True), actor_for(store)))
+        store.db.commit()
+    except BaseException:
+        store.db.rollback()
+        raise
     return {'transfer': current}
 
 

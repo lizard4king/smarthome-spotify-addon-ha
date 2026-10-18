@@ -1,0 +1,9 @@
+.bt-dialog { box-sizing: border-box; width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow-y: auto; padding: 1.5rem; border: 1px solid #b7c4cf; border-radius: .75rem; }
+.bt-dialog::backdrop { background: rgb(0 0 0 / .35); }
+.bt-dialog h2 { margin-top: 0; }
+.bt-dialog p, .bt-dialog label { overflow-wrap: anywhere; }
+.bt-dialog label { display: block; margin-block: 1rem; line-height: 1.5; }
+.bt-dialog textarea { display: block; box-sizing: border-box; width: 100%; min-height: 5rem; margin-top: .5rem; }
+.bt-dialog input[type="checkbox"] { display: inline-block; width: auto; min-height: auto; margin-right: .5rem; }
+.bt-dialog button { min-height: 2.75rem; margin: .25rem .5rem .25rem 0; }
+.bt-original { padding: 1rem; background: #edf3f7; color: #172b3a; border-radius: .5rem; }

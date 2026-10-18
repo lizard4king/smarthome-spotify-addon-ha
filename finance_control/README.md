@@ -1,5 +1,12 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.67` derives estimated recurring amounts from explicitly selected
+bookings, preserving the method, source revisions and the distinction between
+confirmed estimates and documented contract phases. Compact account views keep
+secondary explanations behind details and open bank-review actions directly.
+Single-leg household transfers can be explicitly confirmed and revoked with
+unchanged source bookings and an immutable audit. No payments are initiated.
+
 Version `0.2.66` carries verified PayPal date provenance into the actual dashboard
 booking snapshot. The chronological list and booking details therefore retain
 the explicit transaction-date label in both presentation styles. Stored

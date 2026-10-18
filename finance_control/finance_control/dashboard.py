@@ -13,7 +13,7 @@ from .core import money
 from .current_balances import latest_by_account, summarize
 from .person_attribution import person_label
 from .reporting_history import scope_for_month
-from .transfer_corrections import sql_transfer_predicate
+from .transfer_corrections import source_declares_transfer, sql_transfer_predicate
 
 
 class DashboardConfigurationError(ValueError):
@@ -138,10 +138,12 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
         category_resolver = CategoryResolver(store)
         query = (
             "SELECT t.account_id,t.external_id,t.date,t.amount,t.currency,"
-            "t.category,c.counterparty,c.description,o.category_id,o.confirmed,"
+            "t.category,t.transfer_id AS source_transfer_id,c.counterparty,c.description,o.category_id,o.confirmed,"
             "o.account_id AS override_present,p.external_id AS paypal_registry_external_id,"
             "cat.label AS override_label,cat.transaction_type,a.kind AS account_kind,"
-            f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer "
+            f"CASE WHEN {transfer_predicate} THEN 1 ELSE 0 END AS is_transfer,"
+            "EXISTS (SELECT 1 FROM transfer_single_legs sl WHERE sl.account_id=t.account_id "
+            "AND sl.external_id=t.external_id) AS has_single_leg "
             "FROM active_transactions t "
             "JOIN accounts a ON a.id=t.account_id "
             "LEFT JOIN transaction_context c USING(account_id,external_id) "
@@ -162,7 +164,10 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                 "currency": row["currency"], "counterparty": row["counterparty"] or "",
                 "description": row["description"] or "",
                 **resolved,
+                "is_transfer": bool(row["is_transfer"]),
                 "source_category": row["category"] or "",
+                "single_leg_transfer": bool(row["has_single_leg"]) and not row["source_transfer_id"]
+                    and not source_declares_transfer(row),
                 "category_path": category_path(category_id, category_label),
             }
             if (row["currency"] == "EUR" and row["account_kind"] == "CHECKING"
