@@ -40,3 +40,12 @@
 /* Keep compact module controls usable without shrinking the existing layout. */
 .pb-root :is(button,summary,a.button){min-width:44px;min-height:44px;}
 @media(max-width:650px){.pb-root :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}
+
+.pb-import { min-width:0; }
+.pb-import > summary, .pb-read-details > summary { cursor:pointer; padding:12px 0; font-weight:650; color:var(--fc-text); }
+.pb-import .pb-results > .pb-row > label { display:grid; gap:6px; min-width:0; }
+.pb-import .pb-row select { box-sizing:border-box; max-width:100%; min-width:0; width:100%; min-height:44px; font:inherit; }
+.pb-import .pb-form > button { grid-column:1 / -1; }
+
+.pb-read-details { min-width:0; }
+.pb-read-details > .pb-results { margin-top:12px; }

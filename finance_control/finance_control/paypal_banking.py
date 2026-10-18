@@ -1,4 +1,4 @@
-"""Personal PayPal AIS consent and bounded previews; never writes the ledger.
+"""Personal PayPal AIS consent, bounded previews and reviewed ledger imports.
 
 Enable Banking application keys and consent metadata live in the encrypted HA
 vault. A verified active cockpit identity and a single-use state are both
@@ -6,6 +6,7 @@ required on return. Provider registration/own-account linking is done by its
 owner, outside this application.
 """
 
+from copy import deepcopy
 import hashlib
 import json
 import re
@@ -16,6 +17,10 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 from weakref import WeakValueDictionary
+from zoneinfo import ZoneInfo
+
+from .core import Store
+from .paypal_import import commit_import, normalize_transactions, preview_import
 
 from .administration import AdministrationError
 from .connectors.enable_banking import EnableBankingClient, EnableBankingError, canonical_uuid
@@ -30,8 +35,13 @@ _FIELDS = {
     'paypal-disconnect': {'confirmed'},
     'paypal-read': {'account_uid', 'date_from', 'date_to'},
     'paypal-balances': set(),
+    'paypal-import-targets': set(),
+    'paypal-import-preview': {'account_uid', 'date_from', 'date_to', 'account_id', 'matches'},
+    'paypal-import-commit': {'review_token', 'confirmed'},
 }
 _STATE_TTL = 900
+_IMPORT_TTL = 600
+_MAX_IMPORT_REVIEWS = 32
 
 
 def _fail(code, status=400):
@@ -119,6 +129,37 @@ class PayPalBanking:
         self.clock = clock or time.time
         self._locks = WeakValueDictionary()
         self._locks_guard = threading.Lock()
+        self._import_reviews = {}
+        self._reviews_guard = threading.Lock()
+
+    def _drop_import_review(self, owner):
+        with self._reviews_guard:
+            self._import_reviews.pop(owner, None)
+
+    def _remember_import_review(self, owner, review):
+        prepared = deepcopy(review)
+        now = self.clock()
+        with self._reviews_guard:
+            self._import_reviews = {key: value for key, value in self._import_reviews.items()
+                                    if value['expires_at'] > now and key != owner}
+            # Bound sensitive RAM even if many owners leave a review unattended.
+            if len(self._import_reviews) >= _MAX_IMPORT_REVIEWS:
+                oldest = min(self._import_reviews, key=lambda key: self._import_reviews[key]['expires_at'])
+                self._import_reviews.pop(oldest)
+            self._import_reviews[owner] = prepared
+
+    def _take_import_review(self, owner, token):
+        if type(token) is not str or re.fullmatch(r'[A-Za-z0-9_-]{43}', token) is None:
+            _fail('paypal_import_stale', 409)
+        with self._reviews_guard:
+            review = self._import_reviews.get(owner)
+            if review and review['expires_at'] <= self.clock():
+                self._import_reviews.pop(owner)
+                review = None
+            if not review or not secrets.compare_digest(review['token'], token):
+                _fail('paypal_import_stale', 409)
+            # Consume before provider I/O; transport failures also need a new review.
+            return self._import_reviews.pop(owner)
 
     def _owner_lock(self, owner):
         # Strong references held by callers keep an owner's lock alive while
@@ -209,6 +250,7 @@ class PayPalBanking:
                 elif action == 'paypal-authorize':
                     return self._authorize(actor, owner, store, record, data['country'])
                 elif action == 'paypal-disconnect':
+                    self._drop_import_review(owner)
                     if record and record.get('session'):
                         self._client(record).close_session(record['session']['session_id'])
                     self._delete(actor, store, owner)
@@ -217,6 +259,12 @@ class PayPalBanking:
                     return self._read(actor, record, data)
                 elif action == 'paypal-balances':
                     return self._balances(actor, record)
+                elif action == 'paypal-import-targets':
+                    return self._import_targets(actor, owner)
+                elif action == 'paypal-import-preview':
+                    return self._import_preview(actor, owner, record, data)
+                elif action == 'paypal-import-commit':
+                    return self._import_commit(actor, owner, record, data)
                 self._owner(actor)
                 return self._public(record, origin)
         except AdministrationError:
@@ -333,7 +381,7 @@ class PayPalBanking:
         return {'session_id': session_id, 'expires_at': expiry, 'provider': provider,
                 'accounts': minimized}
 
-    def _read(self, actor, record, data):
+    def _read(self, actor, record, data, *, import_identity=False):
         session = record.get('session') if record else None
         if not session or _expiry(session['expires_at']) <= self.clock():
             _fail('paypal_access_expired', 409)
@@ -341,7 +389,7 @@ class PayPalBanking:
         if uid not in {a['uid'] for a in session['accounts']}:
             _fail('forbidden', 403)
         start, end = _day(data['date_from']), _day(data['date_to'])
-        today = datetime.fromtimestamp(self.clock(), timezone.utc).date()
+        today = datetime.fromtimestamp(self.clock(), ZoneInfo('Europe/Berlin')).date()
         if not start <= end <= today or (end - start).days >= 90:
             _fail('invalid_period')
         client = self._client(record)
@@ -355,6 +403,23 @@ class PayPalBanking:
                 or set(current['accounts']) != {a['uid'] for a in session['accounts']}
                 or _expiry(current_expiry) <= self.clock()):
             _fail('paypal_access_expired', 409)
+        source_key = None
+        if import_identity:
+            account = next(a for a in session['accounts'] if a['uid'] == uid)
+            if account['currency'] not in ('EUR', 'XXX'):
+                _fail('paypal_import_invalid')
+            identities = current.get('accounts_data')
+            if type(identities) is not list or not all(type(a) is dict for a in identities):
+                _fail('paypal_import_identity', 409)
+            selected = [a for a in identities if a.get('uid') == uid]
+            if len(selected) != 1:
+                _fail('paypal_import_identity', 409)
+            identity = selected[0].get('identification_hash')
+            if (type(identity) is not str or not 1 <= len(identity) <= 512
+                    or identity != identity.strip() or any(not c.isprintable() for c in identity)
+                    or sum(a.get('identification_hash') == identity for a in identities) != 1):
+                _fail('paypal_import_identity', 409)
+            source_key = 'paypal:' + hashlib.sha256((identity + '|EUR').encode('utf-8')).hexdigest()
         balances = client.balances(uid).get('balances')
         transactions = client.transactions(uid, start.isoformat(), end.isoformat()).get('transactions')
         if (type(balances) is not list or len(balances) > 100
@@ -367,7 +432,99 @@ class PayPalBanking:
         if len(json.dumps(result, allow_nan=False).encode('utf-8')) > 8_000_000:
             _fail('paypal_invalid_response', 502)
         self._owner(actor)
-        return result
+        return (result, source_key) if import_identity else result
+
+    @staticmethod
+    def _import_error(error):
+        code = str(error)
+        if code in {'stale_paypal_preview', 'paypal_registry_ledger_conflict'}:
+            _fail('paypal_import_stale', 409)
+        if code in {'paypal_source_binding_conflict', 'paypal_foreign_bank_binding'}:
+            _fail('paypal_import_identity', 409)
+        if code == 'paypal_direct_transaction_changed':
+            _fail('paypal_import_changed', 409)
+        _fail('paypal_import_invalid')
+
+    def _import_targets(self, actor, owner):
+        with self.administration._connection() as db:
+            self.administration._actor(db, actor)
+            targets = [dict(row) for row in db.execute(
+                "SELECT id,COALESCE(NULLIF(display_name,''),id) label,currency FROM accounts "
+                "WHERE institution='PAYPAL' AND kind='CHECKING' AND currency='EUR' "
+                "AND closed_on IS NULL ORDER BY id")]
+            bindings = [dict(row) for row in db.execute(
+                'SELECT account_id FROM paypal_source_accounts WHERE owner_id=? ORDER BY account_id',
+                (owner,))]
+        return {'targets': targets, 'bindings': bindings}
+
+    def _import_preview(self, actor, owner, record, data):
+        # Starting another preview invalidates the previous review even if the read fails.
+        self._drop_import_review(owner)
+        matches, target = data['matches'], data['account_id']
+        if (type(target) is not str or not 1 <= len(target) <= 120
+                or any(not char.isprintable() for char in target)
+                or type(matches) is not dict or len(matches) > 10_000
+                or any(type(key) is not str or not 1 <= len(key) <= 256
+                       or (value is not None and (type(value) is not str or not 1 <= len(value) <= 512))
+                       for key, value in matches.items())):
+            _fail('paypal_import_invalid')
+        read_data = {key: data[key] for key in ('account_uid', 'date_from', 'date_to')}
+        result, source_key = self._read(actor, record, read_data, import_identity=True)
+        try:
+            rows = normalize_transactions(result['transactions'], data['date_from'], data['date_to'])
+            with_store = Store(self.administration.database, readonly=True, actor=owner)
+            try:
+                view = preview_import(with_store, owner_id=owner, source_key=source_key,
+                                      account_id=data['account_id'], rows=rows, matches=data['matches'])
+            finally:
+                with_store.close()
+        except ValueError as error:
+            self._import_error(error)
+        token = secrets.token_urlsafe(32)
+        self._owner(actor)
+        self._remember_import_review(owner, {
+            'token': token, 'expires_at': self.clock() + _IMPORT_TTL, 'read_data': read_data,
+            'source_key': source_key, 'account_id': data['account_id'], 'rows': rows,
+            'matches': data['matches'], 'revision': view['revision']})
+        return {**view, 'review_token': token, 'expires_in': _IMPORT_TTL}
+
+    def _import_commit(self, actor, owner, record, data):
+        review = self._take_import_review(owner, data['review_token'])
+        result, source_key = self._read(actor, record, review['read_data'], import_identity=True)
+        try:
+            rows = normalize_transactions(result['transactions'],
+                                          review['read_data']['date_from'],
+                                          review['read_data']['date_to'])
+        except ValueError:
+            _fail('paypal_import_changed', 409)
+        if source_key != review['source_key'] or rows != review['rows']:
+            _fail('paypal_import_changed', 409)
+        self._owner(actor)
+        ledger = Store(self.administration.database, actor=owner)
+        try:
+            # Each source cutover needs its own consistent local snapshot.
+            # Independent first imports may both create backups intentionally;
+            # do not hold SQLite's writer lock during backup or provider I/O.
+            if not ledger.db.execute('SELECT 1 FROM paypal_source_accounts WHERE source_key=?',
+                                     (source_key,)).fetchone():
+                from .backup_package import create_backup_package
+                create_backup_package(ledger, self.administration.database)
+            try:
+                committed = commit_import(
+                    ledger, owner_id=owner, source_key=source_key,
+                    account_id=review['account_id'], rows=review['rows'],
+                    matches=review['matches'], revision=review['revision'], actor=owner,
+                    guard=lambda db: self.administration._actor(db, actor))
+            except ValueError as error:
+                self._import_error(error)
+        finally:
+            ledger.close()
+        from .backup_package import mark_backup_needed
+        try:
+            mark_backup_needed(self.administration.database)
+        except (OSError, ValueError):
+            pass
+        return {**committed, 'imported': True}
 
     def _balances(self, actor, record):
         """Read current wallet balances for all consented accounts, never transactions."""
@@ -417,6 +574,7 @@ class PayPalBanking:
         No network while holding the administration SQLite transaction. The
         external consent can additionally be revoked in the provider portal.
         """
+        self._drop_import_review(owner)
         if sys.platform != 'linux':
             return
         try:

@@ -3,6 +3,8 @@
 import csv
 import io
 
+from .bank_source_policy import bound_finanzguru_targets
+
 
 _COLUMNS = ['external_id', 'account_id', 'date', 'amount', 'currency', 'category', 'transfer_id']
 _BOUND_ERROR = 'CSV file import rejected: an account uses a direct bank source'
@@ -34,8 +36,7 @@ def import_file_csv(store, source):
         raise ValueError('CSV file import requires an idle transaction')
     db.execute('BEGIN IMMEDIATE')
     try:
-        if targets and any(account_id in targets for (account_id,) in db.execute(
-                'SELECT account_id FROM bank_source_accounts')):
+        if bound_finanzguru_targets(store, targets):
             raise DirectBankSourceError(_BOUND_ERROR)
         inserted = store.import_csv(source, manage_transaction=False)
         db.commit()

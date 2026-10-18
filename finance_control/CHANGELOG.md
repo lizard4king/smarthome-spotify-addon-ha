@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.64
+
+- PayPal-Umsätze können auf der Buchungsseite nach ausdrücklicher Kontozuordnung und Vorschau übernommen werden.
+- Stabile Quellenkennung, erneuter Abruf und Prüfung des Buchungsbestands verhindern unbemerkte Änderungen und doppelte Übernahmen.
+- Finanzguru-Altbuchungen lassen sich ausdrücklich zuordnen; Kategorien, Belege, Verträge, Umbuchungen und frühere Revisionen bleiben erhalten.
+- Nach bestätigter Direktübernahme können spätere Excel-/CSV-Importe dieses Konto nicht zurücküberschreiben. Andere Konten bleiben importierbar.
+- Mobile Zuordnungsansicht; erneutes Laden nach der Übernahme startet keinen zusätzlichen Bankabruf. EUR-only, keine Zahlungen.
+
 ## 0.2.63
 
 - Validate manually read PayPal credit dates against the Europe/Berlin calendar in both the form and backend, including summer and winter midnight boundaries.

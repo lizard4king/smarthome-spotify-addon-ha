@@ -26,6 +26,12 @@
     const parsed = Date.parse(`${value}T00:00:00Z`);
     return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
   };
+  const berlinCalendar = () => {
+    const parts = new Intl.DateTimeFormat('en-CA', {timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date());
+    const part = type => parts.find(item => item.type === type).value;
+    const today = `${part('year')}-${part('month')}-${part('day')}`;
+    return {today, monthStart: `${today.slice(0, 7)}-01`};
+  };
   const safe = (value, max = 180) => typeof value === 'string' && value.length <= max ? value : '';
   const authorizationUrl = value => {
     if (typeof value !== 'string' || value.length > 4096 || /[\\\s\u0000-\u001f\u007f-\u009f]/u.test(value) || value.includes('#')) return null;
@@ -380,16 +386,17 @@
       option.value = account.uid; accountSelect.append(option);
     });
     accountLabel.append(accountSelect); form.append(accountLabel);
-    const now = new Date();
-    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const start = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
-    const dateFrom = document.createElement('input'); dateFrom.type = 'date'; dateFrom.name = 'date_from'; dateFrom.value = start.toISOString().slice(0, 10); dateFrom.required = true;
-    const dateTo = document.createElement('input'); dateTo.type = 'date'; dateTo.name = 'date_to'; dateTo.value = today.toISOString().slice(0, 10); dateTo.required = true;
+    const calendar = berlinCalendar();
+    const dateFrom = document.createElement('input'); dateFrom.type = 'date'; dateFrom.name = 'date_from'; dateFrom.value = calendar.monthStart; dateFrom.required = true;
+    const dateTo = document.createElement('input'); dateTo.type = 'date'; dateTo.name = 'date_to'; dateTo.value = calendar.today; dateTo.required = true;
     for (const [text, input] of [['Von', dateFrom], ['Bis', dateTo]]) { const label = node('label', text); label.append(input); form.append(label); }
     const actionStatus = node('p', '', 'pb-action-status');
     const results = node('section', '', 'pb-results');
     const button = node('button', 'Leseprobe starten');
-    form.append(button, actionStatus); root.append(form, results);
+    form.append(button, actionStatus);
+    const readDetails = node('details', '', 'pb-read-details');
+    readDetails.append(node('summary', 'Erweiterte Leseprobe (ohne Übernahme)'), form, results);
+    root.append(renderImport(host, root, accounts), readDetails);
     message(status, '');
     form.addEventListener('submit', async event => {
       event.preventDefault();
@@ -406,6 +413,136 @@
       } catch (_) { message(actionStatus, 'PayPal-Daten konnten nicht gelesen werden. Bitte prüfe den Serverstatus.', true); }
       finally { button.disabled = false; }
     });
+  }
+
+  // Import is deliberately separate from the existing read-only sample.
+  function renderImport(host, root, accounts) {
+    const details = node('details', '', 'pb-import');
+    details.append(node('summary', 'PayPal-Umsätze übernehmen'));
+    const panel = node('section', '', 'pb-card'); details.append(panel);
+    panel.append(node('p', 'Nach der ersten Übernahme führt der direkte PayPal-Abruf. Excel/CSV ergänzt dieses Konto dann nicht mehr. Bestehende ältere Buchungen bleiben erhalten.', 'pb-note'));
+    const form = node('div', '', 'pb-form'); panel.append(form);
+    const control = (text, input) => { const label = node('label', text); label.append(input); form.append(label); return input; };
+    const account = control('Freigegebenes PayPal-Konto', document.createElement('select')); account.name = 'import_account_uid';
+    const option = (select, text, value) => { const item = node('option', text); item.value = value; select.append(item); };
+    accounts.forEach(item => option(account, `${safe(item.name, 160) || 'PayPal-Konto'} · ${safe(item.currency, 12)}`, item.uid));
+    const target = control('Zielkonto im Finanzbestand', document.createElement('select')); target.name = 'import_account_id';
+    option(target, 'Zielkonto ausdrücklich auswählen', '');
+    const calendar = berlinCalendar();
+    const from = control('Übernahme von', document.createElement('input')); from.type = 'date'; from.name = 'import_date_from'; from.value = calendar.monthStart;
+    const to = control('Übernahme bis', document.createElement('input')); to.type = 'date'; to.name = 'import_date_to'; to.value = calendar.today;
+    const preview = node('button', 'Übernahmevorschau laden'); preview.type = 'button'; form.append(preview);
+    const status = node('p', '', 'pb-action-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite'); panel.append(status);
+    const results = node('section', '', 'pb-results'); panel.append(results);
+    const confirm = confirmation(panel, 'Ich bestätige die Quellumstellung dieses Kontos auf den direkten PayPal-Abruf.');
+    const commit = node('button', 'Geprüfte Umsätze übernehmen'); commit.type = 'button'; panel.append(commit);
+    let busy = false; let loaded = false; let revision = 0; let token = ''; let ready = false;
+    const matches = new Map();
+    const alive = () => host.isConnected && host.contains(root) && root.contains(details);
+    const update = () => {
+      panel.querySelectorAll('input,select,button').forEach(input => { input.disabled = busy; });
+      preview.disabled = busy || !loaded;
+      confirm.disabled = busy || !ready;
+      commit.disabled = busy || !ready || !confirm.checked || !token;
+    };
+    const invalidate = (clear = true) => {
+      revision++; token = ''; ready = false; confirm.checked = false;
+      if (clear) { matches.clear(); results.replaceChildren(); preview.textContent = 'Übernahmevorschau laden'; }
+      update();
+    };
+    [account, target, from, to].forEach(input => {
+      input.addEventListener('input', () => invalidate());
+      input.addEventListener('change', () => invalidate());
+    });
+    confirm.addEventListener('change', update);
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? String(value) : 'unbekannt';
+    const draw = result => {
+      results.replaceChildren();
+      results.append(node('p', `Neu: ${count(result.inserted)} · Zu übernehmen: ${count(result.adopted)} · Unverändert: ${count(result.unchanged)}`, 'pb-note'));
+      results.append(node('p', `Verbleibende Altbuchungen: ${count(result.unmatched_legacy)}. Diese werden nicht gelöscht.`, 'pb-note'));
+      let unresolved = false;
+      for (const item of result.items) {
+        const row = node('article', '', 'pb-row');
+        const raw = typeof item.amount === 'string' || typeof item.amount === 'number' ? String(item.amount) : '';
+        const amount = /^[+-]?\d+(?:\.\d+)?$/.test(raw) ? (raw.startsWith('-') || raw.startsWith('+') ? raw : `+${raw}`) : 'Betrag nicht ausgewiesen';
+        row.append(node('strong', `${safe(item.date, 32)} · ${amount} ${safe(item.currency, 12)}`), node('span', safe(item.counterparty, 512)), node('small', safe(item.description, 8000)));
+        const labels = {review: 'Zuordnung erforderlich', new: 'Neue Buchung', adopted: 'Bestehende Buchung übernehmen', unchanged: 'Bereits übernommen'};
+        row.append(node('small', labels[item.decision] || 'Unbekannte Entscheidung'));
+        if (item.decision === 'review') {
+          unresolved = true;
+          const reference = safe(item.entry_reference, 512);
+          if (!reference) throw new Error();
+          const label = node('label', 'Bestehende Buchung zuordnen'); const select = document.createElement('select');
+          select.setAttribute('aria-label', `Zuordnung ${reference}`);
+          option(select, 'Bitte ausdrücklich entscheiden', '');
+          const choices = new Map();
+          (Array.isArray(item.candidates) ? item.candidates : []).forEach((candidate, index) => {
+            const external = safe(candidate.external_id, 512);
+            if (!external) return;
+            const key = `candidate-${index}`; choices.set(key, external);
+            option(select, `${safe(candidate.counterparty, 512)} · ${safe(candidate.description, 8000)} · ${external}`, key);
+          });
+          choices.set('additional', null); option(select, 'Bewusst als zusätzliche neue Buchung übernehmen', 'additional');
+          select.addEventListener('change', () => {
+            invalidate(false);
+            if (choices.has(select.value)) matches.set(reference, choices.get(select.value)); else matches.delete(reference);
+          });
+          label.append(select); row.append(label);
+        }
+        results.append(row);
+      }
+      preview.textContent = unresolved ? 'Zuordnungen prüfen' : 'Übernahmevorschau aktualisieren';
+      ready = result.ready === true && !unresolved;
+      token = ready && /^[A-Za-z0-9_-]{43}$/.test(result.review_token || '') ? result.review_token : '';
+      ready = ready && Boolean(token);
+      confirm.checked = false;
+    };
+    details.addEventListener('toggle', async () => {
+      if (!details.open || loaded || busy) return;
+      busy = true; update(); message(status, 'Zielkonten werden geladen.');
+      try {
+        const result = await window.api('/api/administration/paypal-import-targets', {});
+        if (!alive()) return;
+        if (!Array.isArray(result?.targets)) throw new Error();
+        for (const item of result.targets) {
+          const id = safe(item.id, 256);
+          if (id) option(target, `${safe(item.label, 180) || id} · ${safe(item.currency, 12)}`, id);
+        }
+        loaded = true; message(status, result.targets.length ? 'Wähle das Zielkonto und prüfe den Zeitraum.' : 'Kein geeignetes Zielkonto vorhanden.');
+      } catch (error) { if (alive()) message(status, safe(error?.message, 240) || 'Zielkonten konnten nicht geladen werden. Schließe und öffne den Bereich erneut.', true); }
+      finally { busy = false; if (alive()) update(); }
+    });
+    preview.addEventListener('click', async () => {
+      if (busy) return;
+      if (!target.value) { message(status, 'Bitte wähle das Zielkonto ausdrücklich aus.', true); return; }
+      const days = (Date.parse(`${to.value}T00:00:00Z`) - Date.parse(`${from.value}T00:00:00Z`)) / 86400000 + 1;
+      if (!validDate(from.value) || !validDate(to.value) || days < 1 || days > 90) { message(status, 'Bitte wähle einen gültigen Zeitraum mit höchstens 90 Tagen.', true); return; }
+      invalidate(false); const generation = revision;
+      busy = true; update(); message(status, 'Übernahmevorschau wird geprüft.');
+      try {
+        const result = await window.api('/api/administration/paypal-import-preview', {account_uid: account.value, account_id: target.value, date_from: from.value, date_to: to.value, matches: Object.fromEntries(matches)});
+        if (!alive() || generation !== revision) return;
+        if (!Array.isArray(result?.items)) throw new Error();
+        draw(result); message(status, ready ? 'Vorschau geprüft. Bestätige die Quellumstellung für die Übernahme.' : 'Bitte kläre alle Zuordnungen und prüfe die Vorschau erneut.');
+      } catch (error) { if (alive() && generation === revision) { invalidate(); message(status, safe(error?.message, 240) || 'Übernahmevorschau konnte nicht bestätigt werden. Bitte lade sie erneut.', true); } }
+      finally { busy = false; if (alive()) update(); }
+    });
+    commit.addEventListener('click', async () => {
+      if (busy || !ready || !token || !confirm.checked) return;
+      const reviewToken = token; invalidate(false); busy = true; update(); message(status, 'Geprüfte Umsätze werden übernommen.');
+      try {
+        const result = await window.api('/api/administration/paypal-import-commit', {review_token: reviewToken, confirmed: true});
+        if (!alive()) return;
+        if (result?.imported !== true) throw new Error();
+        results.replaceChildren(); matches.clear();
+        message(status, `Übernahme abgeschlossen. Neu: ${count(result.inserted)} · Übernommen: ${count(result.adopted)} · Unverändert: ${count(result.unchanged)}.`);
+        if (typeof window.financeRefreshAfterImport === 'function') {
+          try { await window.financeRefreshAfterImport(); } catch (_) { if (alive()) message(status, 'Übernahme abgeschlossen. Die Ansicht konnte nicht aktualisiert werden; bitte lade die Seite neu.', true); }
+        } else message(status, 'Übernahme abgeschlossen. Bitte lade die Seite neu, um den Finanzbestand zu aktualisieren.');
+      } catch (error) { if (alive()) message(status, safe(error?.message, 240) || 'Die Übernahme konnte nicht bestätigt werden. Lade vor einem erneuten Versuch eine neue Vorschau.', true); }
+      finally { busy = false; if (alive()) update(); }
+    });
+    update(); return details;
   }
 
   async function renderAdministration(host) {
