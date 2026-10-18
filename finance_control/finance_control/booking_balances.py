@@ -10,6 +10,7 @@ from datetime import date
 from decimal import Decimal
 
 from .core import money
+from .paypal_date_basis import transaction_date_accounts
 
 
 def statement_anchors(store, account_id, currency):
@@ -60,6 +61,8 @@ def ledger_balance_at(store, account, as_of):
             raise ValueError
         if cutoff < opening:
             raise LedgerBalanceUnavailable('control_predates_opening')
+        if account['id'] in transaction_date_accounts(store, [account['id']]):
+            raise LedgerBalanceUnavailable('paypal_transaction_date_not_booking_date')
         balance = money(account['opening'])
         for row in store.db.execute(
                 'SELECT date,amount,currency FROM active_transactions '
@@ -95,6 +98,9 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
     for booking in bookings:
         days_by_account[booking['account_id']].add(booking['date'])
 
+    # Without the actual booking date, even overlap with a reconstruction span
+    # cannot be established. Keep recorded controls, but derive no dated path.
+    uncertain_accounts = transaction_date_accounts(store, list(days_by_account))
     results = {}
     for account_id, days in days_by_account.items():
         account = account_by_id[account_id]
@@ -113,6 +119,9 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
             return {day: {**shared, 'date': day, 'amount': None,
                           'warnings': [*shared['warnings'], reason]} for day in days}
 
+        if account_id in uncertain_accounts:
+            results[account_id] = unknown('paypal_transaction_date_not_booking_date')
+            continue
         if account.get('reason') == 'incomplete_source_coverage':
             results[account_id] = unknown('incomplete_source_coverage')
             continue

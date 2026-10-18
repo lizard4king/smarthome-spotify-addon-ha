@@ -298,7 +298,7 @@ async function refresh({bankRefresh = true} = {}) {
   renderBackupStatus(state.backup_sync);
   $('mode').textContent=state.demo?'Synthetische Demo · getrennte Daten':'Dein Finanzbestand';
   $('empty').hidden=state.accounts.length>0; $('status-date').textContent='Angezeigter Stand: '+state.as_of;
-  $('liquidity').textContent=state.status?eur(state.status.liquidity):'—';
+  $('liquidity').textContent=state.status?.liquidity == null ? '—' : eur(state.status.liquidity);
   renderProfileGoals(state.profile_goals);
   renderOverview(state.overview);
   const kinds={CHECKING:'Girokonto',SAVINGS:'Sparkonto',CREDIT_CARD:'Kreditkarte',DEPOT:'Depot'};

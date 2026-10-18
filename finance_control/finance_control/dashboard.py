@@ -8,7 +8,7 @@ from .account_lifecycle import visible_on
 from .booking_categories import CategoryResolver
 from .booking_balances import attach_day_balances
 from .cash_components import explicit_cash_component
-from .classification import canonical_category_id
+from .classification import _transaction_date_bases, canonical_category_id
 from .core import money
 from .current_balances import latest_by_account, summarize
 from .person_attribution import person_label
@@ -54,22 +54,33 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
     # This is ledger coverage metadata, not a statement that the bank was
     # queried on this date. Keep it independent of the displayed month.
     last_booking_by_account = {}
+    last_transaction_date_accounts = set()
     if account_rows:
         account_ids = sorted(row["id"] for row in account_rows)
         placeholders = ",".join("?" for _ in account_ids)
+        latest_rows = list(store.db.execute(
+            "WITH latest AS (SELECT account_id,MAX(date) AS last_booking_date "
+            "FROM active_transactions "
+            f"WHERE date<=? AND account_id IN ({placeholders}) GROUP BY account_id) "
+            "SELECT latest.account_id,latest.last_booking_date,p.external_id FROM latest "
+            "LEFT JOIN active_transactions t ON t.account_id=latest.account_id "
+            "AND t.date=latest.last_booking_date "
+            "LEFT JOIN paypal_source_transactions p ON p.account_id=t.account_id "
+            "AND p.external_id=t.external_id",
+            (day.isoformat(), *account_ids)))
         last_booking_by_account = {
-            row["account_id"]: row["last_booking_date"]
-            for row in store.db.execute(
-                "SELECT account_id,MAX(date) AS last_booking_date "
-                "FROM active_transactions "
-                f"WHERE date<=? AND account_id IN ({placeholders}) "
-                "GROUP BY account_id",
-                (day.isoformat(), *account_ids),
-            )
-        }
+            row["account_id"]: row["last_booking_date"] for row in latest_rows}
+        latest_paypal_keys = sorted({(row["account_id"], row["external_id"])
+                                    for row in latest_rows if row["external_id"] is not None})
+        for offset in range(0, len(latest_paypal_keys), 400):
+            last_transaction_date_accounts.update(
+                account_id for account_id, _ in _transaction_date_bases(
+                    store, set(latest_paypal_keys[offset:offset + 400])))
     for row in account_rows:
         row["current_balance"] = current_balances.get(row["id"])
         row["last_booking_date"] = last_booking_by_account.get(row["id"])
+        if row["id"] in last_transaction_date_accounts:
+            row["last_booking_date_basis"] = "transaction_date"
         supplied_account = account_by_id[row["id"]]
         row["institution"] = supplied_account.get("institution") or ""
         row["owner_label"] = supplied_account.get("owner_label") or (

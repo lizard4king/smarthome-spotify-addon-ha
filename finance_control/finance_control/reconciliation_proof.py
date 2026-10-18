@@ -83,7 +83,8 @@ _COMPARISON_FIELDS = frozenset({
     'control_reference', 'retrieved_at', 'comparison_basis', 'reason', 'warnings',
 })
 _COMPARISON_REASONS = {'no_control', 'conflicting_controls', 'currency_conflict',
-                       'control_predates_opening', 'invalid_ledger', 'invalid_control'}
+                       'control_predates_opening', 'invalid_ledger', 'invalid_control',
+                       'paypal_transaction_date_not_booking_date'}
 _COMPARISON_WARNINGS = {'ledger_completeness_unverified', 'older_control',
                         'bank_balance_not_day_end', 'file_balance_not_day_end'}
 

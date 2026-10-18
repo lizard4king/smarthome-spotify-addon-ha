@@ -336,14 +336,17 @@
     name.append(window.financeAccountIcon(account));
     name.append(document.createTextNode(accountName(account)));
     add(summary, 'small', 'fd-account-kind', `${account.owner_label || account.owner || 'Ohne Zuordnung'} · ${kindName(account.kind)} · ${count} erfasste Buchung${count === 1 ? '' : 'en'}`);
-    add(summary, 'small', 'fd-account-last-booking', `Letzte Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
+    const latestIsTransactionDate = account.last_booking_date_basis === 'transaction_date';
+    const latestDate = account.last_booking_date ? date(account.last_booking_date) : 'unbekannt';
+    const latestTransactionText = `Letzter Umsatz: ${latestDate} · PayPal-Transaktionsdatum`;
+    add(summary, 'small', 'fd-account-last-booking', latestIsTransactionDate ? latestTransactionText : `Letzte Buchung: ${latestDate}`);
     const balance = currentBalanceText(account);
     const balanceBox = add(summary, 'span', 'fd-account-balance');
     add(balanceBox, 'strong', `fd-account-amount ${tone(account.current_balance?.amount)}`, balance.amount);
     add(balanceBox, 'small', 'fd-account-balance-date', balance.stand);
     if (window.financeReconciliation) window.financeReconciliation(summary, account.reconciliation);
     const body = add(card, 'div', 'fd-account-body');
-    add(body, 'p', 'fd-account-freshness', `Letzte erfasste Buchung: ${account.last_booking_date ? date(account.last_booking_date) : 'unbekannt'}`);
+    add(body, 'p', 'fd-account-freshness', latestIsTransactionDate ? latestTransactionText : `Letzte erfasste Buchung: ${latestDate}`);
     body.append(metrics(account));
     if (account.note) add(body, 'p', 'fd-account-note', account.note);
     if (!account.current_balance || account.current_balance.amount === null || account.current_balance.amount === undefined) {
@@ -673,6 +676,7 @@
   const bookingDateOrder = (a, b) => String(a.date || '').localeCompare(String(b.date || ''))
     || String(a.external_id || '').localeCompare(String(b.external_id || ''));
   const forecastWarnings = {
+      paypal_transaction_date_not_booking_date:'PayPal-Buchungsdatum fehlt.',
     same_day_projection_order_assumed:'Die Reihenfolge virtueller Zahlungen am selben Tag ist anhand der Regel-ID angenommen.',
     stale_recorded_balance:'Der belegte Kontostand ist älter als sieben Tage.',
     recorded_balance_missing:'Kein belegter Kontostand vorhanden.',
@@ -843,7 +847,12 @@
   function bookingRow(parent, item, account, index) {
     const row = add(parent, 'tr', 'fd-booking');
     row.dataset.timelineKey = `booking:${item.account_id}:${item.external_id}`;
-    add(row, 'td', 'fd-booking-date', date(item.date));
+    const dateCell = add(row, 'td', 'fd-booking-date', date(item.date));
+    const transactionDate = item.date_basis === 'transaction_date';
+    if (transactionDate) {
+      dateCell.classList.add('fd-booking-transaction-date');
+      add(dateCell, 'small', 'fd-booking-date-basis', 'PayPal-Transaktionsdatum');
+    }
     const counterparty = add(row, 'td', 'fd-booking-counterparty');
     if (window.financeCounterparties) window.financeCounterparties.decorate(add(counterparty, 'span'), {...item,counterparty:recipientDisplay(item.counterparty)},
       {fallbackIcon: () => icon(categoryIcon(item.category))});
@@ -866,11 +875,11 @@
     add(row, 'td', `fd-booking-amount ${tone(item.amount)}`, money(item.amount, item.currency || account.currency, true));
     const balance = item.account_movement_balance || item.account_day_balance;
     const movement = Boolean(item.account_movement_balance);
-    const knownBalance = balance && cents(balance.amount) !== null && balance.date === item.date
+    const knownBalance = !transactionDate && balance && cents(balance.amount) !== null && balance.date === item.date
       && balance.currency === (item.currency || account.currency);
     const running = add(row, 'td', 'fd-booking-balance', knownBalance ? money(balance.amount,balance.currency) : '—');
     running.title = knownBalance ? movement ? 'Berechnet je Buchung · Reihenfolge innerhalb eines Tages angenommen' : 'Berechneter Tagesstand · aus belegtem Stand und importierten Buchungen'
-      : 'Kein belegter Tagesstand';
+      : transactionDate ? 'PayPal-Transaktionsdatum: kein belegter Tagesstand' : 'Kein belegter Tagesstand';
     if (knownBalance) add(running, 'small', '', movement ? 'Berechnet' : 'Tagesstand');
     const action = add(row, 'td', 'fd-booking-action');
     const button = add(action, 'button', 'fd-booking-toggle', 'Details');
@@ -893,14 +902,14 @@
     const status = categoryStatusLabel(item.category_status);
     if (status) detailFields.push(['Kategoriestatus', status]);
     if (item.source_category && item.source_category !== item.category) detailFields.push(['Quellangabe', item.source_category]);
-    detailFields.push(['Datum', date(item.date)]);
+    detailFields.push([transactionDate ? 'PayPal-Transaktionsdatum' : 'Datum', date(item.date)]);
     if (knownBalance) detailFields.push([movement ? 'Berechnet je Buchung' : 'Berechneter Tagesstand', `${money(balance.amount,balance.currency)} · Basis ${date(balance.anchor_booked_on)}`]);
     for (const [label, value] of detailFields) {
       const row = add(body, 'div'); add(row, 'span', '', label); add(row, 'p', '', value || '—');
     }
-    add(body, 'p', 'fd-booking-balance-note', movement ? 'Berechnet je Buchung. Die Reihenfolge innerhalb eines Tages ist anhand der external_id angenommen, nicht von der Bank bestätigt. Die Berechnung setzt vollständige importierte Buchungen voraus und bleibt unabhängig von Buchungsfiltern.' : 'Tagesstand; keine belegte Reihenfolge innerhalb eines Tages. Die Berechnung setzt vollständige importierte Buchungen voraus.');
+    if (!transactionDate) add(body, 'p', 'fd-booking-balance-note', movement ? 'Berechnet je Buchung. Die Reihenfolge innerhalb eines Tages ist anhand der external_id angenommen, nicht von der Bank bestätigt. Die Berechnung setzt vollständige importierte Buchungen voraus und bleibt unabhängig von Buchungsfiltern.' : 'Tagesstand; keine belegte Reihenfolge innerhalb eines Tages. Die Berechnung setzt vollständige importierte Buchungen voraus.');
     window.financeBookingContracts?.mount(body,item);
-    if (!knownBalance) add(body, 'p', 'fd-booking-balance-note', 'Der Tagesstand ist ohne eindeutige Saldenbasis oder bei bekannten Datenlücken nicht verfügbar.');
+    if (!knownBalance) add(body, 'p', 'fd-booking-balance-note', transactionDate ? 'PayPal-Transaktionsdatum: kein Nachweis eines Tagesendstands.' : 'Der Tagesstand ist ohne eindeutige Saldenbasis oder bei bekannten Datenlücken nicht verfügbar.');
     const originalAmount = add(body, 'div', 'fd-booking-original-amount');
     add(originalAmount, 'span', '', 'Originalbetrag');
     add(originalAmount, 'p', '', money(item.amount,item.currency || account.currency,true));

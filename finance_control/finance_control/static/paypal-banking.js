@@ -466,6 +466,7 @@
         const raw = typeof item.amount === 'string' || typeof item.amount === 'number' ? String(item.amount) : '';
         const amount = /^[+-]?\d+(?:\.\d+)?$/.test(raw) ? (raw.startsWith('-') || raw.startsWith('+') ? raw : `+${raw}`) : 'Betrag nicht ausgewiesen';
         row.append(node('strong', `${safe(item.date, 32)} · ${amount} ${safe(item.currency, 12)}`), node('span', safe(item.counterparty, 512)), node('small', safe(item.description, 8000)));
+        if (item.date_basis === 'transaction_date') row.append(node('small', 'PayPal-Transaktionsdatum'));
         const labels = {review: 'Zuordnung erforderlich', new: 'Neue Buchung', adopted: 'Bestehende Buchung übernehmen', unchanged: 'Bereits übernommen'};
         row.append(node('small', labels[item.decision] || 'Unbekannte Entscheidung'));
         if (item.decision === 'review') {

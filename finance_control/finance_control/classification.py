@@ -612,10 +612,39 @@ def _transaction_list_rows(store, selected):
     return rows
 
 
+def _transaction_date_bases(store, selected_keys):
+    """Return proven PayPal date provenance only for selected active ledger rows."""
+    if not selected_keys:
+        return {}
+    clauses = ' OR '.join('(p.account_id=? AND p.external_id=?)' for _ in selected_keys)
+    params = [value for key in sorted(selected_keys) for value in key]
+    result = {}
+    for row in store.db.execute(
+            'SELECT p.account_id,p.external_id,p.entry_reference,p.normalized_json,'
+            't.date,t.amount,t.currency FROM paypal_source_transactions p '
+            'JOIN paypal_source_accounts a ON a.source_key=p.source_key AND a.account_id=p.account_id '
+            'JOIN active_transactions t ON t.account_id=p.account_id AND t.external_id=p.external_id '
+            'WHERE ' + clauses, params):
+        try:
+            source = json.loads(row['normalized_json'])
+        except (ValueError, TypeError):
+            continue
+        if (isinstance(source, dict)
+                and set(source) == {'entry_reference', 'date', 'amount', 'currency',
+                                    'counterparty', 'description', 'date_basis'}
+                and source['date_basis'] == 'transaction_date'
+                and source['entry_reference'] == row['entry_reference']
+                and all(isinstance(source[key], str) for key in source)
+                and all(source[key] == row[key] for key in ('date', 'amount', 'currency'))):
+            result[(row['account_id'], row['external_id'])] = 'transaction_date'
+    return result
+
+
 def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key):
     rows = []
     selected_keys = {(row['account_id'], row['external_id']) for row in selected}
     payment_statuses = statuses_for_transactions(store, selected_keys)
+    date_bases = _transaction_date_bases(store, selected_keys)
     pair_clauses = ' OR '.join('(r.account_id=? AND r.external_id=?)' for _ in selected_keys)
     pair_params = [value for key in sorted(selected_keys) for value in key]
     model_rows = [] if not selected_keys else store.db.execute(
@@ -644,6 +673,8 @@ def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key):
     for row in selected:
         item = dict(row)
         item.pop('reviewed')
+        if (basis := date_bases.get((item['account_id'], item['external_id']))) is not None:
+            item['date_basis'] = basis
         override_category = item.pop('category_id')
         item['revision'] = item['revision'] or 0
         item['direction'] = ('transfer' if item.pop('is_transfer_row') else
@@ -790,6 +821,9 @@ def get_transaction(store, data):
     if row is None:
         raise ValueError('unknown_transaction')
     item = dict(row)
+    if (basis := _transaction_date_bases(store, {(account_id, external_id)}).get(
+            (account_id, external_id))) is not None:
+        item['date_basis'] = basis
     override_category = item.pop('category_id')
     item['revision'] = item['revision'] or 0
     item['direction'] = _direction(store, item)

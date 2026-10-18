@@ -65,7 +65,7 @@ def _amount(value):
 
 
 def normalize_transactions(raw, start, end, currency='EUR'):
-    """Accept BOOK rows only; missing identity, status or currency is fatal."""
+    """Accept BOOK rows, retaining transaction-date provenance when no booking date exists."""
     start, end = _day(start), _day(end)
     if start > end or currency not in {'EUR', 'XXX'} or not isinstance(raw, list) or len(raw) > 10000:
         raise ValueError('invalid_paypal_batch')
@@ -82,7 +82,11 @@ def normalize_transactions(raw, start, end, currency='EUR'):
         if reference != reference.strip() or reference in seen:
             raise ValueError('invalid_paypal_entry_reference')
         seen.add(reference)
-        booked = _day(item.get('booking_date'))
+        # Only absent/NULL booking dates permit the explicitly labelled PayPal
+        # transaction date. Empty/malformed dates never fall back; timestamps
+        # and value dates are never interpreted as calendar booking dates.
+        transaction_date = item.get('booking_date') is None
+        booked = _day(item.get('transaction_date') if transaction_date else item['booking_date'])
         if not start <= booked <= end:
             raise ValueError('paypal_booking_outside_period')
         amount = item.get('transaction_amount')
@@ -121,6 +125,8 @@ def normalize_transactions(raw, start, end, currency='EUR'):
         result.append(dict(entry_reference=reference, date=booked, amount=format(amount, '.2f'),
                            currency=unit, counterparty=_text('' if party.get('name') is None else party['name'], 500),
                            description=_text(description, 8000, multiline=True)))
+        if transaction_date:
+            result[-1]['date_basis'] = 'transaction_date'
     return sorted(result, key=lambda row: (row['date'], row['entry_reference']))
 
 
@@ -129,7 +135,9 @@ def _rows(rows):
         raise ValueError('invalid_paypal_batch')
     result, seen = [], set()
     for row in rows:
-        if not isinstance(row, dict) or set(row) != set(_FIELDS):
+        if (not isinstance(row, dict)
+                or set(row) not in (set(_FIELDS), set(_FIELDS) | {'date_basis'})
+                or ('date_basis' in row and row['date_basis'] != 'transaction_date')):
             raise ValueError('invalid_normalized_paypal_row')
         reference = _text(row['entry_reference'], 256, required=True)
         if reference.strip() != reference or reference in seen or row['currency'] != 'EUR':
@@ -139,6 +147,8 @@ def _rows(rows):
                            amount=format(_amount(row['amount']), '.2f'), currency='EUR',
                            counterparty=_text(row['counterparty'], 500),
                            description=_text(row['description'], 8000, multiline=True)))
+        if 'date_basis' in row:
+            result[-1]['date_basis'] = row['date_basis']
     return sorted(result, key=lambda row: (row['date'], row['entry_reference']))
 
 
@@ -284,7 +294,7 @@ def commit_import(store, *, owner_id, source_key, account_id, rows, matches, rev
                 from .classification import apply_exact_rule_if_safe
                 apply_exact_rule_if_safe(store, *key)
             store.db.execute('INSERT INTO paypal_source_transactions(source_key,entry_reference,account_id,external_id,normalized_json) VALUES (?,?,?,?,?)',
-                (source_key, item['entry_reference'], *key, _json({field: item[field] for field in _FIELDS})))
+                (source_key, item['entry_reference'], *key, _json({field: item[field] for field in (*_FIELDS, 'date_basis') if field in item})))
         store.db.execute('INSERT INTO paypal_import_receipts(source_key,account_id,owner_id,import_id,occurred_at,actor,revision,receipt_json) VALUES (?,?,?,?,?,?,?,?)',
             (source_key, account_id, owner_id, import_id, now, actor, revision, _json(plan)))
         store.db.commit()

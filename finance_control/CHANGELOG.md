@@ -2,6 +2,9 @@
 
 ## 0.2.65
 
+- Fehlende PayPal-Buchungsdaten können durch ein gültiges, dauerhaft als „PayPal-Transaktionsdatum“ gekennzeichnetes Datum ersetzt werden. Ungültige Buchungsdaten bleiben gesperrt.
+- Diese Datumsbasis erzeugt keine abgeleiteten Tagesend-, Bewegungs- oder Prognosesalden. Alte Finanzguru-Saldometadaten werden dafür nicht wiederverwendet; unabhängig gespeicherte Kontrollen bleiben sichtbar.
+
 - Vorhandene PayPal-Konten werden bei der direkten Übernahme auch mit der Institutsbezeichnung „PayPal“ statt „PAYPAL“ angeboten.
 - Zielauswahl und abschließende Übernahme verwenden denselben exakten, von Groß-/Kleinschreibung unabhängigen Institutsvergleich. Andere Institute und Kontoarten bleiben gesperrt.
 

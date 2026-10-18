@@ -1039,7 +1039,7 @@ function budgetRenderReserves(target, reserves, withBank = false) {
       if (reserves.safety_threshold != null) add('Unterschreitung der Sicherheitsreserve', liquidity?.safety_shortfall);
       if (liquidity?.unavailable_reason) {
         const action = document.createElement('p'); action.className = 'notice';
-        action.textContent = liquidity.unavailable_reason === 'unknown_pot_balance' ? 'Trage unter Planung den bestätigten Anfangsbestand der Rücklagentöpfe ein.' : liquidity.unavailable_reason === 'incomplete_source_coverage' ? 'Die Buchungen zum Planbeginn sind unvollständig. Ergänze die fehlenden Umsätze, bevor Du diese Kontostandsprognose verwendest.' : 'Wähle unter Planung die Liquiditätskonten mit einem bestätigten Stand zum Planbeginn aus.';
+        action.textContent = liquidity.unavailable_reason === 'paypal_transaction_date_not_booking_date' ? 'PayPal-Buchungsdatum fehlt; kein belastbarer Bankstand und kein frei verfügbarer Betrag berechenbar.' : liquidity.unavailable_reason === 'unknown_pot_balance' ? 'Trage unter Planung den bestätigten Anfangsbestand der Rücklagentöpfe ein.' : liquidity.unavailable_reason === 'incomplete_source_coverage' ? 'Die Buchungen zum Planbeginn sind unvollständig. Ergänze die fehlenden Umsätze, bevor Du diese Kontostandsprognose verwendest.' : 'Wähle unter Planung die Liquiditätskonten mit einem bestätigten Stand zum Planbeginn aus.';
         card.append(action);
       } else if (liquidity?.below_reserve) {
         const warning = document.createElement('p'); warning.className = 'notice';

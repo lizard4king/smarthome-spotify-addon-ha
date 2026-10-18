@@ -1,5 +1,10 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.65` preserves an explicitly labelled PayPal transaction date when
+the provider supplies no booking date. It never substitutes malformed dates or
+infers dated ledger balances, reconciliation or forecast balances from that
+date. Independent recorded bank/statement balances remain visible.
+
 Version `0.2.65` recognizes the existing institute label `PayPal` in any letter
 case when explicitly selecting a direct-import target. Account names and other
 institutes do not grant import authority; source checks remain unchanged.

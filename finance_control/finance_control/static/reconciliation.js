@@ -12,6 +12,7 @@ window.financeReconciliation = (parent, comparison, {action=true}={}) => {
   const money = (value, signed=false) => value === null || value === undefined || !/^[+-]?\d+(?:\.\d{1,2})?$/.test(String(value)) ? '—'
     : new Intl.NumberFormat('de-DE',{style:'currency',currency:comparison.currency || 'EUR',signDisplay:signed ? 'always' : 'auto'}).format(Number(value));
   const reasons = {
+    paypal_transaction_date_not_booking_date:'PayPal-Buchungsdatum fehlt.',
     no_control:'Kein belegter Vergleichsstand vorhanden.',
     conflicting_controls:'Widersprüchliche Vergleichsstände. Bitte die Belege prüfen.',
     currency_conflict:'Währungen stimmen nicht überein. Vergleich nicht möglich.',

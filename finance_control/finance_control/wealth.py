@@ -153,6 +153,13 @@ def _ledger_positions(store, as_of, *, owners):
             continue
         if account["kind"] not in {"CHECKING", "SAVINGS", "CREDIT_CARD"}:
             continue
+        if status["balances"][account["id"]] is None:
+            excluded.append({
+                "account_id": account["id"],
+                "label": account.get("display_name") or account["id"],
+                "reason": "paypal_transaction_date_not_booking_date",
+            })
+            continue
         balance = money(status["balances"][account["id"]])
         positions.append({
             "id": f"account:{account['id']}",

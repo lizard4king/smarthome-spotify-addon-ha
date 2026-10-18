@@ -277,3 +277,8 @@
 /* Keep compact module controls usable without shrinking the existing layout. */
 .fd-root :is(button,summary,a.button){min-width:44px;min-height:44px;}
 @media(max-width:650px){.fd-root :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}
+
+/* Source date stays visible in compact timelines as well as the desktop date column. */
+.fd-booking-date-basis{display:block;margin-top:4px;font-size:.75rem;line-height:1.4;white-space:normal;overflow-wrap:break-word;word-break:normal}
+:is(#dashboard,#category-outflows) .fd-guru .fd-booking-table .fd-booking>.fd-booking-transaction-date{display:block;grid-column:1/-1;grid-row:4;overflow-wrap:normal}
+@media(max-width:700px){:is(#dashboard,#category-outflows) .fd-root .fd-booking-table .fd-booking>.fd-booking-transaction-date{display:block;grid-column:1/-1;grid-row:4;overflow-wrap:normal}.fd-booking-transaction-date .fd-booking-date-basis{display:inline;margin-left:8px}}
