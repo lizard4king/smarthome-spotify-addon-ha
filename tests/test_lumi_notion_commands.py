@@ -147,11 +147,11 @@ def test_spoken_form_does_not_expand_targets(service, target):
     service.writer.create_note.assert_not_called()
 
 
-def test_date_in_title_is_not_reinterpreted():
+def test_incomplete_spoken_date_in_title_is_not_reinterpreted():
     writer = Mock()
     service = NotionCommandService(writer, {'Lumi Integrationstest 2026-10-18': PAGE})
     reply = service.handle(
-        'Notiz in Lumi Integrationstest achtzehnter Oktober zweitausendsechsundzwanzig '
+        'Notiz in Lumi Integrationstest achtzehnter Oktober sechsundzwanzig '
         'speichern mit Inhalt Text', 'wire-42', authorized=True)
     assert 'Ziel ist nicht freigegeben' in reply
     writer.create_note.assert_not_called()
@@ -231,7 +231,7 @@ def test_complete_date_variants_and_word_segmentation_are_equivalent(date_text, 
     'Lumi Integrationstest heute',
     'Lumi Integrationstest morgen',
     'Lumi Integrationstest letzten Sonntag',
-    'Lumi Integrationstest achtzehnter Oktober zweitausendsechsundzwanzig',
+    'Lumi Integrationstest achtzehnter Oktober sechsundzwanzig',
     'Lumi Integrationstest2026-10-18',
     'Lumi-Integrationstest 2026-10-18',
     'Lumi Integrations Test 2026-10-18 Zusatz',
@@ -346,3 +346,253 @@ def test_normalized_target_never_upgrades_an_unconfirmed_write(status):
     reply = service.handle('Notiz in Lumi Integrations Test 18. Oktober 2026 speichern mit Inhalt Text',
                            'wire-42', authorized=True)
     assert 'wurde in Notion gespeichert' not in reply
+
+
+@pytest.mark.parametrize('question,content', [
+    ('meine frage ist notiz im lumi integrationstest achtzehnter oktober '
+     'zwei tausend sechs und zwanzig speicher mit inhalt bürotest bernstein achtzehn',
+     'bürotest bernstein achtzehn'),
+    ('meine frage ist notiz in lumi integrationstest zwei tausend sechs und zwanzig '
+     'zehn achtzehn speichern mit inhalt bürotest rubin achtzehn',
+     'bürotest rubin achtzehn'),
+])
+def test_exact_observed_alexa_transcripts_resolve_only_the_original_complete_target(question, content):
+    service = dated_service()
+    assert 'gespeichert' in service.handle(question, 'wire-42', authorized=True)
+    service.writer.create_note.assert_called_once_with(
+        PAGE, content, content, 'wire-42', explicit_instruction=True, title_already_in_text=True)
+
+
+@pytest.mark.parametrize('preposition', ['in', 'im'])
+@pytest.mark.parametrize('verb', ['speicher', 'speichern'])
+@pytest.mark.parametrize('separator', [': ', ' mit Inhalt ', ' mit dem Inhalt '])
+def test_preposition_and_verb_variants_still_require_a_complete_command(service, preposition, verb, separator):
+    assert 'gespeichert' in service.handle(
+        f'Notiz {preposition} Haus {verb}{separator}Text', 'wire-42', authorized=True)
+    service.writer.create_note.assert_called_once()
+
+
+ORDINALS = (
+    'erster', 'zweiter', 'dritter', 'vierter', 'fünfter', 'sechster', 'siebter', 'achter',
+    'neunter', 'zehnter', 'elfter', 'zwölfter', 'dreizehnter', 'vierzehnter', 'fünfzehnter',
+    'sechzehnter', 'siebzehnter', 'achtzehnter', 'neunzehnter', 'zwanzigster',
+    'einundzwanzigster', 'zweiundzwanzigster', 'dreiundzwanzigster', 'vierundzwanzigster',
+    'fünfundzwanzigster', 'sechsundzwanzigster', 'siebenundzwanzigster',
+    'achtundzwanzigster', 'neunundzwanzigster', 'dreißigster', 'einunddreißigster',
+)
+
+
+@pytest.mark.parametrize('day,ordinal', list(enumerate(ORDINALS, start=1)))
+def test_every_spoken_day_ordinal_uses_the_actual_calendar_day(day, ordinal):
+    service = dated_service({f'Test 2026-10-{day:02}': PAGE})
+    assert 'gespeichert' in service.handle(
+        f'Notiz im Test {ordinal} Oktober zwei tausend sechs und zwanzig speicher mit Inhalt Text',
+        'wire-42', authorized=True)
+    service.writer.create_note.assert_called_once()
+
+
+@pytest.mark.parametrize('ordinal', ['achtzehnter', 'achtzehnte', 'achtzehnten', 'achtzehntes',
+                                     'achtzehntem', 'acht zehn ter'])
+def test_complete_ordinal_inflections_and_spacing_preserve_day(ordinal):
+    service = dated_service()
+    assert 'gespeichert' in service.handle(
+        f'Notiz im Lumi Integrationstest {ordinal} Oktober zweitausendsechsundzwanzig '
+        'speicher mit Inhalt Text', 'wire-42', authorized=True)
+
+
+@pytest.mark.parametrize('month,number', [
+    ('Januar', '01'), ('Februar', '02'), ('März', '03'), ('April', '04'),
+    ('Mai', '05'), ('Juni', '06'), ('Juli', '07'), ('August', '08'),
+    ('September', '09'), ('Oktober', '10'), ('November', '11'), ('Dezember', '12'),
+])
+def test_spoken_year_and_day_work_for_all_month_names(month, number):
+    service = dated_service({f'Test 2026-{number}-18': PAGE})
+    assert 'gespeichert' in service.handle(
+        f'Notiz im Test achtzehnter {month} zwei tausend sechs und zwanzig speicher mit Inhalt Text',
+        'wire-42', authorized=True)
+
+
+@pytest.mark.parametrize('date_text', [
+    'achtzehnter Oktober zweitausendsechsundzwanzig',
+    'achtzehnteroktoberzweitausendsechsundzwanzig',
+    'achtzehnter Oktober zwei tausend sechs und zwanzig',
+    '18. Oktober zwei tausend sechs und zwanzig',
+    '18 Oktober zweitausendsechsundzwanzig',
+    'zwei tausend sechs und zwanzig zehn achtzehn',
+    'zweitausendsechsundzwanzigzehnachtzehn',
+    '2026 zehn achtzehn',
+    'achtzehnter Oktober 2026',
+])
+def test_complete_spoken_date_representations_share_the_existing_date_key(date_text):
+    service = dated_service()
+    assert 'gespeichert' in service.handle(
+        f'Notiz im Lumi Integrations Test {date_text} speicher mit Inhalt Text',
+        'wire-42', authorized=True)
+
+
+@pytest.mark.parametrize('words,year', [
+    ('tausend', 1000), ('eintausend', 1000), ('ein tausend eins', 1001),
+    ('eintausendeinhunderteins', 1101), ('neunzehnhundertsechsundzwanzig', 1926),
+    ('neunzehn hundert neun und neunzig', 1999), ('zwei tausend', 2000),
+    ('zweitausendsechsundzwanzig', 2026), ('zwei tausend sechs und zwanzig', 2026),
+    ('zweitausendneunundneunzig', 2099), ('zweitausendeinhunderteins', 2101),
+    ('neuntausendneunhundertneunundneunzig', 9999),
+    ('neunundneunzighundertneunundneunzig', 9999),
+])
+def test_year_grammar_is_explicit_and_bounded(words, year):
+    service = dated_service({f'Test {year:04}-10-18': PAGE})
+    assert 'gespeichert' in service.handle(
+        f'Notiz im Test achtzehnter Oktober {words} speicher mit Inhalt Text',
+        'wire-42', authorized=True)
+
+
+@pytest.mark.parametrize('date_text', [
+    'neunzehnter Oktober zwei tausend sechs und zwanzig',
+    'achtzehnter Oktober zwei tausend fünf und zwanzig',
+    'achtzehnter Oktober sechs und zwanzig',
+    'achtzehnter Oktober zwanzig sechs und zwanzig',
+    'achtzehnter Oktober neunhundertneunundneunzig',
+    'achtzehnter Oktober zehn tausend',
+    'achtzehnter Oktober zwei tausend tausend',
+    'achtzehnter Oktober zwei tausend und sechs und zwanzig',
+    'achtzehnter Oktober zwei tausend hundert und sechs',
+    'achtzehnter Oktober minuszweitausendsechsundzwanzig',
+    'achtzehnter Oktober dieses Jahr',
+    'achtzehnter Oktober nächsten Jahres',
+    'achtzehnter Oktober',
+    'Oktober zwei tausend sechs und zwanzig',
+    'zwei tausend sechs und zwanzig zehn',
+    'zwei tausend sechs und zwanzig dreizehn achtzehn',
+    'zwei tausend sechs und zwanzig zehn zweiunddreißig',
+    'zwei tausend sechs und zwanzig null achtzehn',
+    'zwei tausend sechs und zwanzig zehn null',
+    'zwei tausend sechs und zwanzigzehnachtzehn heute',
+    'achtzehnter Ocktober zwei tausend sechs und zwanzig',
+])
+def test_wrong_partial_relative_and_ungrammatical_spoken_dates_cannot_pick_a_page(date_text):
+    service = dated_service()
+    reply = service.handle(
+        f'Notiz im Lumi Integrationstest {date_text} speicher mit Inhalt Text',
+        'wire-42', authorized=True)
+    assert 'gespeichert' not in reply
+    service.writer.create_note.assert_not_called()
+
+
+@pytest.mark.parametrize('date_text,year', [
+    ('neunundzwanzigster Februar zwei tausend vier und zwanzig', 2024),
+    ('zwei tausend vier und zwanzig zwei neunundzwanzig', 2024),
+])
+def test_spoken_leap_day_is_checked_against_the_complete_actual_year(date_text, year):
+    service = dated_service({f'Test {year}-02-29': PAGE})
+    assert 'gespeichert' in service.handle(
+        f'Notiz im Test {date_text} speicher mit Inhalt Text', 'wire-42', authorized=True)
+
+
+@pytest.mark.parametrize('date_text', [
+    'neunundzwanzigster Februar zwei tausend sechs und zwanzig',
+    'einunddreißigster April zwei tausend sechs und zwanzig',
+    'zweiunddreißigster Oktober zwei tausend sechs und zwanzig',
+    'nullter Oktober zwei tausend sechs und zwanzig',
+    'zwei tausend sechs und zwanzig zwei neunundzwanzig',
+    'zwei tausend sechs und zwanzig vier einunddreißig',
+])
+def test_spoken_invalid_calendar_dates_do_not_become_the_known_date(date_text):
+    service = dated_service()
+    reply = service.handle(
+        f'Notiz im Lumi Integrationstest {date_text} speicher mit Inhalt Text',
+        'wire-42', authorized=True)
+    assert 'gespeichert' not in reply
+    service.writer.create_note.assert_not_called()
+
+
+@pytest.mark.parametrize('query', [DATED_TITLE,
+    'Lumi Integrationstest achtzehnter Oktober zwei tausend sechs und zwanzig',
+    'Lumi Integrations Test zweitausendsechsundzwanzigzehnachtzehn'])
+def test_spoken_and_textual_date_collision_blocks_exact_and_spoken_titles(query):
+    service = dated_service({DATED_TITLE: PAGE,
+        'Lumi Integrationstest achtzehnter Oktober zweitausendsechsundzwanzig': OTHER_PAGE})
+    reply = service.handle(f'Notiz im {query} speicher mit Inhalt Text', 'wire-42', authorized=True)
+    assert 'gespeichert' not in reply
+    service.writer.create_note.assert_not_called()
+
+
+def test_aliases_of_the_same_page_can_have_spoken_year_representation():
+    service = dated_service({DATED_TITLE: PAGE,
+        'Lumi Integrationstest achtzehnter Oktober zweitausendsechsundzwanzig': PAGE})
+    assert 'gespeichert' in service.handle(
+        'Notiz im Lumi Integrationstest zwei tausend sechs und zwanzig zehn achtzehn '
+        'speicher mit Inhalt Text', 'wire-42', authorized=True)
+
+
+def test_spoken_date_normalization_does_not_rewrite_body_or_request_identity():
+    service = dated_service()
+    content = 'bürotest  bernstein achtzehn. zwei tausend sechs und zwanzig bleibt Text.\n18. Oktober'
+    assert 'gespeichert' in service.handle(
+        'meine frage ist notiz im lumi integrationstest achtzehnter oktober zwei tausend '
+        f'sechs und zwanzig speicher mit inhalt {content}', 'wire-42', authorized=True)
+    assert service.writer.create_note.call_args.args == (PAGE, content.splitlines()[0][:120], content, 'wire-42')
+
+
+@pytest.mark.parametrize('wrapper', ['"{}"', 'Er sagte {}', 'Wenn ich morgen {}',
+                                     'Kannst du {}', 'Meine Frage ist: Meine Frage ist: {}'])
+def test_spoken_command_still_cannot_be_embedded_or_quoted(wrapper):
+    service = dated_service()
+    question = wrapper.format('Notiz im Lumi Integrationstest achtzehnter Oktober '
+                              'zweitausendsechsundzwanzig speicher mit Inhalt Text')
+    service.handle(question, 'wire-42', authorized=True)
+    service.writer.create_note.assert_not_called()
+
+
+@pytest.mark.parametrize('authorized,request_id', [(False, 'wire-42'), (True, ''), (True, '   ')])
+def test_spoken_date_keeps_all_owner_and_request_id_guards(authorized, request_id):
+    service = dated_service()
+    service.handle('Notiz im Lumi Integrationstest achtzehnter Oktober zweitausendsechsundzwanzig '
+                   'speicher mit Inhalt Text', request_id, authorized=authorized)
+    service.writer.create_note.assert_not_called()
+
+
+@pytest.mark.parametrize('status', ['unknown', 'rejected', None, 'success'])
+def test_spoken_date_does_not_confirm_an_unconfirmed_result(status):
+    service = dated_service()
+    service.writer.create_note.return_value = {'status': status}
+    reply = service.handle('Notiz im Lumi Integrationstest achtzehnter Oktober zweitausendsechsundzwanzig '
+                           'speicher mit Inhalt Text', 'wire-42', authorized=True)
+    assert 'wurde in Notion gespeichert' not in reply
+
+
+@pytest.mark.parametrize('title', [
+    'Test neunundzwanzigster Februar zwei tausend sechs und zwanzig',
+    'Test einunddreißigster April zwei tausend sechs und zwanzig',
+    'Test zweiunddreißigster Oktober zwei tausend sechs und zwanzig',
+    'Test nullter Oktober zwei tausend sechs und zwanzig',
+    'Test achtzehnter Oktober sechsundzwanzig',
+    'Test achtzehnter Oktober',
+    'Test achtzehnter Oktober dieses Jahr',
+    'Test achtzehnter Oktober zehn tausend',
+    'Test achtzehnter Oktober zwei tausend tausend',
+    'Test zwei tausend sechs und zwanzig dreizehn achtzehn',
+    'Test zwei tausend sechs und zwanzig zehn zweiunddreißig',
+    'Test zwei tausend sechs und zwanzig zwei neunundzwanzig',
+    'Test zwei tausend sechs und zwanzig zehn',
+    'Test minus zwei tausend sechs und zwanzig zehn achtzehn',
+    'Test achtzehnter Oktober ' + 'ein' * 40,
+])
+def test_recognized_invalid_spoken_dates_cannot_fall_back_to_an_exact_text_title(title):
+    service = dated_service({title: PAGE})
+    reply = service.handle(f'Notiz im {title} speicher mit Inhalt Text', 'wire-42', authorized=True)
+    assert 'gespeichert' not in reply
+    service.writer.create_note.assert_not_called()
+
+
+def test_invalid_longest_spoken_date_cannot_select_a_shorter_valid_date_suffix():
+    service = dated_service({'Test zehn 1026-10-18': PAGE})
+    reply = service.handle('Notiz im Test zehn tausend sechs und zwanzig zehn achtzehn '
+                           'speicher mit Inhalt Text', 'wire-42', authorized=True)
+    assert 'gespeichert' not in reply
+    service.writer.create_note.assert_not_called()
+
+
+def test_nondated_titles_containing_month_names_remain_complete_text_targets():
+    service = dated_service({'Oktober Bericht': PAGE})
+    assert 'gespeichert' in service.handle('Notiz im Oktober Bericht speicher mit Inhalt Text',
+                                          'wire-42', authorized=True)

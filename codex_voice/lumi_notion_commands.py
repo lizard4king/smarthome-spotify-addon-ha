@@ -19,7 +19,7 @@ class NotionWriterProtocol(Protocol):
 
 _PREFIX = re.compile(r"\AMeine Frage ist(?:\s*:\s*|\s+|$)", re.I)
 _CREATE = re.compile(
-    r"Notiz in (?P<target>[^:\n]+?) speichern"
+    r"Notiz (?:in|im) (?P<target>[^:\n]+?) speichern?"
     r"(?:\s*:\s*|\s+mit\s+(?:dem\s+)?Inhalt\s+)(?P<text>.+)",
     re.I | re.S,
 )
@@ -48,6 +48,152 @@ _DATE_SUFFIXES = (
 )
 
 
+def _compact(value: str) -> str:
+    return ''.join(unicodedata.normalize('NFC', value.casefold()).split())
+
+
+_UNITS = ('', 'ein', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun')
+_TEENS = ('zehn', 'elf', 'zwölf', 'dreizehn', 'vierzehn', 'fünfzehn', 'sechzehn',
+          'siebzehn', 'achtzehn', 'neunzehn')
+_TENS = ('', '', 'zwanzig', 'dreißig', 'vierzig', 'fünfzig', 'sechzig',
+         'siebzig', 'achtzig', 'neunzig')
+
+
+def _cardinal(number: int) -> str:
+    if number < 10:
+        return 'eins' if number == 1 else _UNITS[number]
+    if number < 20:
+        return _TEENS[number - 10]
+    tens, units = divmod(number, 10)
+    return (_UNITS[units] + 'und' if units else '') + _TENS[tens]
+
+
+_CARDINALS = {_compact(_cardinal(n)): n for n in range(1, 100)}
+_CARDINALS['ein'] = 1
+_HUNDREDS = {_compact(_UNITS[n] + 'hundert'): n * 100 for n in range(1, 10)}
+_HUNDREDS['hundert'] = 100
+_THOUSANDS = {_compact(_UNITS[n] + 'tausend'): n * 1000 for n in range(1, 10)}
+_THOUSANDS['tausend'] = 1000
+_YEAR_HUNDREDS = {_compact(_cardinal(n) + 'hundert'): n * 100 for n in range(10, 100)}
+_ORDINAL_STEMS = (
+    '', 'erst', 'zweit', 'dritt', 'viert', 'fünft', 'sechst', 'siebt', 'acht', 'neunt',
+    'zehnt', 'elft', 'zwölft', 'dreizehnt', 'vierzehnt', 'fünfzehnt', 'sechzehnt',
+    'siebzehnt', 'achtzehnt', 'neunzehnt', 'zwanzigst', 'einundzwanzigst',
+    'zweiundzwanzigst', 'dreiundzwanzigst', 'vierundzwanzigst', 'fünfundzwanzigst',
+    'sechsundzwanzigst', 'siebenundzwanzigst', 'achtundzwanzigst', 'neunundzwanzigst',
+    'dreißigst', 'einunddreißigst',
+)
+_ORDINALS = {_compact(stem + ending): n for n, stem in enumerate(_ORDINAL_STEMS)
+             if n for ending in ('er', 'e', 'en', 'es', 'em')}
+_ORDINALS.update({_compact('siebent' + ending): 7 for ending in ('er', 'e', 'en', 'es', 'em')})
+_INVALID_ORDINALS = {_compact((_cardinal(n) + 'st' if n else 'nullt') + ending)
+                     for n in (0, *range(32, 100)) for ending in ('er', 'e', 'en', 'es', 'em')}
+_SPOKEN_NUMBERS = {**_CARDINALS, 'null': 0}
+_NUMBER_PIECES = {_compact(word) for word in (*_UNITS[1:], *_TEENS, *_TENS[2:],
+                                             'eins', 'und', 'tausend', 'hundert', 'null', 'minus', 'plus')}
+_NUMBER_SEQUENCE = re.compile('(?:' + '|'.join(sorted(_NUMBER_PIECES, key=len, reverse=True)) + r')+\Z')
+
+
+def _year_like(value: str) -> bool:
+    return (bool(re.fullmatch(r'[0-9]+', value)) or
+            (len(value) <= 256 and ('tausend' in value or 'hundert' in value)
+             and _NUMBER_SEQUENCE.fullmatch(value) is not None))
+
+
+def _under_thousand(value: str) -> int | None:
+    if not value:
+        return 0
+    if value in _CARDINALS:
+        return _CARDINALS[value]
+    for prefix, hundreds in _HUNDREDS.items():
+        if value.startswith(prefix):
+            remainder = value[len(prefix):]
+            if not remainder or remainder in _CARDINALS:
+                return hundreds + (_CARDINALS[remainder] if remainder else 0)
+    return None
+
+
+def _spoken_year(value: str) -> int | None:
+    """Only complete four-digit years, with at most one thousand/hundred group."""
+    value = _compact(value)
+    if len(value) > 96:
+        return None
+    if re.fullmatch(r'[0-9]{4}', value):
+        number = int(value)
+        return number if 1000 <= number <= 9999 else None
+    for prefix, thousands in _THOUSANDS.items():
+        if value.startswith(prefix):
+            remainder = _under_thousand(value[len(prefix):])
+            if remainder is not None:
+                return thousands + remainder
+    for prefix, hundreds in _YEAR_HUNDREDS.items():
+        if value.startswith(prefix):
+            remainder = value[len(prefix):]
+            if not remainder or remainder in _CARDINALS:
+                return hundreds + (_CARDINALS[remainder] if remainder else 0)
+    return None
+
+
+def _spoken_date(value: str) -> date | bool | None:
+    """Return a date, False for recognized invalid/ambiguous dates, or None.
+
+    Ordinary titles must not incur a full vocabulary scan. Invalid recognized
+    dates must not fall through to ordinary text or a shorter date suffix.
+    """
+    value = _compact(value)
+    if (not value or not (re.search(r'[0-9]|tausend|hundert', value)
+                          or any(month in value for month in _MONTHS))):
+        return None
+    candidates = set()
+    recognized = False
+    for month_name, month in _MONTHS.items():
+        if month_name not in value:
+            continue
+        # All German month names occur at most once in a valid complete date.
+        parts = value.split(month_name)
+        if len(parts) != 2:
+            continue
+        day_text, year_text = parts
+        numeric_day = re.fullmatch(r'[0-9]{1,2}\.?', day_text)
+        if not (numeric_day or day_text in _ORDINALS or day_text in _INVALID_ORDINALS):
+            continue
+        recognized = True
+        day = (_ORDINALS.get(day_text) if not numeric_day
+               else int(day_text.rstrip('.')))
+        year = _spoken_year(year_text)
+        if day is not None and year is not None:
+            try:
+                candidates.add(date(year, month, day))
+            except ValueError:
+                pass
+    if recognized:
+        return next(iter(candidates)) if len(candidates) == 1 else False
+    if len(value) > 160:
+        return False if _year_like(value) else None
+    # Only actually matching number suffixes are considered, including invalid
+    # month/day values. No 12-by-31 product scan and no digit concatenation.
+    for day_text, day in _SPOKEN_NUMBERS.items():
+        if not value.endswith(day_text):
+            continue
+        without_day = value[:-len(day_text)]
+        if _year_like(without_day):
+            recognized = True  # Missing one complete month/day group.
+        for month_text, month in _SPOKEN_NUMBERS.items():
+            if not without_day.endswith(month_text):
+                continue
+            year_text = without_day[:-len(month_text)]
+            if not _year_like(year_text):
+                continue
+            recognized = True
+            year = _spoken_year(year_text)
+            if year is not None:
+                try:
+                    candidates.add(date(year, month, day))
+                except ValueError:
+                    pass
+    return next(iter(candidates)) if len(candidates) == 1 else (False if recognized else None)
+
+
 def _canonical_target(value: str) -> tuple | None:
     """Equate complete title spellings; never infer missing date/title parts.
 
@@ -68,6 +214,18 @@ def _canonical_target(value: str) -> tuple | None:
             return None
         prefix = ''.join(value[:match.start()].split())
         return ('date', prefix, day)
+    # The earliest valid suffix consumes the complete longest spoken date.
+    # Never retry a shorter suffix based on whether a page title happens to match.
+    if not (re.search(r'[0-9]{4}|tausend|hundert', value)
+            or any(month in value for month in _MONTHS)):
+        return ('text', ''.join(value.split()))
+    starts = [0] + [match.end() for match in re.finditer(r'\s+', value)]
+    for start in starts:
+        spoken = _spoken_date(value[start:])
+        if spoken is False:
+            return None
+        if spoken is not None:
+            return ('date', ''.join(value[:start].split()), spoken)
     return ('text', ''.join(value.split()))
 
 
