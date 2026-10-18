@@ -14,17 +14,17 @@ from .reconciliation_proof import LedgerControlBalanceMismatch
 
 def bound_finanzguru_targets(store, target_accounts):
     """Return explicitly bound account IDs; institution labels are never consulted."""
-    table = store.db.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='bank_source_accounts'").fetchone()
-    if table is None:
-        return set()
     targets = set(target_accounts)
     if not targets:
         return set()
     marks = ','.join('?' for _ in targets)
-    return {row[0] for row in store.db.execute(
-        f'SELECT account_id FROM bank_source_accounts WHERE account_id IN ({marks})',
-        tuple(sorted(targets)))}
+    bound = set()
+    for table in ('bank_source_accounts', 'paypal_source_accounts'):
+        if store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            bound.update(row[0] for row in store.db.execute(
+                f'SELECT account_id FROM {table} WHERE account_id IN ({marks})', tuple(sorted(targets))))
+    return bound
+
 
 
 def partition_finanzguru_transfer_pairs(rows, pairs, direct_sources, eligible_references,

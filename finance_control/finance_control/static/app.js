@@ -39,7 +39,7 @@ function cockpitRenderDashboard(id) {
   cockpitDashboardErrors.delete(id);
 }
 
-async function cockpitLoadArea(id, {force = false} = {}) {
+async function cockpitLoadArea(id, {force = false, bankRefresh = true} = {}) {
   if (!state?.csrf || !cockpitFeaturesReady) return false;
   const key = cockpitAreaKey(id);
   if (cockpitAreaLoading.has(key)) return cockpitAreaLoading.get(key);
@@ -49,7 +49,7 @@ async function cockpitLoadArea(id, {force = false} = {}) {
     recurring: async () => { if (typeof window.financeRecurringLoad === 'function') await window.financeRecurringLoad(); },
     dashboard: async () => {
       cockpitRenderDashboard('dashboard');
-      if (typeof window.financeBankRefresh?.activate === 'function') void window.financeBankRefresh.activate();
+      if (bankRefresh && typeof window.financeBankRefresh?.activate === 'function') void window.financeBankRefresh.activate();
     },
     'category-outflows': async () => { cockpitRenderDashboard('category-outflows'); },
     purchases: async () => { if (typeof window.financePurchasesLoad === 'function') await window.financePurchasesLoad(); },
@@ -287,7 +287,7 @@ async function backupMaintain() {
   renderBackupStatus(status);
   return status;
 }
-async function refresh() {
+async function refresh({bankRefresh = true} = {}) {
   if (!$('cutoff').value) {
     const now = new Date();
     $('cutoff').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -360,9 +360,11 @@ async function refresh() {
   $('comparison').hidden=true;
   cockpitDataGeneration += 1;
   document.dispatchEvent(new Event('finance-refreshed'));
-  await cockpitLoadArea(location.hash.slice(1) || 'home', {force: true});
-  if (cockpitFeaturesReady) window.financeBankRefresh?.activate();
+  await cockpitLoadArea(location.hash.slice(1) || 'home', {force: true, bankRefresh});
+  if (bankRefresh && cockpitFeaturesReady) window.financeBankRefresh?.activate();
 }
+// Repaint saved ledger data without starting another bank retrieval.
+window.financeRefreshAfterImport = () => refresh({bankRefresh: false});
 function planInput(){const f=$('plan-form');if(!f.reportValidity())throw new Error('Bitte alle Planbeträge angeben.');const one_offs=[];for(const line of f.elements.one_offs.value.split('\n').filter(x=>x.trim())){const parts=line.split(';');if(parts.length!==2||!/^\s*\d+\s*$/.test(parts[0]))throw new Error('Einmalzahlungen: je Zeile Planmonat; Betrag.');one_offs.push({month:Number(parts[0]),amount:parts[1].trim()});}return {as_of:$('cutoff').value,plan:{income:f.elements.income.value,expenses:f.elements.expenses.value,reserve:f.elements.reserve.value,one_offs}};}
 const ns='http://www.w3.org/2000/svg';
 function svgNode(parent, tag, attrs, text){const node=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))node.setAttribute(k,v);if(text!==undefined)node.textContent=text;parent.append(node);return node;}

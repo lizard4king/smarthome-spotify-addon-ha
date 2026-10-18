@@ -140,7 +140,7 @@ def _reviewable_transfer_dependency(store, key, old, existing, transfer_members,
 
 def _check_foreign_keys(store):
     """Never replace a booking when a dependent table escaped reconciliation."""
-    known = set(_CHILD_TABLES) | {'transactions'}
+    known = set(_CHILD_TABLES) | {'transactions', 'paypal_source_transactions'}
     tables = [row[0] for row in store.db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
     for table in tables:

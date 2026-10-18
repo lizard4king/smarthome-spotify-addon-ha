@@ -1,8 +1,10 @@
 # Finance Control Home Assistant add-on
 
-Version `0.2.63` uses the Europe/Berlin calendar for manual PayPal credit observation
-dates. A date entered shortly after local midnight is accepted; future dates
-remain rejected. Audit timestamps and credit calculations remain unchanged.
+Version `0.2.64` adds a controlled PayPal transaction import on the bookings
+page. Stable provider references, explicit legacy matching and a fresh repeat
+read protect existing categories, documents and transaction history. The direct
+source blocks later file overwrites only after a confirmed successful import.
+EUR only; no payments, implicit transfer classification or historical deletion.
 
 Version `0.2.62` bounds repeated day-end proof work without caching current ledger
 decisions. Existing private PayPal installment plans can be linked individually
