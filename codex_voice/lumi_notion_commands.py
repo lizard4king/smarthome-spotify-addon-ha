@@ -15,7 +15,12 @@ class NotionWriterProtocol(Protocol):
                     *, explicit_instruction: bool) -> dict: ...
 
 
-_CREATE = re.compile(r"Notiz in (?P<target>[^:\n]+?) speichern\s*:\s*(?P<text>.+)", re.I | re.S)
+_PREFIX = re.compile(r"\AMeine Frage ist(?:\s*:\s*|\s+|$)", re.I)
+_CREATE = re.compile(
+    r"Notiz in (?P<target>[^:\n]+?) speichern"
+    r"(?:\s*:\s*|\s+mit\s+(?:dem\s+)?Inhalt\s+)(?P<text>.+)",
+    re.I | re.S,
+)
 _UPDATE = re.compile(
     r"Notiz in (?P<target>[^:\n]+?) ändern Block "
     r"(?P<block>[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\s*:\s*(?P<text>.+)",
@@ -23,8 +28,9 @@ _UPDATE = re.compile(
 )
 _INTENT = re.compile(r"\b(?:notion|notiz(?:en)?)\b.*\b(?:speicher\w*|änder\w*|schreib\w*|anleg\w*|erstell\w*|aktualisier\w*)\b|"
                      r"\b(?:speicher\w*|änder\w*|schreib\w*|anleg\w*|erstell\w*|aktualisier\w*)\b.*\b(?:notion|notiz(?:en)?)\b", re.I | re.S)
-_HELP = ("Bitte gib einen ausdrücklichen Befehl mit freigegebenem Ziel und Inhalt an: "
-         "‚Notiz in Haus speichern: Filter wechseln‘. Zum Ändern: "
+_HELP = ("Es wurde nichts geschrieben. Bitte nenne Ziel und Inhalt zusammen in einem Satz "
+         "als ausdrücklichen Befehl: "
+         "‚Notiz in Haus speichern mit Inhalt Filter wechseln‘. Zum Ändern: "
          "‚Notiz in Haus ändern Block <UUID>: Neuer Text‘.")
 
 
@@ -41,7 +47,9 @@ class NotionCommandService:
             self.targets[key] = str(UUID(page_id))
 
     def handle(self, question: str, request_id: str, *, authorized: bool) -> str | None:
-        question = question.strip()
+        # Strip this one fixed voice introduction once; embedded or quoted commands
+        # must still fail the fullmatch below. No dialogue state is retained.
+        question = _PREFIX.sub("", question.strip(), count=1)
         match = _CREATE.fullmatch(question)
         update = _UPDATE.fullmatch(question)
         if match is None and update is None:

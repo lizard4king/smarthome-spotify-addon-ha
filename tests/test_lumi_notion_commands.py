@@ -87,3 +87,100 @@ def test_transport_exception_does_not_leak_content(service):
 def test_casefolded_alias_collision_fails_closed():
     with pytest.raises(ValueError):
         NotionCommandService(Mock(), {'Haus': PAGE, 'haus': PAGE})
+
+
+@pytest.mark.parametrize('separator', ['mit Inhalt', 'mit dem Inhalt'])
+@pytest.mark.parametrize('prefix', ['', 'Meine Frage ist ', 'Meine Frage ist: ',
+                                    'meine frage ist : '])
+def test_spoken_create_is_complete_and_preserves_exact_content(service, separator, prefix):
+    question = prefix + f'Notiz in Haus speichern {separator} Bürotest Kobalt achtzehn.'
+    assert 'gespeichert' in service.handle(question, 'wire-42', authorized=True)
+    service.writer.create_note.assert_called_once_with(
+        PAGE, 'Bürotest Kobalt achtzehn.', 'Bürotest Kobalt achtzehn.', 'wire-42',
+        explicit_instruction=True, title_already_in_text=True)
+
+
+@pytest.mark.parametrize('prefix', ['Meine Frage ist ', 'Meine Frage ist: '])
+def test_fixed_introduction_preserves_historical_colon_form(service, prefix):
+    assert 'gespeichert' in service.handle(
+        prefix + 'Notiz in Haus speichern: Filter wechseln', 'wire-42', authorized=True)
+    service.writer.create_note.assert_called_once()
+
+
+@pytest.mark.parametrize('question', [
+    'Notiz in Haus speichern mit Inhalt',
+    'Notiz in Haus speichern mit dem Inhalt',
+    'Notiz in Haus speichern mit Inhalt   ',
+    'Notiz in Haus speichern mit dem Inhalt   ',
+    'Meine Frage ist: Notiz in Haus speichern mit Inhalt   ',
+    'Notiz in Haus speichern:   ',
+    'Notiz in Haus speichern Doppelpunkt Text',
+    'Notiz in Haus speichern Text',
+    '"Notiz in Haus speichern mit Inhalt Text"',
+    '‚Notiz in Haus speichern mit Inhalt Text‘',
+    'Er hat gesagt: Notiz in Haus speichern mit Inhalt Text',
+    'Wenn ich dich morgen bitte, Notiz in Haus speichern mit Inhalt Text',
+    'Kannst du eine Notiz in Haus speichern mit Inhalt Text?',
+    'Meine Frage lautet: Notiz in Haus speichern mit Inhalt Text',
+    'Meine Frage ist: Meine Frage ist: Notiz in Haus speichern mit Inhalt Text',
+])
+def test_incomplete_or_embedded_spoken_commands_never_write(service, question):
+    reply = service.handle(question, 'wire-42', authorized=True)
+    assert 'Es wurde nichts geschrieben.' in reply
+    assert 'zusammen in einem Satz' in reply
+    service.writer.create_note.assert_not_called()
+    service.writer.update_note.assert_not_called()
+
+
+def test_fixed_introduction_requires_a_word_boundary(service):
+    assert service.handle('Meine Frage istNotiz in Haus speichern mit Inhalt Text',
+                          'wire-42', authorized=True) is None
+    service.writer.create_note.assert_not_called()
+    service.writer.update_note.assert_not_called()
+
+
+@pytest.mark.parametrize('target', ['Fremd', 'Hau', PAGE, 'https://notion.so/example'])
+def test_spoken_form_does_not_expand_targets(service, target):
+    reply = service.handle(f'Notiz in {target} speichern mit Inhalt Text',
+                           'wire-42', authorized=True)
+    assert 'gespeichert' not in reply
+    service.writer.create_note.assert_not_called()
+
+
+def test_date_in_title_is_not_reinterpreted():
+    writer = Mock()
+    service = NotionCommandService(writer, {'Lumi Integrationstest 2026-10-18': PAGE})
+    reply = service.handle(
+        'Notiz in Lumi Integrationstest achtzehnter Oktober zweitausendsechsundzwanzig '
+        'speichern mit Inhalt Text', 'wire-42', authorized=True)
+    assert 'Ziel ist nicht freigegeben' in reply
+    writer.create_note.assert_not_called()
+
+
+def test_spoken_form_requires_authorization(service):
+    reply = service.handle('Notiz in Haus speichern mit Inhalt Text', 'wire-42', authorized=False)
+    assert 'Freigabe' in reply
+    service.writer.create_note.assert_not_called()
+
+
+@pytest.mark.parametrize('request_id', ['', '   '])
+def test_spoken_form_requires_nonblank_request_id(service, request_id):
+    reply = service.handle('Notiz in Haus speichern mit Inhalt Text', request_id, authorized=True)
+    assert 'Auftragskennung' in reply
+    service.writer.create_note.assert_not_called()
+
+
+def test_followup_does_not_complete_previous_incomplete_command(service):
+    first = service.handle('Notiz in Haus speichern mit Inhalt', 'wire-42', authorized=True)
+    assert 'Es wurde nichts geschrieben.' in first
+    assert service.handle('Bürotest Kobalt achtzehn.', 'wire-43', authorized=True) is None
+    service.writer.create_note.assert_not_called()
+    service.writer.update_note.assert_not_called()
+
+
+@pytest.mark.parametrize('outcome', [{'status': 'unknown'}, None, {}, {'status': 'success'}])
+def test_spoken_form_never_confirms_unknown_outcome(service, outcome):
+    service.writer.create_note.return_value = outcome
+    reply = service.handle('Notiz in Haus speichern mit Inhalt Text', 'wire-42', authorized=True)
+    assert 'Schreibstatus ist unklar' in reply
+    assert 'wurde in Notion gespeichert' not in reply
