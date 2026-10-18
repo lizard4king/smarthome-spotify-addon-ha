@@ -37,3 +37,9 @@
 /* Keep compact module controls usable without shrinking the existing layout. */
 .bc-dialog :is(button,summary,a.button){min-width:44px;min-height:44px;}
 @media(max-width:650px){.bc-dialog :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}
+.bc-estimate { grid-column: 1 / -1; padding: 1rem; border: 1px solid var(--border, #d1d5db); border-radius: .75rem; }
+.bc-estimate summary { cursor: pointer; font-weight: 600; }
+.bc-estimate-sources { max-height: 16rem; overflow-y: auto; margin: 1rem 0; }
+.bc-estimate-source { display: flex; align-items: flex-start; gap: .75rem; padding: .6rem 0; overflow-wrap: anywhere; }
+.bc-estimate-source input { flex: 0 0 auto; width: auto; margin-top: .25rem; }
+.bc-estimate-result { line-height: 1.5; overflow-wrap: anywhere; }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.67
+
+- Vertragsbeträge lassen sich aus mehreren ausdrücklich ausgewählten Zahlungen ableiten. Median, Mittelwert oder letzte Zahlung werden mit Quellen und Schätzkennzeichnung gespeichert; belegte Vertragsphasen und Laufzeiten bleiben maßgeblich.
+- Kompakte Kontenansichten zeigen Beträge zuerst. Diagnosen und Herkunft sind aufklappbar; Bankprüfungen öffnen die passende Aktion unmittelbar.
+- Einseitige eigene Umbuchungen können direkt aus einer Buchung begründet bestätigt und wieder aufgehoben werden. Quellenstand, Schreibsperre und unveränderlicher Verlauf schützen die Entscheidung. Originalbuchungen und Bankaufträge bleiben unverändert.
+
 ## 0.2.66
 
 - Die fortlaufende Buchungsliste erhält die geprüfte PayPal-Datumsherkunft auch aus dem tatsächlichen Dashboard-Datensatz. Die Kennzeichnung bleibt in beiden Ansichten und in den Details sichtbar.

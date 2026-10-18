@@ -1,13 +1,116 @@
 """Explicit booking membership in planning rules; the actual ledger stays immutable."""
 import calendar
+import hashlib
+import json
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
+from statistics import median
 
 from . import contracts, recurring
-from .classification import _audit, _now, _text, _document_link_rejected
+from .classification import _audit, _now, _text, _document_link_rejected, _cash_withdrawal_evidence
 from .core import money
 from .transfer_corrections import sql_transfer_predicate
+from .recurring_detection import _REVERSAL, _SETTLEMENT, _party_key
 
 _IDENTITY = {'account_id', 'external_id'}
 _DOCUMENT_FIELDS = ('id', 'kind', 'vendor', 'title', 'status')
+
+
+def _estimate_source(store, identity):
+    row = _booking(store, identity)
+    account = store.db.execute('SELECT kind,currency FROM accounts WHERE id=?', (row['account_id'],)).fetchone()
+    text = ' '.join(str(row.get(k) or '') for k in ('counterparty', 'description', 'category'))
+    if (row['is_transfer'] or not money(row['amount']) or row['date'] > date.today().isoformat() or account['kind'] == 'CASH'
+            or account['currency'] != row['currency'] or contracts._EXCLUDED.search(text)
+            or _REVERSAL.search(text) or _SETTLEMENT.search(text)
+            or _cash_withdrawal_evidence(store, *identity)):
+        raise ValueError('booking_not_suitable_for_estimate')
+    for document in store.db.execute("SELECT d.* FROM classification_documents d JOIN classification_document_links l "
+            "ON l.document_id=d.id WHERE l.account_id=? AND l.external_id=? AND d.kind='contract' AND d.status='confirmed'", identity):
+        if not _document_link_rejected(store, *identity, document['id']) and contracts._load(store, document)['configured']:
+            raise ValueError('contract_phase_amount_authoritative')
+    # Do not retain an original payment cancelled by a nearby explicit reversal.
+    for other in store.db.execute('SELECT t.*,c.counterparty,c.description FROM active_transactions t '
+            'LEFT JOIN transaction_context c USING(account_id,external_id) '
+            'WHERE t.account_id=? AND t.currency=? AND ABS(julianday(t.date)-julianday(?))<=7',
+            (row['account_id'], row['currency'], row['date'])):
+        if (_party_key(other['counterparty'] or '') == _party_key(row['counterparty'] or '')
+                and money(other['amount']) == -money(row['amount'])
+                and _REVERSAL.search(' '.join(str(other[k] or '') for k in ('counterparty', 'description', 'category')))):
+            raise ValueError('booking_not_suitable_for_estimate')
+    link = store.db.execute('SELECT rule_id,decision,revision FROM booking_contract_links '
+                            'WHERE account_id=? AND external_id=?', identity).fetchone()
+    public = {k: row[k] for k in ('account_id', 'external_id', 'date', 'amount', 'currency', 'counterparty', 'description')}
+    public['amount'] = format(money(row['amount']), '.2f')
+    public['membership'] = dict(link) if link else None
+    public['fingerprint'] = hashlib.sha256(json.dumps(dict(row), sort_keys=True).encode()).hexdigest()
+    return public
+
+
+def preview(store, data):
+    """Read-only, explicit amount-per-payment derivation; no cadence inference."""
+    if not isinstance(data, dict) or set(data) != {'account_id', 'external_id', 'method', 'bookings'}:
+        raise ValueError('invalid_amount_estimate')
+    anchor = _estimate_source(store, _identity(data))
+    if data['method'] not in {'median', 'mean', 'latest'} or not isinstance(data['bookings'], list) or not 1 <= len(data['bookings']) <= 100:
+        raise ValueError('invalid_amount_estimate')
+    sources = {}
+    for key in data['bookings']:
+        if not isinstance(key, dict) or set(key) != _IDENTITY:
+            raise ValueError('invalid_amount_estimate')
+        identity = _identity(key)
+        source = _estimate_source(store, identity)
+        if (source['account_id'] != anchor['account_id'] or source['currency'] != anchor['currency']
+                or (money(source['amount']) > 0) != (money(anchor['amount']) > 0)):
+            raise ValueError('estimate_account_currency_direction_mismatch')
+        sources[identity] = source
+    rows = sorted(sources.values(), key=lambda r: (r['date'], r['external_id']))
+    # The dialog anchor receives membership on save even when its amount was
+    # deliberately excluded from the calculation. Protect both sets of identities.
+    protected = dict(sources)
+    protected[(anchor['account_id'], anchor['external_id'])] = anchor
+    protected_rows = list(protected.values())
+    from .paypal_credit_forecast import forecast_schedules
+    for schedule in forecast_schedules(store):
+        if any(schedule['account_id'] == row['account_id'] and schedule['currency'] == row['currency']
+                and contracts._reference_present(schedule['reference'], row['counterparty']+' '+row['description'])
+                for row in protected_rows):
+            raise ValueError('estimate_exact_payment_authoritative')
+    _reject_authoritative_context(store, protected_rows)
+    amounts = [money(r['amount']) for r in rows]
+    if data['method'] == 'latest':
+        latest = {money(r['amount']) for r in rows if r['date'] == rows[-1]['date']}
+        if len(latest) != 1:
+            raise ValueError('ambiguous_latest_estimate')
+        amount = next(iter(latest))
+    else:
+        amount = median(amounts) if data['method'] == 'median' else sum(amounts, Decimal(0)) / len(amounts)
+    amount = amount.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+    if not amount:
+        raise ValueError('zero_recurring_amount')
+    return {'method': data['method'], 'amount': format(amount, '.2f'), 'currency': anchor['currency'],
+            'rounding': 'ROUND_HALF_UP', 'amount_estimated': True, 'bookings': rows}
+
+
+def _reject_authoritative_context(store, sources):
+    """Reuse existing matchers; a missing explicit link is not a new contract."""
+    contextual = [dict(source) for source in sources]
+    attach_context(store, contextual, date.today().isoformat())
+    for source in contextual:
+        context = source['contract_context']
+        if (context.get('rule') or {}).get('document_id') is not None:
+            raise ValueError('contract_phase_amount_authoritative')
+    # A confirmed phase can also exist before an account/day setting is saved.
+    # Use the contract matcher's provider, amount and period checks, requiring
+    # its identifying reference here rather than blocking unrelated same-vendor rows.
+    keys = {(r['account_id'], r['external_id']) for r in sources}
+    for document, contract in contracts._active_contracts(store):
+        suggestions, _ = contracts._matches(store, document)
+        if any((candidate['account_id'], candidate['external_id']) in keys
+                and contracts._reference_present(contract['reference'],
+                    (candidate['counterparty'] or '')+' '+(candidate['description'] or ''))
+                for candidate in suggestions):
+            raise ValueError('contract_phase_amount_authoritative')
 
 
 def _identity(data):
@@ -18,7 +121,7 @@ def _booking(store, identity):
     row = store.db.execute(
         "SELECT t.*,COALESCE(c.counterparty,'') AS counterparty,COALESCE(c.description,'') AS description,"
         f'COALESCE({sql_transfer_predicate(context_alias="c")},0) AS is_transfer '
-        'FROM active_transactions t LEFT JOIN transaction_context c USING(account_id,external_id) '
+        'FROM active_transaction_versions t LEFT JOIN transaction_context c USING(account_id,external_id) '
         'WHERE t.account_id=? AND t.external_id=?', identity).fetchone()
     if row is None:
         raise ValueError('unknown_booking')
@@ -112,12 +215,22 @@ def view(store, data):
     if context['rule'] and context['rule']['document_id']:
         suggestions = [r for r in suggestions if r['id'] != context['rule']['id']]
         suggestions.insert(0, context['rule'])
-    return {'booking': public, **context, 'suggested_rules': suggestions}
+    candidates = []
+    for candidate in store.db.execute('SELECT account_id,external_id FROM active_transactions '
+            'WHERE account_id=? AND currency=? ORDER BY date DESC,external_id DESC LIMIT 100',
+            (booking['account_id'], booking['currency'])):
+        try:
+            source = _estimate_source(store, tuple(candidate))
+        except ValueError:
+            continue
+        if (money(source['amount']) > 0) == (money(booking['amount']) > 0):
+            candidates.append(source)
+    return {'booking': public, **context, 'suggested_rules': suggestions, 'amount_candidates': candidates}
 
 
 def _change(store, data, *, reject):
     expected = _IDENTITY | {'revision', 'confirmed'} | (set() if reject else {'rule'})
-    if not isinstance(data, dict) or set(data) != expected or data['confirmed'] is not True:
+    if not isinstance(data, dict) or set(data) not in (expected, expected | ({'amount_estimate'} if not reject else set())) or data['confirmed'] is not True:
         raise ValueError('explicit_booking_contract_confirmation_required')
     identity = _identity(data)
     revision = contracts._revision(data['revision'])
@@ -153,7 +266,57 @@ def _change(store, data, *, reject):
                     authoritative.add(old['document_id'])
             if authoritative and (len(authoritative) != 1 or rule.get('document_id') not in authoritative):
                 raise ValueError('booking_contract_document_authoritative')
+            estimate = data.get('amount_estimate')
+            if estimate is not None:
+                if (not isinstance(estimate, dict) or not isinstance(estimate.get('bookings'), list)
+                        or any(not isinstance(b, dict) or not _IDENTITY <= b.keys() for b in estimate['bookings'])):
+                    raise ValueError('invalid_amount_estimate')
+                fresh = preview(store, {**dict(zip(('account_id', 'external_id'), identity)),
+                    'method': estimate.get('method'), 'bookings': [
+                        {k: b[k] for k in ('account_id', 'external_id')} for b in estimate.get('bookings', [])]})
+                if fresh != estimate:
+                    raise ValueError('stale_amount_estimate')
+                if rule.get('document_id') is not None:
+                    raise ValueError('contract_phase_amount_authoritative')
+                if money(rule['amount']) != money(fresh['amount']):
+                    raise ValueError('estimate_amount_mismatch')
+                for source in fresh['bookings']:
+                    member = source['membership']
+                    if member and (member['decision'] == 'rejected' or member['rule_id'] != rule.get('id')):
+                        raise ValueError('estimate_booking_already_decided')
+                for existing_row in store.db.execute('SELECT * FROM recurring_rules'):
+                    existing = recurring._row(existing_row)
+                    if (existing['id'] == rule.get('id') or existing['account_id'] != booking['account_id']
+                            or existing['currency'] != booking['currency'] or existing['document_id'] is not None
+                            or (money(existing['amount']) > 0) != (money(booking['amount']) > 0)):
+                        continue
+                    if any(contracts._reference_present(existing['reference'], source['counterparty']+' '+source['description'])
+                            or (not existing['reference'] and _party_key(existing['label']) == _party_key(source['counterparty']))
+                            for source in fresh['bookings']):
+                        raise ValueError('estimate_existing_rule_required')
+                if rule.get('id') is not None:
+                    old_row = store.db.execute('SELECT * FROM recurring_rules WHERE id=?', (rule['id'],)).fetchone()
+                    if old_row is None:
+                        raise ValueError('stale_recurring_revision')
+                    old = recurring._row(old_row)
+                    if any(rule[k] != old[k] for k in ('valid_from', 'valid_to')):
+                        raise ValueError('estimate_preserves_contract_term')
             rule_id = recurring._save_within_transaction(store, rule)['id']
+            if estimate is not None:
+                saved = store.db.execute('SELECT payload,revision FROM recurring_rules WHERE id=?', (rule_id,)).fetchone()
+                payload = json.loads(saved['payload'])
+                payload['amount_derivation'] = estimate
+                store.db.execute('UPDATE recurring_rules SET payload=? WHERE id=?', (json.dumps(payload), rule_id))
+                store.db.execute('INSERT INTO contract_amount_estimates(rule_id,rule_revision,payload,created_at) VALUES (?,?,?,?)',
+                                 (rule_id, saved['revision'], json.dumps(estimate), _now()))
+                for source in estimate['bookings']:
+                    source_id = (source['account_id'], source['external_id'])
+                    if source_id == identity:
+                        continue
+                    store.db.execute('INSERT INTO booking_contract_links(account_id,external_id,rule_id,decision,revision,updated_at) '
+                        "VALUES (?,?,?,'confirmed',1,?) ON CONFLICT(account_id,external_id) DO UPDATE SET "
+                        "rule_id=excluded.rule_id,decision='confirmed',revision=revision+1,updated_at=excluded.updated_at",
+                        (*source_id, rule_id, _now()))
         decision = 'rejected' if reject else 'confirmed'
         store.db.execute('INSERT INTO booking_contract_links(account_id,external_id,rule_id,decision,revision,updated_at) '
                          'VALUES (?,?,?,?,?,?) ON CONFLICT(account_id,external_id) DO UPDATE SET '

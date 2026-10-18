@@ -94,6 +94,34 @@
     host.querySelector('button').disabled = busy || !manualRefresh;
   }
 
+  function openDetails() {
+    if (typeof window.cockpitNavigate === 'function') window.cockpitNavigate('dashboard');
+    const reveal = () => {
+      const details = document.querySelector('#dashboard .fc-bank-tools');
+      if (!details) return false;
+      details.open = true;
+      const target = details.querySelector('.fbr-panel button, .fbr-panel summary, button');
+      target?.focus({preventScroll:true});
+      details.scrollIntoView?.({block:'center', behavior:'smooth'});
+      return true;
+    };
+    if (!reveal()) requestAnimationFrame(reveal);
+  }
+
+  function bindCompactControls() {
+    const compactButton = document.querySelector('#cockpit-bank-refresh button');
+    if (compactButton && !compactButton.dataset.bound) {
+      compactButton.dataset.bound = 'true';
+      compactButton.addEventListener('click', () => { if (manualRefresh) void manualRefresh(); });
+    }
+    const detailsLink = document.querySelector('#cockpit-bank-refresh a[href="#dashboard"]');
+    if (detailsLink && !detailsLink.dataset.bound) {
+      detailsLink.dataset.bound = 'true';
+      detailsLink.textContent = 'Abrufdetails öffnen';
+      detailsLink.addEventListener('click', event => {event.preventDefault(); openDetails();});
+    }
+  }
+
   function message(parent, text, error = false) {
     const paragraph = document.createElement('p');
     paragraph.className = `fbr-message${error ? ' fbr-error' : ''}`;
@@ -204,7 +232,7 @@
       }
       const errors = rows.filter(row => row?.status === 'error' || row?.status === 'setup_required');
       const updated = rows.filter(row => row?.status === 'updated').length;
-      compactStatus(errors.length ? 'Bankabruf benötigt Deine Prüfung. Details unter Konten.'
+      compactStatus(errors.length ? 'Bankabruf: Verbindungsfehler.'
         : updated ? 'Konten aktualisiert.' : 'Vor kurzem abgefragt.', false, errors.length > 0);
     };
 
@@ -396,7 +424,7 @@
     const allowed = await loadSetup();
     if (!live()) return;
     if (!allowed) {
-      if (allowed === null) compactStatus('Bankeinrichtung konnte nicht geladen werden. Details unter Konten.', false, true);
+      if (allowed === null) compactStatus('Bankabruf nicht verfügbar.', false, true);
       else {
         const compact = document.getElementById('cockpit-bank-refresh');
         if (compact) compact.hidden = true;
@@ -404,11 +432,6 @@
       return;
     }
     manualRefresh = start;
-    const compactButton = document.querySelector('#cockpit-bank-refresh button');
-    if (compactButton && !compactButton.dataset.bound) {
-      compactButton.dataset.bound = 'true';
-      compactButton.addEventListener('click', () => { if (manualRefresh) void manualRefresh(); });
-    }
     const state = await request('/api/administration/bank-refresh-state', {});
     if (!live()) return;
     if (state.ok && state.data?.status === 'complete' && Array.isArray(state.data.connections)) {
@@ -426,6 +449,7 @@
   }
 
   window.financeBankRefresh = {
+    openDetails,
     activate() {
       if (activated) return;
       activated = true;
@@ -434,7 +458,7 @@
         if (!host) return;
         host.replaceChildren();
         message(host, 'Bankabruf konnte nicht angezeigt werden.', true);
-        compactStatus('Bankabruf konnte nicht gestartet werden. Details unter Konten.', false, true);
+        compactStatus('Bankabruf konnte nicht gestartet werden.', false, true);
       });
     },
     deactivate() {
@@ -451,5 +475,6 @@
       host.replaceChildren();
     },
   };
+  bindCompactControls();
   document.querySelector('form.logout')?.addEventListener('submit', () => window.financeBankRefresh.deactivate(), {once: true});
 })();

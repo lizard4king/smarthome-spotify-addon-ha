@@ -84,6 +84,8 @@ def _save_within_transaction(store, data):
         previous = _row(previous_row)
         if previous['document_id'] != data['document_id']:
             raise ValueError('recurring_document_immutable')
+        if previous.get('amount_derivation') and all(previous[k] == payload[k] for k in ('amount', 'account_id', 'currency')):
+            payload['amount_derivation'] = previous['amount_derivation']
     elif revision != 0:
         raise ValueError('stale_recurring_revision')
     if data['document_id'] is not None:
@@ -341,7 +343,7 @@ def view(store, data):
         account_rows = [r for r in account_rows if r['id'] == data['account_id']]
     rules = [_row(row) for row in store.db.execute('SELECT * FROM recurring_rules ORDER BY id')]
     settings = {r['document_id']: r for r in rules if r['document_id'] is not None}
-    schedules = [{**r, 'basis': 'confirmed_manual', 'estimated': False, 'date_estimated': False, 'amount_estimated': False, 'missing_fields': [], 'phases': []}
+    schedules = [{**r, 'basis': 'confirmed_manual', 'estimated': bool(r.get('amount_derivation')), 'date_estimated': False, 'amount_estimated': bool(r.get('amount_derivation')), 'missing_fields': [], 'phases': []}
                  for r in rules if r['document_id'] is None]
     # Per-view caches preserve the read-only cutoff and cannot outlive edits.
     rejected = {}

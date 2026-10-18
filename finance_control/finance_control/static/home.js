@@ -36,11 +36,12 @@
       [account.owner_label, account.institution].filter(Boolean).join(' · ')));
     const balance = hasAmount(account.current_balance?.amount) ? account.current_balance : null;
     const value = el('span', 'fc-home-account-value');
-    value.append(el('strong', balance && Number(balance.amount) < 0 ? 'fc-negative' : '',
-      balance ? moneyText(balance.amount, balance.currency) : 'Stand fehlt'));
-    value.append(el('small', 'muted', balance ? 'Stand ' + dateText(balance.booked_on) : 'Kein belegter Stand'));
+    const amount = el('strong', balance && Number(balance.amount) < 0 ? 'fc-negative' : '',
+      balance ? moneyText(balance.amount, balance.currency) : '—');
+    if (!balance) amount.setAttribute('aria-label', `Kontostand fehlt für ${account.display_name}`);
+    value.append(amount);
+    if (balance) value.append(el('small', 'muted', dateText(balance.booked_on)));
     button.append(icon, name, value);
-    if (window.financeReconciliation) window.financeReconciliation(button, account.reconciliation, {action:false});
     button.addEventListener('click', () => window.financeDashboardSelectAccount(account.id));
     return button;
   }
@@ -63,8 +64,30 @@
     for (const account of ordered) {
       const row = el('div', 'fc-home-account-row');
       row.append(accountButton(account));
-      if (!hasAmount(account.current_balance?.amount)) {
-        row.append(link('Bankabruf oder Konto prüfen', 'dashboard'));
+      if (!hasAmount(account.current_balance?.amount) || account.reconciliation) {
+        const details = el('details', 'fc-home-account-evidence');
+        details.append(el('summary', '', 'Details'));
+        if (!hasAmount(account.current_balance?.amount)) {
+          const action = el('button', 'fc-home-account-action', 'Bankabruf öffnen');
+          action.type = 'button';
+          action.addEventListener('click', () => {
+            if (typeof window.financeBankRefresh?.openDetails === 'function')
+              window.financeBankRefresh.openDetails();
+            else {
+              let status = details.querySelector('[role="alert"]');
+              if (!status) {
+                status = el('p', 'fc-home-account-action-status', 'Bankabruf ist derzeit nicht verfügbar.');
+                status.setAttribute('role', 'alert');
+                status.setAttribute('aria-live', 'polite');
+                details.append(status);
+              }
+            }
+          });
+          details.append(action);
+        }
+        if (account.reconciliation && window.financeReconciliation)
+          window.financeReconciliation(details, account.reconciliation);
+        row.append(details);
       }
       list.append(row);
     }
@@ -91,9 +114,12 @@
     for (const item of data.period_totals || []) for (const [key, title] of [['inflow', 'Zugänge'], ['outflow', 'Abgänge']]) {
       const metric = el('div'); metric.append(el('span', 'muted', title), el('strong', key === 'inflow' ? 'fc-positive' : '', moneyText(item[key], item.currency))); flow.append(metric);
     }
-    const movementDetails = el('details', 'fc-caption'); movementDetails.append(el('summary', '', 'Datengrundlage'), el('p', '', 'Aus Kontosicht, einschließlich Umbuchungen. Für Haushaltsausgaben verwende die Analyse.'));
+    const periodIncomplete = Boolean(data.period_incomplete_account_ids?.length);
+    const movementDetails = el('details', 'fc-caption');
+    movementDetails.append(el('summary', '', periodIncomplete ? 'Datengrundlage (unvollständig)' : 'Datengrundlage'),
+      el('p', '', 'Aus Kontosicht, einschließlich Umbuchungen. Für Haushaltsausgaben verwende die Analyse.'));
     movements.append(flow, movementDetails);
-    if (data.period_incomplete_account_ids?.length) movements.append(el('p', 'notice', `Unvollständiger Zeitraum: Für ${data.period_incomplete_account_ids.length} Konten bestehen bekannte Datenlücken. Die Summen enthalten nur vorhandene Buchungen.`));
+    if (periodIncomplete) movementDetails.append(el('p', 'notice', `Unvollständiger Zeitraum: Für ${data.period_incomplete_account_ids.length} Konten bestehen bekannte Datenlücken. Die Summen enthalten nur vorhandene Buchungen.`));
     columns.append(movements);
     const budget = section('Budgets', 'plan-actual', 'Öffnen'); budget.id = 'home-budget';
     budget.append(el('p', 'muted fc-budget-status', 'Gespeicherter Plan wird geprüft …')); columns.append(budget); fragment.append(columns);

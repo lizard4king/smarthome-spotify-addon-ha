@@ -32,6 +32,7 @@
 .fd-account-kind,.fd-account-last-booking{font-size:.8125rem;color:var(--fd-muted);grid-column:1/-1;overflow-wrap:anywhere}
 .fd-account-balance{grid-column:1/-1;text-align:right;display:grid;gap:2px;min-width:0}.fd-account-amount{font-size:1.05rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.fd-account-balance-date{font-size:.8125rem;color:var(--fd-muted)}
 .fd-account-body{padding:0 10px 12px;min-width:0}.fd-account-freshness,.fd-account-note{font-size:.8125rem;color:var(--fd-muted);margin-bottom:8px!important}
+.fd-account-evidence{margin:10px 0;color:var(--fd-muted);font-size:.8125rem}.fd-account-evidence>summary{min-height:40px;display:flex;align-items:center;font-weight:600}.fd-account-balance-action{min-height:44px;margin-top:8px;font-size:.875rem}
 .fd-metrics{display:grid;gap:6px}.fd-metric{display:flex;justify-content:space-between;gap:8px;padding:8px;background:var(--fc-bg);border-radius:8px;font-size:.8125rem}.fd-metric strong{white-space:nowrap;font-variant-numeric:tabular-nums}
 .fd-owner{padding:0!important;margin:0!important;border:0!important;background:transparent!important}.fd-owner-title{font-size:.8125rem;color:var(--fd-muted);padding:12px 8px}
 .fd-main{display:grid;min-width:0;gap:16px}.fd-root :is(.fd-bookings,.fd-categories){margin:0;padding:20px;border:1px solid var(--fd-border);border-radius:var(--fc-radius);background:var(--fc-surface);min-width:0}
@@ -86,6 +87,7 @@
  .fd-root .fd-account-kind{grid-row:2}
  .fd-root .fd-account-balance{grid-row:3;text-align:left}
 }
+@media(max-width:700px){.fd-account-evidence{margin:6px 0}.fd-account-balance-action{width:100%;margin-top:10px}}
 /* Keep normal booking words intact in the desktop table; scroll inside its panel. */
 @media(min-width:701px){
  .fd-table-scroll{overflow-x:auto}

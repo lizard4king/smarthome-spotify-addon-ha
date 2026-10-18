@@ -33,6 +33,14 @@
     booking_not_suitable_for_contract:'Eine Umbuchung oder Nullbuchung lässt sich hier nicht als Vertrag bestätigen.',
     booking_contract_account_currency_mismatch:'Diese Zahlungsregel gehört zu einem anderen Konto oder einer anderen Währung.',
     booking_contract_document_authoritative:'Für diese Buchung liegt ein maßgeblicher Vertragsbeleg vor. Wähle dessen Zahlungsregel und prüfe die Vertragsphasen.',
+    stale_amount_estimate:'Ausgewählte Buchungen oder Zuordnungen wurden geändert. Berechne die Vorschau erneut.',
+    ambiguous_latest_estimate:'Am jüngsten gewählten Buchungstag liegen verschiedene Beträge vor. Wähle eine einzelne Zahlung oder ein anderes Verfahren.',
+    estimate_booking_already_decided:'Eine ausgewählte Buchung ist bereits anders zugeordnet oder ausdrücklich abgelehnt.',
+    estimate_preserves_contract_term:'Die bestehende Laufzeit bleibt bei einer Betragsschätzung erhalten. Ändere sie separat.',
+    booking_not_suitable_for_estimate:'Eine ausgewählte Zahlung ist eine Umbuchung, Erstattung, Stornierung oder anderweitig ungeeignet.',
+    estimate_exact_payment_authoritative:'Eine ausgewählte Zahlung gehört zu einem bestätigten Ratenplan. Dessen Beträge und Laufzeit bleiben maßgeblich.',
+    estimate_account_currency_direction_mismatch:'Die ausgewählten Zahlungen müssen dasselbe Konto, dieselbe Währung und dieselbe Zahlungsrichtung haben.',
+    estimate_existing_rule_required:'Eine bestehende oder deaktivierte Regel passt bereits zu ausgewählten Zahlungen. Wähle diese Regel, um eine doppelte Planung zu vermeiden.',
   })[error?.message] || 'Die Vertragsangaben konnten nicht gespeichert werden. Prüfe die Eingaben oder lade den aktuellen Stand neu.';
   const current = session => active === session && session.dialog.isConnected;
   const call = (action, payload) => api('/api/booking-contract-' + action, payload);
@@ -133,6 +141,45 @@
       const from = field(form,'valid_from','Gültig ab','date',rule?.valid_from || tx.date);
       const to = field(form,'valid_to','Gültig bis (falls bekannt)','date',rule?.valid_to || '',false);
       const reference = field(form,'reference','Erkennungsmerkmal im Buchungstext','text',rule?.reference || tx.counterparty || '',false); reference.maxLength=240;
+      let amountEstimate = null;
+      if (!doc && data.amount_candidates?.length) {
+        const estimateBox = node('details',undefined,'bc-estimate');
+        estimateBox.append(node('summary','Betrag aus ausgewählten Zahlungen schätzen'));
+        estimateBox.append(node('p','Wähle bis zu 100 vorhandene Zahlungen. Der Betrag gilt je Zahlung; den Rhythmus bestätigst Du separat. Angezeigt werden die 100 jüngsten Buchungen des Kontos, soweit geeignet.','bc-help'));
+        const methodLabel=node('label',undefined,'bc-field');methodLabel.append(node('span','Berechnungsverfahren'));
+        const method=document.createElement('select');method.name='estimate_method';
+        for(const [value,text] of [['','Verfahren wählen'],['median','Median'],['mean','Mittelwert'],['latest','Letzte gewählte Zahlung (jüngster Buchungstag)']]) {
+          const option=node('option',text);option.value=value;method.append(option);
+        }
+        methodLabel.append(method);estimateBox.append(methodLabel);
+        const selection=node('div',undefined,'bc-estimate-sources');
+        const checks=[];
+        for(const source of data.amount_candidates) {
+          const label=node('label',undefined,'bc-estimate-source'),check=document.createElement('input');check.type='checkbox';
+          check.checked=source.account_id===tx.account_id&&source.external_id===tx.external_id;
+          label.append(check,node('span',`${date(source.date)} · ${money(source.amount,source.currency)} · ${source.counterparty||'Buchung'} · ${source.description||source.external_id}`));
+          selection.append(label);checks.push({check,source});
+        }
+        const result=node('p',undefined,'bc-estimate-result');result.setAttribute('role','status');
+        const invalidate=()=>{amountEstimate=null;amount.value='';amount.readOnly=false;result.textContent='Auswahl geändert. Vorschau erneut berechnen.';confirmed.checked=false;};
+        selection.addEventListener('change',invalidate);method.addEventListener('change',invalidate);
+        const calculate=button('Betrag als Vorschau berechnen',async()=>{
+          if(session.busy)return;
+          const bookings=checks.filter(x=>x.check.checked).map(x=>({account_id:x.source.account_id,external_id:x.source.external_id}));
+          if(!method.value||!bookings.length){result.textContent='Wähle Zahlungen und ein Verfahren.';return;}
+          session.busy=true;calculate.disabled=true;
+          for(const control of [choice,close,method,...checks.map(x=>x.check),...form.querySelectorAll('button')])control.disabled=true;
+          try {
+            const preview=await call('preview',{...session.key,method:method.value,bookings});
+            if(!current(session))return;
+            amountEstimate=preview;amount.value=preview.amount;amount.readOnly=true;confirmed.checked=false;
+            result.textContent=`Betrag geschätzt: ${money(preview.amount,preview.currency)} je Zahlung · ${preview.bookings.length} ausgewählte Quellen · kaufmännisch auf Cent gerundet. Bestätigung erhält die Kennzeichnung als Schätzung.`;
+          }catch(error){amountEstimate=null;amount.value='';amount.readOnly=false;result.textContent=phrase(error);}
+          finally{session.busy=false;for(const control of [choice,close,method,...checks.map(x=>x.check),...form.querySelectorAll('button')])control.disabled=false;}
+        });
+        estimateBox.append(selection,calculate,result);form.append(estimateBox);
+      }
+      if(rule?.amount_derivation)form.append(node('p',`Betrag geschätzt · ${rule.amount_derivation.bookings.length} Quellen · Verfahren ${{median:'Median',mean:'Mittelwert',latest:'Letzte gewählte Zahlung'}[rule.amount_derivation.method]||rule.amount_derivation.method}.`,'bc-help'));
       if (doc) {
         label.disabled = true; from.disabled = true; to.disabled = true; interval.disabled = true; reference.disabled = true;
         form.append(node('p', 'Betrag, Rhythmus und Laufzeit folgen den bestätigten Vertragsphasen.', 'bc-help'));
@@ -154,7 +201,7 @@
       },'secondary');
       actions.append(save,reject,button('Neu laden',()=>{if(!session.busy)void load(session);},'secondary')); form.append(actions);
       const lock = value => {session.busy=value; choice.disabled=value; close.disabled=value;
-        for (const control of form.querySelectorAll('button')) control.disabled=value;};
+        for (const control of form.querySelectorAll('button,.bc-estimate input,.bc-estimate select')) control.disabled=value;};
       async function write(action, extra) {
         if (session.busy || !current(session)) return;
         lock(true); status.textContent='Angaben werden gespeichert …';
@@ -167,7 +214,7 @@
       }
       form.addEventListener('submit', e => {
         e.preventDefault(); if (session.busy || !form.reportValidity()) return;
-        void write('save',{confirmed:confirmed.checked,rule:{
+        void write('save',{confirmed:confirmed.checked,...(amountEstimate?{amount_estimate:amountEstimate}:{}),rule:{
           id:rule?.id ?? null,revision:rule?.revision || 0,
           document_id:rule?.document_id ?? null,document_revision:rule?.document_revision ?? null,
           label:label.value,account_id:tx.account_id,currency:tx.currency,
