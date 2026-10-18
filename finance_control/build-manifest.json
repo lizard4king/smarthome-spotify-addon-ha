@@ -497,13 +497,13 @@
     "static/style.css": "ed50e232598bb434c91e08968a0fb9b17e5b379d3fc9969c7c830580e1bec442",
     "static/tabs.js": "26597aea816ec532089f38767c3f6ad4eada781a3205c11ff0bc89263a7f9b8b",
     "static/tokens.css": "bf0a596ef13beafc8188baa25300421ba97ed03158e3e5350a7cd7d17856f439",
-    "static/wealth.js": "44ff0bbee0e774a358901595430d0c65a708000ae546404399b05fb6b0f31fb0",
+    "static/wealth.js": "3de7d352197ae4c20d89f1fd1434e2629a6ed71d31538707d17b515caf58c808",
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "b1bfc4b8f230685444aa6d47c455eee830a44330f97f91915c6fba792d21ad05",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
     "web.py": "b8e338ee2fe8c57b50ba6c7183258f4925a6cd19c66c22502ce92eecf93e33ad"
   },
   "schema_version": 1,
-  "source_commit": "a880ef3dda80aa4494ba0abe3079d001fe2d4d32",
-  "source_tree_sha256": "efe2248cd2f814d0e484866f4f17312a946cf510f2c6be1a0c743c7674730b43"
+  "source_commit": "3e497e34fdb441f0f371a76b6eababbacfe92460",
+  "source_tree_sha256": "d2e8a364b485a029febbaf60f466125ca4d4009e9c534c896da138766a9f46c7"
 }
