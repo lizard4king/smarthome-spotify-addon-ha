@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.66
+
+- Die fortlaufende Buchungsliste erhält die geprüfte PayPal-Datumsherkunft auch aus dem tatsächlichen Dashboard-Datensatz. Die Kennzeichnung bleibt in beiden Ansichten und in den Details sichtbar.
+- Synthetische Tests prüfen die gespeicherte Herkunft nach erneutem Öffnen des Bestands und über mehrere begrenzte Abfrageblöcke. Buchungen und finanzielle Berechnungen bleiben unverändert.
+
 ## 0.2.65
 
 - Fehlende PayPal-Buchungsdaten können durch ein gültiges, dauerhaft als „PayPal-Transaktionsdatum“ gekennzeichnetes Datum ersetzt werden. Ungültige Buchungsdaten bleiben gesperrt.

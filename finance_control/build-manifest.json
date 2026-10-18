@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "61b87ab506e8ca129dd774401646707ee5cfbba128086c90f1a398eeb4dec721",
-  "addon_version": "0.2.65",
+  "addon_tree_sha256": "ef480bb3f1f1e5479be51945a16a3535d344401b93cef473542ecc09ddcca92d",
+  "addon_version": "0.2.66",
   "deployment_files": {
-    "Dockerfile": "168dcab911891ee564c00a646ac3ca2fa733b6d0fcde6b6c58e8d61a4ee36084",
-    "README.md": "4fe066b6c6aeef238e8eed69e0465278dd298f60d90d345e150df0ad77746c7b",
+    "Dockerfile": "adefcdec2af9be1495d55bbac8c93f2e53fff8a037ce8e5b12c197804d034b15",
+    "README.md": "56e41ed0be6244c7fcaff5dee5c5cb14277325cdc46ce6826079ff5e35b82099",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "97ce573422574364b0b5c9ff23daee0223b0a6362381209b62bc5224d2df7b2e",
+    "config.yaml": "9a79a7f65eceb433bf9aec97970609249d0ddac464a54aaeeab288a7a7308fa6",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -65,7 +65,7 @@
     "contracts.py": "a408151459dd7ca3dcd48eb4b165ddcf38287f8fd79eaf5c36a5bc22a0067d6f",
     "core.py": "6044c8ff6091e422a23f8d2f54028dc340d61a229f2d37c73226e7c2ed28be22",
     "current_balances.py": "c4cd8fc2ec450e610300a133c3d8fb740437445625765f7217839987a73a15be",
-    "dashboard.py": "223e46fda6d065ab377d20cab3d8aaed1a7bde6fbcba7b47a5085f8ca30c50a8",
+    "dashboard.py": "1423b4b391d32e315f71c343da8f369e95d96a91331ea8daa0da270aeaf2713b",
     "document_intake.py": "60ce3dc8928990bc2c0c5ff3b1764c6f9e7e001c209698f509772a86c9cbeeda",
     "drive_api.py": "c728c4ffaad59e866fbec1c629846d186e2f36e09daf92f1f4bb144e8288fb04",
     "file_import.py": "0360f863d633aa4bd3d52ff8e70494ea384e9b44cdbd4aba777e34d8b106e062",
@@ -504,6 +504,6 @@
     "web.py": "b8e338ee2fe8c57b50ba6c7183258f4925a6cd19c66c22502ce92eecf93e33ad"
   },
   "schema_version": 1,
-  "source_commit": "3e497e34fdb441f0f371a76b6eababbacfe92460",
-  "source_tree_sha256": "d2e8a364b485a029febbaf60f466125ca4d4009e9c534c896da138766a9f46c7"
+  "source_commit": "746d89ef39381eeb45b973ffcbcc815d2cc3624b",
+  "source_tree_sha256": "b7a0c6eb9c6d299d96ad5a27e844e84e341326ee2373fc026e13804f8d65e938"
 }
