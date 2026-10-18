@@ -297,13 +297,25 @@ class Store:
             if not effective_transfer_id(self, row):
                 income += max(amount, Decimal(0))
                 expenses += max(-amount, Decimal(0))
+        from .paypal_date_basis import transaction_date_accounts
+        affected = transaction_date_accounts(self, [row['id'] for row in accounts])
+        for account_id in affected:
+            balances[account_id] = None
         by_owner = {row['owner']: Decimal(0) for row in accounts}
         for row in accounts:
             if row['kind'] != 'DEPOT':
-                by_owner[row['owner']] += balances[row['id']]
-        return {'currency': 'EUR', 'as_of': as_of, 'balances': balances,
-                'liquidity_by_owner': by_owner, 'liquidity': sum(by_owner.values(), Decimal(0)),
-                'income': income, 'expenses': expenses, 'net_cashflow': income - expenses}
+                if balances[row['id']] is None:
+                    by_owner[row['owner']] = None
+                elif by_owner[row['owner']] is not None:
+                    by_owner[row['owner']] += balances[row['id']]
+        result = {'currency': 'EUR', 'as_of': as_of, 'balances': balances,
+                  'liquidity_by_owner': by_owner,
+                  'liquidity': (None if any(value is None for value in by_owner.values())
+                                else sum(by_owner.values(), Decimal(0))),
+                  'income': income, 'expenses': expenses, 'net_cashflow': income - expenses}
+        if affected:
+            result['unavailable_reason'] = 'paypal_transaction_date_not_booking_date'
+        return result
 
     def save_scenario(self, name, plan, opening, as_of):
         as_of = date.fromisoformat(as_of).isoformat()

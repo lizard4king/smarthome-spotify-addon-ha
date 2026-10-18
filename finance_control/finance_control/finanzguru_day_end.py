@@ -7,6 +7,7 @@ import sys
 from threading import RLock
 
 from .core import money
+from .paypal_date_basis import transaction_date_accounts
 
 
 def _end_of_trail(edges):
@@ -140,6 +141,10 @@ def accepted_day_end(store, account_id, currency, day):
     Only immutable receipt derivations are cached. Current source text, digest,
     heads, ledger postings and persisted day metadata are checked on every call.
     """
+    # Account-wide because the actual booking date and therefore overlap with
+    # the requested day are unknown. Check before any cached proof can be used.
+    if transaction_date_accounts(store, (account_id,)):
+        return None
     ledger = [dict(row) for row in store.db.execute(
         'SELECT external_id,date,amount,currency FROM active_transactions '
         'WHERE account_id=? AND date=?', (account_id, day))]

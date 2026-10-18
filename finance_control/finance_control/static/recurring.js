@@ -64,6 +64,7 @@
     finally{if(request===inventory.request){inventory.loading=false;renderInventory();}}
   }
   const phrases = {
+    paypal_transaction_date_not_booking_date:'PayPal-Buchungsdatum fehlt.',
     confirmed_paypal_credit:'Bestätigter PayPal-Ratenplan · Originaltermine und Beträge',
     source_revision:'Aktuellen Planstand erneut bestätigen',
     paypal_credit_source_stale:'Der PayPal-Planstand wurde geändert. Die Kontozuordnung muss vom Eigentümer erneut bestätigt werden; Raten sind bis dahin nicht eingerechnet.',

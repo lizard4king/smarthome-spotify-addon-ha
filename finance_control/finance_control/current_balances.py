@@ -6,6 +6,7 @@ import json
 from decimal import Decimal
 
 from .core import money
+from .paypal_date_basis import transaction_date_accounts
 from .server_balance_mappings import target_compatible
 
 
@@ -187,7 +188,10 @@ def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False
 
     # File evidence is a fallback only. Any qualified bank or bound statement
     # candidate above retains the existing source/date priority.
-    file_only = set(wanted) - set(result)
+    # Transaction dates cannot prove which booked-day interval was complete.
+    # Exclude the whole account from file fallback; independent recorded bank
+    # and statement controls above remain usable without ledger derivation.
+    file_only = set(wanted) - set(result) - transaction_date_accounts(store, wanted)
     if file_only:
         ids = sorted(file_only)
         placeholders = ','.join('?' for _ in ids)

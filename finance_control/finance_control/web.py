@@ -687,6 +687,8 @@ class Cockpit:
                     raise ValueError('At least one account required')
                 cutoff = month_end(data['as_of']).isoformat()
                 status = store.status(cutoff)
+                if status['liquidity'] is None:
+                    raise ValueError('paypal_transaction_date_not_booking_date')
                 plan = parse_plan(data['plan'])
                 result = {'as_of': cutoff, 'opening': status['liquidity'],
                           'rows': projection(status['liquidity'], cutoff, plan)}
@@ -917,6 +919,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 'bank_read_busy': 'Ein Bankabruf läuft bereits. Bitte dessen Ergebnis abwarten.',
                 'bank_product_unavailable': 'Die FinTS-Produktkennung fehlt in der Servereinrichtung.',
                 'unknown_bank_job': 'Dieser Bankabruf ist nicht mehr verfügbar.',
+                'paypal_transaction_date_not_booking_date': 'PayPal-Buchungsdatum fehlt. Daraus kann kein belastbarer Kontostand oder Prognosesaldo berechnet werden.',
+                'paypal_import_booking_date': 'PayPal liefert kein g\u00fcltiges Buchungs- oder Transaktionsdatum. Bei fehlendem Buchungsdatum ist nur ein ausdr\u00fccklich gekennzeichnetes PayPal-Transaktionsdatum zul\u00e4ssig. Es wurde nichts \u00fcbernommen.',
                 'paypal_import_invalid': 'PayPal-Import pr\u00fcfen: Nur eindeutige gebuchte EUR-Ums\u00e4tze und ausdr\u00fccklich zugeordnete PayPal-Konten werden \u00fcbernommen.',
                 'paypal_import_stale': 'Diese PayPal-Vorschau ist abgelaufen, bereits verarbeitet oder inzwischen veraltet. Bitte neu pr\u00fcfen.',
                 'paypal_import_identity': 'Das PayPal-Konto ist nicht eindeutig identifiziert oder bereits anders zugeordnet. Bitte die Kontozuordnung pr\u00fcfen.',

@@ -17,6 +17,11 @@ _LEGACY = re.compile(r'fg:[0-9a-f]{64}:[0-9a-f]{64}\Z')
 _SOURCE = re.compile(r'paypal:[0-9a-f]{64}\Z')
 
 
+def _is_paypal_institution(value):
+    """Match the exact PayPal label using ASCII case-insensitive comparison."""
+    return isinstance(value, str) and value.isascii() and value.lower() == 'paypal'
+
+
 def _json(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
 
@@ -60,7 +65,7 @@ def _amount(value):
 
 
 def normalize_transactions(raw, start, end, currency='EUR'):
-    """Accept BOOK rows only; missing identity, status or currency is fatal."""
+    """Accept BOOK rows, retaining transaction-date provenance when no booking date exists."""
     start, end = _day(start), _day(end)
     if start > end or currency not in {'EUR', 'XXX'} or not isinstance(raw, list) or len(raw) > 10000:
         raise ValueError('invalid_paypal_batch')
@@ -77,7 +82,11 @@ def normalize_transactions(raw, start, end, currency='EUR'):
         if reference != reference.strip() or reference in seen:
             raise ValueError('invalid_paypal_entry_reference')
         seen.add(reference)
-        booked = _day(item.get('booking_date'))
+        # Only absent/NULL booking dates permit the explicitly labelled PayPal
+        # transaction date. Empty/malformed dates never fall back; timestamps
+        # and value dates are never interpreted as calendar booking dates.
+        transaction_date = item.get('booking_date') is None
+        booked = _day(item.get('transaction_date') if transaction_date else item['booking_date'])
         if not start <= booked <= end:
             raise ValueError('paypal_booking_outside_period')
         amount = item.get('transaction_amount')
@@ -116,6 +125,8 @@ def normalize_transactions(raw, start, end, currency='EUR'):
         result.append(dict(entry_reference=reference, date=booked, amount=format(amount, '.2f'),
                            currency=unit, counterparty=_text('' if party.get('name') is None else party['name'], 500),
                            description=_text(description, 8000, multiline=True)))
+        if transaction_date:
+            result[-1]['date_basis'] = 'transaction_date'
     return sorted(result, key=lambda row: (row['date'], row['entry_reference']))
 
 
@@ -124,7 +135,9 @@ def _rows(rows):
         raise ValueError('invalid_paypal_batch')
     result, seen = [], set()
     for row in rows:
-        if not isinstance(row, dict) or set(row) != set(_FIELDS):
+        if (not isinstance(row, dict)
+                or set(row) not in (set(_FIELDS), set(_FIELDS) | {'date_basis'})
+                or ('date_basis' in row and row['date_basis'] != 'transaction_date')):
             raise ValueError('invalid_normalized_paypal_row')
         reference = _text(row['entry_reference'], 256, required=True)
         if reference.strip() != reference or reference in seen or row['currency'] != 'EUR':
@@ -134,6 +147,8 @@ def _rows(rows):
                            amount=format(_amount(row['amount']), '.2f'), currency='EUR',
                            counterparty=_text(row['counterparty'], 500),
                            description=_text(row['description'], 8000, multiline=True)))
+        if 'date_basis' in row:
+            result[-1]['date_basis'] = row['date_basis']
     return sorted(result, key=lambda row: (row['date'], row['entry_reference']))
 
 
@@ -142,7 +157,7 @@ def _binding(store, owner_id, source_key, account_id, rows):
         raise ValueError('invalid_paypal_source_key')
     owner = store.db.execute('SELECT * FROM app_users WHERE id=? AND active=1', (owner_id,)).fetchone()
     account = store.db.execute('SELECT * FROM accounts WHERE id=?', (account_id,)).fetchone()
-    if owner is None or account is None or account['institution'] != 'PAYPAL' or account['kind'] != 'CHECKING' or account['currency'] != 'EUR':
+    if owner is None or account is None or not _is_paypal_institution(account['institution']) or account['kind'] != 'CHECKING' or account['currency'] != 'EUR':
         raise ValueError('invalid_paypal_target')
     if account['closed_on'] is not None or any(row['date'] <= account['opening_date'] for row in rows):
         raise ValueError('invalid_paypal_account_lifecycle')
@@ -279,7 +294,7 @@ def commit_import(store, *, owner_id, source_key, account_id, rows, matches, rev
                 from .classification import apply_exact_rule_if_safe
                 apply_exact_rule_if_safe(store, *key)
             store.db.execute('INSERT INTO paypal_source_transactions(source_key,entry_reference,account_id,external_id,normalized_json) VALUES (?,?,?,?,?)',
-                (source_key, item['entry_reference'], *key, _json({field: item[field] for field in _FIELDS})))
+                (source_key, item['entry_reference'], *key, _json({field: item[field] for field in (*_FIELDS, 'date_basis') if field in item})))
         store.db.execute('INSERT INTO paypal_import_receipts(source_key,account_id,owner_id,import_id,occurred_at,actor,revision,receipt_json) VALUES (?,?,?,?,?,?,?,?)',
             (source_key, account_id, owner_id, import_id, now, actor, revision, _json(plan)))
         store.db.commit()

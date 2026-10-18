@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import budget, monthly_review, overview, plan_actual
 from .core import Store, money
+from .paypal_date_basis import transaction_date_accounts
 
 
 def _amount(value):
@@ -54,9 +55,10 @@ class FinanceReadApi:
             if not account_rows:
                 return {'as_of': cutoff, 'currency': 'EUR', 'status': 'unavailable',
                         'accounts': []}
+            affected = transaction_date_accounts(store, [row['id'] for row in account_rows])
             accounts = []
             for row in account_rows:
-                if row['opening_date'] > cutoff:
+                if row['opening_date'] > cutoff or row['id'] in affected:
                     balance = None
                     balance_status = 'unavailable'
                 else:
@@ -70,6 +72,8 @@ class FinanceReadApi:
                          'kind': row['kind'], 'currency': row['currency'],
                          'balance': balance, 'balance_as_of': cutoff,
                          'balance_status': balance_status}
+                if row['id'] in affected:
+                    entry['balance_unavailable_reason'] = 'paypal_transaction_date_not_booking_date'
                 if row['kind'] == 'CREDIT_CARD':
                     entry['available_credit'] = None
                     entry['available_credit_status'] = 'unavailable'

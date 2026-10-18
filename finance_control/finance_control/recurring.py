@@ -15,6 +15,7 @@ from statistics import median
 
 from . import contracts, recurring_detection
 from .classification import _audit, _filter_date, _now, _text, _document_link_rejected
+from .paypal_date_basis import transaction_date_accounts
 from .core import money, parse_money_input
 from .current_balances import latest_by_account
 from .transfer_corrections import sql_transfer_predicate
@@ -501,13 +502,18 @@ def view(store, data):
             key = (event['account_id'], event['currency'], event['expected_date'])
             future_counts[key] = future_counts.get(key, 0) + 1
     balances = latest_by_account(store, account_rows, as_of=cutoff)
+    uncertain_accounts = transaction_date_accounts(store, [row['id'] for row in account_rows])
     accounts = []
     for account in account_rows:
         aid = account['id']
         recorded = balances.get(aid)
         warnings, points = [], []
         current = projected = None
-        if recorded and recorded.get('status') != 'ambiguous' and recorded.get('amount') is not None:
+        if aid in uncertain_accounts:
+            # A recorded balance remains visible, but a transaction date is not
+            # evidence for rolling it across a booking-date cutoff.
+            warnings.append('paypal_transaction_date_not_booking_date')
+        elif recorded and recorded.get('status') != 'ambiguous' and recorded.get('amount') is not None:
             current = money(recorded['amount']) + sum((money(r['amount']) for r in store.db.execute(
                 'SELECT amount FROM active_transactions WHERE account_id=? AND currency=? AND date>? AND date<=?',
                 (aid, account['currency'], recorded['booked_on'], cutoff))), Decimal('0'))

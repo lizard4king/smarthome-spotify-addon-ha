@@ -718,7 +718,7 @@ function planActualRenderDaily(daily, metadata = null, views = null, accountBala
   const balanceForView = accountBalance?.by_person?.[planActualDailyView];
   if (!accountBalance?.available || !balanceForView) {
     const unavailable = document.createElement('p'); unavailable.className = 'muted';
-    unavailable.textContent = 'Errechnete Salden nicht verfügbar: Für den Monatsanfang fehlt ein belastbarer Anfangsbestand der ausgewählten Girokonten.';
+    unavailable.textContent = accountBalance?.reason === 'paypal_transaction_date_not_booking_date' ? 'PayPal-Buchungsdatum fehlt; errechnete Salden und Kontostandsänderung sind nicht belastbar.' : 'Errechnete Salden nicht verfügbar: Für den Monatsanfang fehlt ein belastbarer Anfangsbestand der ausgewählten Girokonten.';
     balanceSummary.append(unavailable);
   } else {
     for (const [label, key] of [['Errechneter Anfangsbestand', 'start'],
@@ -915,6 +915,8 @@ function planActualRenderDailyTrend(svg, note, legend, trend, range, view, cumul
     sourcePoints, `${startMonth}-01`, view,
     trend?.daily_balance_available_by_range?.[range] ?? trend?.daily_balance_available,
     Object.fromEntries((trend?.months || []).map(row => [row.month, row.plan_source])), cumulative);
+  for (const row of months) row.balance_unavailable_reason = (trend?.months || [])
+    .find(month => month.month === row.month.slice(0, 7))?.balance_unavailable_reason;
   planActualRenderMonthlyTrend(svg, note, legend,
     {...trend, months}, 'daily', view, 'daily', cumulative);
 }
@@ -1008,7 +1010,7 @@ function planActualRenderMonthlyTrend(svg, note, legend, trend, range, view,
   const endSummary = cumulative
     ? ` Endwerte: Ist-Ausgaben ${eur(Math.abs(Number(endRow.actual?.[view]?.expenses || 0)))}, Ist-Einnahmen ${eur(endRow.actual?.[view]?.income || 0)}${hasBalance ? `, errechnete Kontostandsänderung ${eur(endRow.balance_change?.[view] || 0)}` : ''}.`
     : '';
-  note.textContent = `${months[0].month} bis ${endRow.month}: Werte ${valueLabel}. ${granularity === 'daily' ? 'Istwerte aus Buchungstagen.' : 'Istwerte aus Buchungen.'} ${planNote} ${cumulative ? (hasBalance ? 'Errechnete Kontostandsänderung aus Rohbuchungen der Girokonten einschließlich Umbuchungen.' : 'Errechnete Kontostandsänderung für diesen Zeitraum nicht verfügbar.') : ''}${endSummary}`;
+  note.textContent = `${months[0].month} bis ${endRow.month}: Werte ${valueLabel}. ${granularity === 'daily' ? 'Istwerte aus Buchungstagen.' : 'Istwerte aus Buchungen.'} ${planNote} ${cumulative ? (hasBalance ? 'Errechnete Kontostandsänderung aus Rohbuchungen der Girokonten einschließlich Umbuchungen.' : 'Errechnete Kontostandsänderung für diesen Zeitraum nicht verfügbar.') : ''}${endSummary}${cumulative && months.some(row => row.balance_unavailable_reason === 'paypal_transaction_date_not_booking_date') ? ' PayPal-Buchungsdatum fehlt; die Kontostandsänderung ist für betroffene Zeiträume nicht belastbar.' : ''}`;
   const width = granularity === 'daily' ? Math.max(1200, months.length * 4) : 900;
   if (granularity === 'daily') svg.classList.add('is-daily-range');
   const height = 300, pad = {left: 76, right: 90, top: 24, bottom: 52};
@@ -1464,7 +1466,7 @@ function planActualRenderAccounts(result) {
   select.value = selected === 'TOTAL' || Object.hasOwn(accounts, selected) ? selected : 'TOTAL';
   const values = select.value === 'TOTAL' ? bank?.totals : accounts[select.value];
   if (!bank?.available || !values) {
-    $('plan-actual-account-note').textContent = 'Kontosicht nicht verfügbar: Kontodaten, Anfangsbestand oder Buchungsabdeckung fehlen.';
+    $('plan-actual-account-note').textContent = bank?.reason === 'paypal_transaction_date_not_booking_date' ? 'PayPal-Buchungsdatum fehlt; Kontostände und Monats-Saldoveränderung sind nicht belastbar.' : 'Kontosicht nicht verfügbar: Kontodaten, Anfangsbestand oder Buchungsabdeckung fehlen.';
     planActualRenderAccountChart(null); return;
   }
   $('plan-actual-account-note').textContent = `Stichtag ${bank.as_of} · Währung ${values.currency}. Alle gebuchten Zugänge und Abgänge zählen, einschließlich Umbuchungen und Barabhebungen. Anfangsbestand + Zugänge − Abgänge = Endbestand. Errechnet aus den erfassten Buchungen; keine aktuelle Bankabfrage.`;
@@ -1549,7 +1551,7 @@ function planActualRenderAccountOverview(result) {
       table.append(body); card.append(table);
       const dates = document.createElement('p'); dates.className = 'muted';
       dates.textContent = [account.end == null ? null : `Ende: ${planActualAccountMoney(account.end, account.currency)}`,
-        account.available === false ? 'Kontostand nicht verfügbar.' : null,
+        account.available === false ? (account.reason === 'paypal_transaction_date_not_booking_date' ? 'PayPal-Buchungsdatum fehlt; kein belastbarer Kontostand.' : 'Kontostand nicht verfügbar.') : null,
         account.note || null].filter(Boolean).join(' · ');
       if (dates.textContent) card.append(dates);
       if (Number.isInteger(account.cash_review_count) && account.cash_review_count > 0) {

@@ -168,10 +168,16 @@ function wealthRenderTotals(result) {
   $('wealth-net-worth').textContent = wealthCurrency(totals.net_worth);
   $('wealth-investments').textContent = wealthCurrency(totals.investments);
   const excluded = result?.excluded_depots;
-  const count = Array.isArray(excluded) ? excluded.length : Number(excluded?.count ?? excluded ?? 0);
-  $('wealth-depot-note').textContent = count
-    ? `${count} Depotkonto${count === 1 ? '' : 'en'} nicht automatisch bewertet. Manuelle Anlagen bleiben ausdrücklich getrennt.`
-    : 'Depotkonten werden nicht automatisch bewertet; es wurde kein Depotwert in die Summe übernommen.';
+  const paypalCount = Array.isArray(excluded)
+    ? excluded.filter(item => item?.reason === 'paypal_transaction_date_not_booking_date').length : 0;
+  const count = Array.isArray(excluded)
+    ? excluded.filter(item => !item?.reason || item.reason === 'market_value_required').length
+    : Number(excluded?.count ?? excluded ?? 0);
+  const notes = [];
+  if (count) notes.push(`${count} Depotkont${count === 1 ? 'o' : 'en'} nicht automatisch bewertet. Manuelle Anlagen bleiben ausdrücklich getrennt.`);
+  else if (!paypalCount) notes.push('Depotkonten werden nicht automatisch bewertet; es wurde kein Depotwert in die Summe übernommen.');
+  if (paypalCount) notes.push(`${paypalCount} PayPal-Kont${paypalCount === 1 ? 'o' : 'en'} ohne belegten Stand: PayPal-Buchungsdatum fehlt. Der Wert bleibt unbekannt und wird nicht als null Euro angesetzt.`);
+  $('wealth-depot-note').textContent = notes.join(' ');
 }
 
 function wealthRenderHistory(history, selectedRevision) {

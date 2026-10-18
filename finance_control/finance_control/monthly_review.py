@@ -150,6 +150,9 @@ def _legacy_review_rows(rows):
 
 def _build_preview(store, period):
     start, end, prior_end = _period_bounds(period)
+    from .paypal_date_basis import transaction_date_accounts
+    if transaction_date_accounts(store):
+        raise ValueError('paypal_transaction_date_not_booking_date')
     definitions, transactions = _source(store, end)
     if not definitions:
         raise ValueError('Monthly review requires at least one account')

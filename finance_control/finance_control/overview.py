@@ -180,7 +180,7 @@ def _plan_overview(store, cutoff, status, reporting_history=None):
                            'planning', f'{unconfirmed} Budgetpositionen sind unbestätigt.'))
     if status is None:
         overview['connection_reason'] = 'Kein angezeigter Kontostand verfügbar.'
-    elif 'reserves' in calculation and status.get('liquidity') is None:
+    elif status.get('liquidity') is None:
         overview['connection_reason'] = 'Kein angezeigter Kontostand verfügbar.'
     elif cutoff > _last_complete_month():
         overview['connection_reason'] = 'Der Monat des angezeigten Stands ist noch nicht vollständig.'

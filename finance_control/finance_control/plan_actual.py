@@ -21,6 +21,7 @@ from .classification import exact_rule_match, normalize_counterparty
 from .core import money
 from .historical_positions import historical_positions
 from .person_attribution import account_allocations, person_label, split_cents
+from .paypal_date_basis import transaction_date_accounts
 from .reporting_history import month_quality, scope_for_month
 from .reporting_history import validate as validate_reporting_history
 from .transfer_corrections import source_declares_transfer, sql_transfer_predicate
@@ -181,6 +182,8 @@ def _reserve_comparison(store, snapshot, month, scope, *, plan_available, basis_
     selected = dict(selected, liquidity=liquidity_at(selected, bank, reserves["safety_threshold"]))
     if incomplete:
         selected["liquidity"]["unavailable_reason"] = "incomplete_source_coverage"
+    elif bank is None and transaction_date_accounts(store, account_ids):
+        selected["liquidity"]["unavailable_reason"] = "paypal_transaction_date_not_booking_date"
     result["selected_row"] = selected
     result["bank_basis"] = {"type": "ledger_projection",
                             "date": basis_date.isoformat() if basis_date is not None else None,
@@ -1497,7 +1500,9 @@ def _liquidity_view(store, snapshot, month, comparison_rows):
     as_of = min(today, period_end).isoformat()
     balances = _account_balances(store, as_of, account_ids)
     if balances is None:
-        return {"available": False, "reason": "before_opening_balances", "accounts": []}
+        reason = ("paypal_transaction_date_not_booking_date"
+                  if transaction_date_accounts(store, account_ids) else "before_opening_balances")
+        return {"available": False, "reason": reason, "accounts": []}
     pending_by_account = {account_id: Decimal("0.00") for account_id in account_ids}
     for transfer in snapshot["plan"].get("pending_transfers", []):
         transfer_date = date.fromisoformat(transfer["value_date"])
@@ -1608,6 +1613,10 @@ def _account_balances(store, as_of, account_ids):
     """Return balances for selected accounts without unrelated opening-date gates."""
     if not account_ids:
         return {}
+    # An unknown true booking date prevents any dated balance for this selected
+    # set; never silently omit the movement or substitute zero for its account.
+    if transaction_date_accounts(store, account_ids):
+        return None
     placeholders = ",".join("?" for _ in account_ids)
     accounts = store.db.execute(
         f"SELECT id,opening,opening_date FROM accounts WHERE id IN ({placeholders})",
@@ -1665,6 +1674,11 @@ def _monthly_account_balance_change(store, month, account_ids, account_owners,
         f"SELECT {account_columns} FROM accounts WHERE id IN ({placeholders})", account_ids))
     if len(accounts) != len(account_ids) or any(row["kind"] != "CHECKING" for row in accounts):
         unavailable["reason"] = "checking_account_unavailable"
+        return unavailable
+    # Check even with a supplied multi-month carry. The transaction date cannot
+    # prove temporal overlap, so an older month's cached opening is no escape.
+    if transaction_date_accounts(store, account_ids):
+        unavailable["reason"] = "paypal_transaction_date_not_booking_date"
         return unavailable
     opening_date = start.fromordinal(start.toordinal() - 1)
     start_balances = (opening_balances if opening_balances is not None else
@@ -2079,6 +2093,7 @@ def _monthly_trend(store, selected_month, snapshot, account_owners,
                 **{person: _format(value) for person, value in actual_other_income.items()},
             },
             "balance_available": balance["available"],
+            "balance_unavailable_reason": balance.get("reason"),
             "balance_change": {
                 person: summary["change"] for person, summary in balance.get(
                     "by_person", {}).items()},

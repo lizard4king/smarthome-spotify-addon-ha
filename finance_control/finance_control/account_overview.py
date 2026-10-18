@@ -8,6 +8,7 @@ from decimal import Decimal
 from .cash_components import explicit_cash_component
 from .classification import canonical_category_id
 from .core import money
+from .paypal_date_basis import transaction_date_accounts
 from .reconciliation import reconciliation_differences
 from .transfer_corrections import sql_transfer_predicate
 
@@ -59,6 +60,7 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
                 transfers[transfer["from_account_id"]].append(("outflow", transfer))
                 transfers[transfer["to_account_id"]].append(("inflow", transfer))
 
+    uncertain_accounts = transaction_date_accounts(store, [row['id'] for row in accounts])
     result = []
     for account in accounts:
         account_id = account["id"]
@@ -78,6 +80,10 @@ def build_account_overview(store, month, snapshot, planned_by_item, *,
         reason = ("future_month" if future else
                   "incomplete_source_coverage" if incomplete else
                   "opening_balance_unavailable" if not start_known else None)
+
+        if account_id in uncertain_accounts:
+            start_known = end_known = False
+            reason = 'paypal_transaction_date_not_booking_date'
 
         previous = _ZERO
         if start_known:
