@@ -215,7 +215,7 @@
     "static/bank-paypal.png": "b94a7952974e87a72f0b7a46ee3b3ea0f05801ac05bd7b166d9c173fac58ec56",
     "static/bank-postbank.svg": "0e6cb3732979dbfa789623fbb8433402ffe739ff86e9116e83db978397838cc2",
     "static/bank-refresh.css": "6ef6ecef5d50b9498141b34df37a81031bd8e632e913de3fd4794a6c7e02beb7",
-    "static/bank-refresh.js": "42b55c12fda3dc2727377c4540db323e7e735dfc97923eeeb074c08b582f16bd",
+    "static/bank-refresh.js": "01d2e3a9c7326aab3624d324ba963bf96fb208f19fa24f821766ef562d005d48",
     "static/bank-sparkasse.png": "70718559e06e4f00752feb8a7ced473f42875d45b181d89d49d76991e7cb5d7a",
     "static/bonsy.js": "64ecd75424b3a3f69c24cb92320cd2d4ea5b9b3dd53d446e882845dcbfec275c",
     "static/booking-contracts.css": "e075c1b267cdae5c2f4085f1b8b5c928103f82eb2445b6cbf7417def2806e539",
@@ -507,6 +507,6 @@
     "web.py": "49097dfa983c0616b64f6591ce2d6e7413d9c02092845804f19caa8a0ee0e341"
   },
   "schema_version": 1,
-  "source_commit": "1c941a7d0d2eca9368431b78535ee129ee8bcb6e",
-  "source_tree_sha256": "e2fbdeae9aaa06ee3f90f00f5b0d694ba6e97a633bfb7c8dacf1fd0f1e423cd5"
+  "source_commit": "53933c1867f7e75a9dc67b2b83fbb3d3d192e394",
+  "source_tree_sha256": "d0531415dd3e7484dd1e0ba9cbea910ec4fe295e515d7946170f96ab2c10501c"
 }

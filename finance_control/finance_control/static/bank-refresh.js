@@ -237,8 +237,8 @@
       const summary = errors.length && updated ? 'Teilweise aktualisiert; mindestens ein Abruf fehlgeschlagen.'
         : errors.length ? 'Bankabruf: Verbindungsfehler.'
           : updated ? 'Konten aktualisiert.'
-            : setupRequired ? 'Bankabruf einrichten.'
-              : cooldown ? 'Vor kurzem abgefragt.' : 'Bankabruf abgeschlossen.';
+              : cooldown ? 'Vor kurzem abgefragt.'
+                : setupRequired ? 'Bankabruf einrichten.' : 'Bankabruf abgeschlossen.';
       compactStatus(summary, false, errors.length > 0);
     };
 
