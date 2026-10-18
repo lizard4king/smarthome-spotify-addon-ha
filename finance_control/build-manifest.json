@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "3456829154c6f36ee15e5989138e1cd02d9f2cb259a05d060f915ecd2105f4c5",
-  "addon_version": "0.2.62",
+  "addon_tree_sha256": "1eb72523b2a6408de81983e60f39a9ab383fa3f4d21eab5562d68d6cc44ae580",
+  "addon_version": "0.2.63",
   "deployment_files": {
-    "Dockerfile": "c192efd37b20f4867876ba404e583362203440b2513e28de20e5b5340d350cd4",
-    "README.md": "d93536486ae4eccad00967a31b50d1fb1fe96de4ca1c6f1159dc17e18f5c6874",
+    "Dockerfile": "b74825e1aecabb65dda7d8c7e98e6aed00649bd792f1e70ae9903f0a494f9303",
+    "README.md": "89fafa479bc323738f8ed0f8482d1d96d0b39458d5493e4366f879ac6c42d40a",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "47c08466cca73547549b5c72f691aae6188e1c6a61345ba537e75d1fed1bfee8",
+    "config.yaml": "0f87b28c81bc1dd21e253a7a41aed12f2e18069da9ed7a20e5a7e0bde0462d9a",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -162,7 +162,7 @@
     "payment_status_sync.py": "72d3c22909c57e5540ddd6cb440ece90188a17a53fece5e7102547bdc00b58af",
     "paypal_balance_view.py": "2e1240752a98c07dc4aea162e0f791054ad351d8e313a64869d55dda69e0ee2f",
     "paypal_banking.py": "95c386c1d644903005206cb8d1a9cd7518160ee256b3c6d2d5678b75cc06af4d",
-    "paypal_credit.py": "92c53590d1c72baf491bdce9a891d2465f9291b6c0366e8636763f82c781e1ee",
+    "paypal_credit.py": "a1cee82b0b3fb2ff23c9ee356c1e175bff4e5186cbd616f8ee840e911f7d7e00",
     "paypal_credit_forecast.py": "e8a1e0983bccca081de44658cfc7cff5c9630443cb1fc5c3dc13fe90761a1998",
     "person_attribution.py": "5a2f895f2b4fb54daef9459103a9c4c3b8e27c9fd23bd1a57f0ef68be70ef1d1",
     "plan_actual.py": "5a07e3b2a9eb74168eb27c5a4cc4fe6c7cf6592e693e77b40a82bb941ea09a25",
@@ -477,7 +477,7 @@
     "static/paypal-banking.css": "5e02fc8bcb6c9a3213a9920a5a9c4b56f5ff2f17303daa14b9e4812ccdf1e99a",
     "static/paypal-banking.js": "ceda87f065433731ef5e1eca6ab22a6601c836510de47c7b1153e765e8aef45a",
     "static/paypal-credit.css": "cb5f914568dbc5b569974c55ae9d7bb99634d660b0d7a144693fa70e981c3b9e",
-    "static/paypal-credit.js": "b519aeb386bf427506a39643f6e90aa622f2f9b718c648b49d3367217cad60a9",
+    "static/paypal-credit.js": "83744ddeff427ad3ad0db2e146ad7832e321b54d8a8a02429838e24589b16eb3",
     "static/plan_actual.js": "ce3dfb6679ee4e9203aba93b1bb4eab531e8baa49e6df97a23e065ae49311c0e",
     "static/postbank-cards.css": "e785b272c42ccfa7d24657c2ed863548b56a7fb58b4b5a2d31e55f615c674b65",
     "static/postbank-cards.js": "7fc4376e7dd47cb24d0f780e21e54a3350f81f8009ca818f8b2fbd605e4ad26a",
@@ -501,6 +501,6 @@
     "web.py": "937dbc830180117a93e465c389be1090f460c8d87cf2f5f46296f25f3be700b5"
   },
   "schema_version": 1,
-  "source_commit": "67387baa2d3ecdd0ef60519d2cfe655de5cd770b",
-  "source_tree_sha256": "27258034f27f10faa7fe8afed455816f9921f706dc517a96e4b74278e90e3316"
+  "source_commit": "4aca10c2607b5ff7c5fcf60c503ebfdf717ded76",
+  "source_tree_sha256": "e905cd306e7a16bed72187a4fb145deaf9fb8470e06302d904b3c06f32466a7b"
 }

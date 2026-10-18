@@ -13,6 +13,14 @@
     const parsed = Date.parse(`${value}T00:00:00Z`);
     return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
   };
+  // The manually read date always follows the German calendar, including abroad.
+  const berlinDay = () => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const value = type => parts.find(part => part.type === type).value;
+    return `${value('year')}-${value('month')}-${value('day')}`;
+  };
   const canonicalMoney = (raw, optional = false) => {
     const value = String(raw ?? '').trim().replace(',', '.');
     if (optional && !value) return null;
@@ -72,7 +80,7 @@
     const revision = node('input'); revision.type = 'hidden'; revision.name = 'revision';
     form.append(title, identity, revision);
     const fields = [
-      ['label', 'Bezeichnung', 'text'], ['as_of', 'Stand am', 'date'],
+      ['label', 'Bezeichnung', 'text'], ['as_of', 'Stand am (Europe/Berlin)', 'date'],
       ['net_credit', 'Nettodarlehen in Euro', 'text'], ['total_interest', 'Zinsen gesamt in Euro', 'text'],
       ['total_payable', 'Gesamtbetrag in Euro', 'text'], ['paid_total', 'Bisher gezahlt in Euro', 'text'],
       ['remaining_total', 'Restbetrag inkl. künftiger Zinsen in Euro', 'text'],
@@ -91,6 +99,9 @@
       inputs[name] = input; fieldLabel.append(input); form.append(fieldLabel);
     }
     form.append(node('p', 'Währung: Euro (EUR). Geldbeträge können mit Komma oder Punkt eingegeben werden.', 'pb-note'));
+    const refreshStandMaximum = () => { inputs.as_of.max = berlinDay(); return inputs.as_of.max; };
+    inputs.as_of.addEventListener('focus', refreshStandMaximum);
+    form.append(node('p', 'Das Standdatum ist der Kalendertag in Europe/Berlin (deutsche Ortszeit), unabhängig von der Gerätezeitzone.', 'pb-note'));
     const paymentRows = node('div', '', 'pc-repeating-rows');
     const scheduleRows = node('div', '', 'pc-repeating-rows');
     const addPayment = node('button', 'Zahlung hinzufügen', 'pb-secondary'); addPayment.type = 'button';
@@ -119,10 +130,13 @@
     const submit = node('button', 'Kreditstand speichern'); submit.type = 'submit';
     const cancel = node('button', 'Abbrechen', 'pb-secondary'); cancel.type = 'button';
     cancel.addEventListener('click', () => { form.hidden = true; form.reset(); current.loanId = null; current.revision = null; });
+    // Refresh before native form validation, including an Enter-key submission.
+    submit.addEventListener('click', refreshStandMaximum);
     form.append(submit, cancel);
 
     function setValue(name, value) { inputs[name].value = value == null ? '' : String(value); }
     function fill(entry = null) {
+      refreshStandMaximum();
       form.reset(); confirm.checked = false; regular.checked = false; paymentRows.replaceChildren(); scheduleRows.replaceChildren();
       current.loanId = entry?.loan_id || null; current.revision = Number.isInteger(entry?.revision) ? entry.revision : null;
       identity.value = current.loanId || ''; revision.value = current.revision == null ? '' : String(current.revision);
@@ -146,10 +160,12 @@
     }
     form.addEventListener('submit', async event => {
       event.preventDefault();
+      const maximumStand = refreshStandMaximum();
       const values = Object.fromEntries(fields.map(([name]) => [name, inputs[name].value.trim()]));
       if (!confirm.checked) { setMessage(status, 'Bitte bestätige den geprüften Stand.'); return; }
       if (!regular.checked) { setMessage(status, 'Bitte bestätige den vollständigen, unveränderten Ratenplan.', true); return; }
       if (!values.label || !validDate(values.as_of)) { setMessage(status, 'Bitte Bezeichnung und gültiges Standdatum prüfen.'); return; }
+      if (values.as_of > maximumStand) { setMessage(status, 'Das Standdatum darf nicht nach dem heutigen Kalendertag in Europe/Berlin liegen.', true); return; }
       const plan = {label: values.label.slice(0, 120), as_of: values.as_of, currency: 'EUR',
         regular_plan_confirmed: true};
       for (const key of ['net_credit', 'total_interest', 'total_payable', 'paid_total', 'remaining_total']) {
@@ -209,7 +225,7 @@
     const label = safe(plan.label, 120) || 'Manuell erfasster Kredit';
     const asOf = safe(plan.as_of, 10);
     card.append(node('h4', label));
-    card.append(node('small', `Manuell geprüft · Stand ${asOf || 'nicht ausgewiesen'}`));
+    card.append(node('small', `Manuell geprüft · Stand ${asOf || 'nicht ausgewiesen'} (Europe/Berlin)`));
     const remaining = node('strong', `Restbetrag inkl. künftiger Zinsen: ${currencyAmount(plan.remaining_total)}`, 'pc-remaining');
     card.append(remaining);
     const overview = document.createElement('dl');
