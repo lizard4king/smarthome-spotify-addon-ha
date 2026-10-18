@@ -17,6 +17,11 @@ _LEGACY = re.compile(r'fg:[0-9a-f]{64}:[0-9a-f]{64}\Z')
 _SOURCE = re.compile(r'paypal:[0-9a-f]{64}\Z')
 
 
+def _is_paypal_institution(value):
+    """Match the exact PayPal label using ASCII case-insensitive comparison."""
+    return isinstance(value, str) and value.isascii() and value.lower() == 'paypal'
+
+
 def _json(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
 
@@ -142,7 +147,7 @@ def _binding(store, owner_id, source_key, account_id, rows):
         raise ValueError('invalid_paypal_source_key')
     owner = store.db.execute('SELECT * FROM app_users WHERE id=? AND active=1', (owner_id,)).fetchone()
     account = store.db.execute('SELECT * FROM accounts WHERE id=?', (account_id,)).fetchone()
-    if owner is None or account is None or account['institution'] != 'PAYPAL' or account['kind'] != 'CHECKING' or account['currency'] != 'EUR':
+    if owner is None or account is None or not _is_paypal_institution(account['institution']) or account['kind'] != 'CHECKING' or account['currency'] != 'EUR':
         raise ValueError('invalid_paypal_target')
     if account['closed_on'] is not None or any(row['date'] <= account['opening_date'] for row in rows):
         raise ValueError('invalid_paypal_account_lifecycle')

@@ -1,5 +1,9 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.65` recognizes the existing institute label `PayPal` in any letter
+case when explicitly selecting a direct-import target. Account names and other
+institutes do not grant import authority; source checks remain unchanged.
+
 Version `0.2.64` adds a controlled PayPal transaction import on the bookings
 page. Stable provider references, explicit legacy matching and a fresh repeat
 read protect existing categories, documents and transaction history. The direct

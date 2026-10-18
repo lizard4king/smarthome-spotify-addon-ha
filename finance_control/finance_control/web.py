@@ -917,6 +917,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 'bank_read_busy': 'Ein Bankabruf läuft bereits. Bitte dessen Ergebnis abwarten.',
                 'bank_product_unavailable': 'Die FinTS-Produktkennung fehlt in der Servereinrichtung.',
                 'unknown_bank_job': 'Dieser Bankabruf ist nicht mehr verfügbar.',
+                'paypal_import_booking_date': 'PayPal liefert kein g\u00fcltiges Buchungsdatum. Das Transaktionsdatum wird nicht automatisch als Buchungsdatum verwendet. Es wurde nichts \u00fcbernommen.',
                 'paypal_import_invalid': 'PayPal-Import pr\u00fcfen: Nur eindeutige gebuchte EUR-Ums\u00e4tze und ausdr\u00fccklich zugeordnete PayPal-Konten werden \u00fcbernommen.',
                 'paypal_import_stale': 'Diese PayPal-Vorschau ist abgelaufen, bereits verarbeitet oder inzwischen veraltet. Bitte neu pr\u00fcfen.',
                 'paypal_import_identity': 'Das PayPal-Konto ist nicht eindeutig identifiziert oder bereits anders zugeordnet. Bitte die Kontozuordnung pr\u00fcfen.',

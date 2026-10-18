@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.65
+
+- Vorhandene PayPal-Konten werden bei der direkten Übernahme auch mit der Institutsbezeichnung „PayPal“ statt „PAYPAL“ angeboten.
+- Zielauswahl und abschließende Übernahme verwenden denselben exakten, von Groß-/Kleinschreibung unabhängigen Institutsvergleich. Andere Institute und Kontoarten bleiben gesperrt.
+
 ## 0.2.64
 
 - PayPal-Umsätze können auf der Buchungsseite nach ausdrücklicher Kontozuordnung und Vorschau übernommen werden.

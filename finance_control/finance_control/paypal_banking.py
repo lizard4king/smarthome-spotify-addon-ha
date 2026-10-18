@@ -20,7 +20,7 @@ from weakref import WeakValueDictionary
 from zoneinfo import ZoneInfo
 
 from .core import Store
-from .paypal_import import commit_import, normalize_transactions, preview_import
+from .paypal_import import _is_paypal_institution, commit_import, normalize_transactions, preview_import
 
 from .administration import AdministrationError
 from .connectors.enable_banking import EnableBankingClient, EnableBankingError, canonical_uuid
@@ -437,6 +437,8 @@ class PayPalBanking:
     @staticmethod
     def _import_error(error):
         code = str(error)
+        if code == 'invalid_paypal_booking_date':
+            _fail('paypal_import_booking_date')
         if code in {'stale_paypal_preview', 'paypal_registry_ledger_conflict'}:
             _fail('paypal_import_stale', 409)
         if code in {'paypal_source_binding_conflict', 'paypal_foreign_bank_binding'}:
@@ -449,9 +451,10 @@ class PayPalBanking:
         with self.administration._connection() as db:
             self.administration._actor(db, actor)
             targets = [dict(row) for row in db.execute(
-                "SELECT id,COALESCE(NULLIF(display_name,''),id) label,currency FROM accounts "
-                "WHERE institution='PAYPAL' AND kind='CHECKING' AND currency='EUR' "
-                "AND closed_on IS NULL ORDER BY id")]
+                "SELECT id,COALESCE(NULLIF(display_name,''),id) label,currency,institution "
+                "FROM accounts WHERE kind='CHECKING' AND currency='EUR' AND closed_on IS NULL ORDER BY id")]
+            targets = [row for row in targets if _is_paypal_institution(row['institution'])]
+            targets = [{key: row[key] for key in ('id', 'label', 'currency')} for row in targets]
             bindings = [dict(row) for row in db.execute(
                 'SELECT account_id FROM paypal_source_accounts WHERE owner_id=? ORDER BY account_id',
                 (owner,))]
