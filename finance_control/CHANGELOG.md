@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.68
+
+- Erfolgreiche Kontoabrufe erscheinen trotz weiterer noch nicht eingerichteter Bankregistrierung als erfolgreich. Echte Abruffehler und offene Einrichtungsaktionen bleiben getrennt erkennbar.
+
 ## 0.2.67
 
 - Vertragsbeträge lassen sich aus mehreren ausdrücklich ausgewählten Zahlungen ableiten. Median, Mittelwert oder letzte Zahlung werden mit Quellen und Schätzkennzeichnung gespeichert; belegte Vertragsphasen und Laufzeiten bleiben maßgeblich.

@@ -230,10 +230,16 @@
           view.feedback.append(feedback);
         }
       }
-      const errors = rows.filter(row => row?.status === 'error' || row?.status === 'setup_required');
+      const errors = rows.filter(row => row?.status === 'error');
       const updated = rows.filter(row => row?.status === 'updated').length;
-      compactStatus(errors.length ? 'Bankabruf: Verbindungsfehler.'
-        : updated ? 'Konten aktualisiert.' : 'Vor kurzem abgefragt.', false, errors.length > 0);
+      const setupRequired = rows.some(row => row?.status === 'setup_required');
+      const cooldown = rows.some(row => row?.status === 'cooldown');
+      const summary = errors.length && updated ? 'Teilweise aktualisiert; mindestens ein Abruf fehlgeschlagen.'
+        : errors.length ? 'Bankabruf: Verbindungsfehler.'
+          : updated ? 'Konten aktualisiert.'
+            : setupRequired ? 'Bankabruf einrichten.'
+              : cooldown ? 'Vor kurzem abgefragt.' : 'Bankabruf abgeschlossen.';
+      compactStatus(summary, false, errors.length > 0);
     };
 
     const loadSetup = async () => {

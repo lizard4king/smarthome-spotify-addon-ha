@@ -1,5 +1,8 @@
 # Finance Control Home Assistant add-on
 
+Version 0.2.68 distinguishes successful refreshes from additional bank registrations
+that still require setup. Actual failures and per-connection actions remain visible.
+
 Version `0.2.67` derives estimated recurring amounts from explicitly selected
 bookings, preserving the method, source revisions and the distinction between
 confirmed estimates and documented contract phases. Compact account views keep
