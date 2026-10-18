@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 import re
 from typing import Protocol
+import unicodedata
 from uuid import UUID
 
 
@@ -33,6 +35,41 @@ _HELP = ("Es wurde nichts geschrieben. Bitte nenne Ziel und Inhalt zusammen in e
          "‚Notiz in Haus speichern mit Inhalt Filter wechseln‘. Zum Ändern: "
          "‚Notiz in Haus ändern Block <UUID>: Neuer Text‘.")
 
+_MONTHS = {name: number for number, name in enumerate((
+    'januar', 'februar', 'märz', 'april', 'mai', 'juni', 'juli', 'august',
+    'september', 'oktober', 'november', 'dezember'), start=1)}
+_DATE_SUFFIXES = (
+    re.compile(r'(?:^|\s)(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})\Z'),
+    re.compile(r'(?:^|\s)(?P<year>[0-9]{4})\s+(?P<month>[0-9]{1,2})\s+(?P<day>[0-9]{1,2})\Z'),
+    re.compile(r'(?:^|\s)(?P<day>[0-9]{1,2})\.(?P<month>[0-9]{1,2})\.(?P<year>[0-9]{4})\Z'),
+    re.compile(r'(?:^|\s)(?P<day>[0-9]{1,2})\s+(?P<month>[0-9]{1,2})\s+(?P<year>[0-9]{4})\Z'),
+    re.compile(r'(?:^|\s)(?P<day>[0-9]{1,2})\.?\s+(?P<month_name>'
+               + '|'.join(_MONTHS) + r')\s+(?P<year>[0-9]{4})\Z'),
+)
+
+
+def _canonical_target(value: str) -> tuple | None:
+    """Equate complete title spellings; never infer missing date/title parts.
+
+    Date and ordinary text keys have separate tags. Invalid calendar dates in
+    an otherwise recognized date suffix cannot become an ordinary text target.
+    """
+    value = unicodedata.normalize('NFC', unicodedata.normalize('NFC', value).casefold()).strip()
+    for pattern in _DATE_SUFFIXES:
+        match = pattern.search(value)
+        if match is None:
+            continue
+        fields = match.groupdict()
+        month = (_MONTHS[fields['month_name']] if fields.get('month_name')
+                 else int(fields['month']))
+        try:
+            day = date(int(fields['year']), month, int(fields['day']))
+        except ValueError:
+            return None
+        prefix = ''.join(value[:match.start()].split())
+        return ('date', prefix, day)
+    return ('text', ''.join(value.split()))
+
 
 class NotionCommandService:
     """Resolve aliases only from trusted server configuration."""
@@ -45,6 +82,15 @@ class NotionCommandService:
             if not key or key in self.targets:
                 raise ValueError("Notion target aliases must be unique and nonempty")
             self.targets[key] = str(UUID(page_id))
+        groups: dict[tuple, set[str]] = {}
+        for alias, page_id in self.targets.items():
+            key = _canonical_target(alias)
+            if key is not None:
+                groups.setdefault(key, set()).add(page_id)
+        # Multiple aliases for one page are safe. Multiple pages for one key
+        # block every spelling, including an otherwise exact title match.
+        self._canonical_targets = {key: next(iter(ids)) for key, ids in groups.items()
+                                   if len(ids) == 1}
 
     def handle(self, question: str, request_id: str, *, authorized: bool) -> str | None:
         # Strip this one fixed voice introduction once; embedded or quoted commands
@@ -60,7 +106,7 @@ class NotionCommandService:
             return "Die eindeutige Auftragskennung fehlt. Es wurde nichts geschrieben."
         command = update or match
         assert command is not None
-        page_id = self.targets.get(command['target'].strip().casefold())
+        page_id = self._canonical_targets.get(_canonical_target(command['target']))
         if page_id is None:
             return "Dieses Notion-Ziel ist nicht freigegeben. Bitte nenne ein freigegebenes Ziel."
         content = command['text'].strip()
