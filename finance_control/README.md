@@ -1,5 +1,9 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.63` uses the Europe/Berlin calendar for manual PayPal credit observation
+dates. A date entered shortly after local midnight is accepted; future dates
+remain rejected. Audit timestamps and credit calculations remain unchanged.
+
 Version `0.2.62` bounds repeated day-end proof work without caching current ledger
 decisions. Existing private PayPal installment plans can be linked individually
 to an explicitly selected account and shared household forecast. Exact dates,

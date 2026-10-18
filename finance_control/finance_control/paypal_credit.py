@@ -1,6 +1,7 @@
 """Owner-bound manual PayPal credit-plan snapshots; no ledger or provider access."""
 
 from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal, InvalidOperation
 import json
 import re
@@ -200,7 +201,7 @@ class PayPalCredit:
             raise AdministrationError('confirmation_required')
         if set(data) != {'loan_id', 'revision', 'confirmed', 'plan'}:
             _invalid()
-        today = datetime.now(UTC).date()
+        today = datetime.now(ZoneInfo('Europe/Berlin')).date()
         plan, derived = _canonical_plan(data['plan'], today)
         loan_id, revision = data['loan_id'], data['revision']
         is_new = loan_id is None

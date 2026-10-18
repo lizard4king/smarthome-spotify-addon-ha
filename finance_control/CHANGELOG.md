@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.63
+
+- Validate manually read PayPal credit dates against the Europe/Berlin calendar in both the form and backend, including summer and winter midnight boundaries.
+- Keep audit timestamps in UTC and preserve existing revision and repayment checks.
+
 ## 0.2.62
 
 - Reuse bounded immutable day-end proof calculations while checking current source, metadata and ledger evidence on every request.
