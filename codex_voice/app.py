@@ -21,9 +21,11 @@ from urllib.parse import urlsplit
 try:
     from .voice_bridge import make_server as make_voice_server
     from .control_client import ControlClient, validate_plan
+    from .lumi_notion_credentials import load_credentials as load_notion_credentials
 except ImportError:
     from voice_bridge import make_server as make_voice_server
     from control_client import ControlClient, validate_plan
+    from lumi_notion_credentials import load_credentials as load_notion_credentials
 
 
 CODEX_BIN = "/usr/local/bin/codex"
@@ -1334,10 +1336,18 @@ class CodexRuntime:
     def query_lumi_request(self, question: str, *, memory: dict, request_id: str) -> str:
         return self.query_lumi(question, memory=memory, request_id=request_id)
 
-    @staticmethod
-    def handles_lumi_locally(question: str) -> bool:
-        """Explicit local erasure does not require a model login or model call."""
-        return is_forget_request(question)
+    def handles_lumi_locally(self, question: str) -> bool:
+        """Explicit local commands do not require model login or planning."""
+        if is_forget_request(question):
+            return True
+        settings = getattr(self, "_lumi_settings", LumiSettings())
+        if not settings.notion_workspace_enabled:
+            return False
+        try:
+            from .lumi_notion_commands import NotionCommandService
+        except ImportError:
+            from lumi_notion_commands import NotionCommandService
+        return NotionCommandService(None, {}).handle(question, "", authorized=False) is not None
 
     def query_lumi(self, question: str, *, memory: dict, request_id: str = "") -> str:
         settings = getattr(self, "_lumi_settings", LumiSettings())
@@ -1377,6 +1387,20 @@ class CodexRuntime:
                 return "Der Gesprächsspeicher ist gerade nicht erreichbar. Die Löschung ist nicht bestätigt."
             return ("Dein gespeicherter Gesprächsverlauf wurde gelöscht."
                     if scope == "person" else "Der Kontext dieser Sitzung wurde gelöscht.")
+        authorized = bool(memory["person_key"]) and memory["person_key"] in settings.notion_owner_keys
+        if settings.notion_workspace_enabled:
+            # Parse only the current utterance before a model or control planner sees it.
+            try:
+                from .lumi_notion_commands import NotionCommandService
+            except ImportError:
+                from lumi_notion_commands import NotionCommandService
+            commands = getattr(self, "_lumi_notion_commands", None)
+            if commands is None:
+                commands = NotionCommandService(None, {})
+            command_answer = commands.handle(question, request_id, authorized=(
+                authorized and settings.notion_write_enabled))
+            if command_answer is not None:
+                return command_answer
         with self._lumi_context_lock:
             generation = self._lumi_forget_generation
             try:
@@ -1384,9 +1408,17 @@ class CodexRuntime:
             except (OSError, sqlite3.Error, ValueError, RuntimeError):
                 turns = []
         # Planner receives only the current utterance. Historical data never plans actions.
-        prompt = context_prompt(turns, scope=scope)
+        knowledge = getattr(self, "_lumi_knowledge", None)
+        pages = []
+        if authorized and (settings.knowledge_enabled or settings.notion_workspace_enabled) and knowledge:
+            try:
+                pages = knowledge.search(question, limit=3)
+            except (OSError, sqlite3.Error, ValueError, RuntimeError):
+                pass
+        prompt = context_prompt(turns, pages, scope=scope)
         answer = spoken_answer(self.query_voice(question, _context_prompt=prompt))
-        if store and key:
+        # Private excerpts and their answers never enter personal or shared session history.
+        if store and key and not pages:
             try:
                 with self._lumi_context_lock:
                     if generation == self._lumi_forget_generation:
@@ -1652,6 +1684,8 @@ def prepare_lumi_directory() -> None:
 
 def main() -> None:
     global VOICE_MODEL_SETTINGS
+    # Protect HA password options before any configuration reader or UID drop.
+    notion_credentials = load_notion_credentials(OPTIONS_FILE)
     VOICE_MODEL_SETTINGS = load_voice_model_settings()
     prepare_private_directories()
     authorized_user_ids = load_authorized_user_ids()
@@ -1659,7 +1693,8 @@ def main() -> None:
     control_client = load_control_client()
     lumi_settings = load_lumi_settings()
     lumi_storage_ready = False
-    if lumi_settings.memory_enabled:
+    if (lumi_settings.memory_enabled or lumi_settings.knowledge_enabled
+            or lumi_settings.notion_workspace_enabled):
         try:
             prepare_lumi_directory()
             lumi_storage_ready = True
@@ -1669,7 +1704,7 @@ def main() -> None:
     runtime = CodexRuntime()
     runtime._control_client = control_client
     runtime._lumi_settings = lumi_settings
-    if lumi_storage_ready:
+    if lumi_storage_ready and lumi_settings.memory_enabled:
         try:
             try:
                 from .lumi_context import ContextStore
@@ -1679,11 +1714,40 @@ def main() -> None:
             runtime._lumi_context.revoke_except(lumi_settings.owner_keys)
         except (OSError, sqlite3.Error, ValueError, RuntimeError):
             runtime._lumi_context = None
+    notion_runtime = None
+    if lumi_storage_ready and (lumi_settings.knowledge_enabled or lumi_settings.notion_workspace_enabled):
+        try:
+            try:
+                from .lumi_knowledge import KnowledgeStore
+                from .lumi_notion_runtime import prepare_runtime
+            except ImportError:
+                from lumi_knowledge import KnowledgeStore
+                from lumi_notion_runtime import prepare_runtime
+            runtime._lumi_knowledge = KnowledgeStore(LUMI_DATA_DIR / "notion.sqlite3",
+                max_pages=10000 if lumi_settings.notion_workspace_enabled else 100,
+                max_total_bytes=32 * 1024 * 1024 if lumi_settings.notion_workspace_enabled else 2 * 1024 * 1024)
+            if lumi_settings.notion_workspace_enabled:
+                notion_runtime = prepare_runtime(LUMI_DATA_DIR, lumi_settings, runtime._lumi_knowledge,
+                    read_token=notion_credentials.read_token,
+                    write_token=notion_credentials.write_token)
+                runtime._lumi_notion_commands = notion_runtime
+                notion_runtime.start()
+            else:
+                runtime._lumi_knowledge.revoke_except(lumi_settings.page_ids)
+        except (OSError, sqlite3.Error, ValueError, RuntimeError):
+            if notion_runtime is not None:
+                notion_runtime.close()
+            notion_runtime = None
+            runtime._lumi_notion_commands = None
+            runtime._lumi_knowledge = None
+            print("Lumi knowledge unavailable; continuing without Notion context", flush=True)
     server = None
     voice_server = None
     voice_thread = None
 
     def stop(signum, _frame) -> None:
+        if notion_runtime is not None:
+            notion_runtime.close()
         if voice_server is not None:
             voice_server.jobs.close()
         runtime.shutdown()
@@ -1704,6 +1768,8 @@ def main() -> None:
             voice_thread.start()
         server.serve_forever(poll_interval=0.5)
     finally:
+        if notion_runtime is not None:
+            notion_runtime.close()
         if voice_server is not None:
             voice_server.jobs.close()
         runtime.shutdown()
