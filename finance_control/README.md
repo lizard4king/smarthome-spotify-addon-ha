@@ -365,3 +365,14 @@ database restore and a successful application start have been verified.
 
 See [`docs/homeassistant-server.md`](../../docs/homeassistant-server.md) for
 build, access, backup, and migration requirements.
+
+`GET /health/backup-guard` is a separate secret-free backup precondition on the
+existing HTTP port. It re-reads the configured `--options-file` for every request
+and only confirms an explicitly empty `access_token` plus the approved `0.2.69`
+`addon_version` from `/app/build-manifest.json`. A missing, unreadable or invalid
+input returns HTTP 503 with only `schema_version: 1` and `backup_safe: false`.
+Success returns HTTP 200 with `schema_version: 1`, `backup_safe: true` and
+`addon_version: "0.2.69"`. No token, options or error detail is returned. Without
+explicit server-side paths, including the default desktop server, the guard
+stays unavailable. `/health` and authentication of application routes are
+unchanged. This endpoint does not create a backup or call a bank.

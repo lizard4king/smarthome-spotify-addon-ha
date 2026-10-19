@@ -42,6 +42,7 @@ from .klarna_banking import KlarnaBanking
 from .security.personal_vault_cleanup import PersonalVaultCleanup
 from .security.server_vault import ServerVaultError
 from .paypal_credit import PayPalCredit
+from .backup_guard import backup_guard_status
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -775,7 +776,8 @@ def _server_administration(database):
 
 
 def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_origins=None,
-                access_token=None, identity_verifier=None, bootstrap_emails=(), bank_product_id=None):
+                access_token=None, identity_verifier=None, bootstrap_emails=(), bank_product_id=None,
+                *, backup_options_file=None, backup_build_manifest=None):
     """Create the cockpit server.
 
     ``access_token=None`` keeps the historic behaviour (Host/Origin/CSRF checks only),
@@ -1092,6 +1094,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
         def do_GET(self):
             if urlsplit(self.path).path == '/health':
                 return self.reply(200, {'status': 'ok'})
+            if urlsplit(self.path).path == '/health/backup-guard':
+                status, payload = backup_guard_status(backup_options_file, backup_build_manifest)
+                return self.reply(status, payload)
             if not self.trusted_host():
                 return self.reply(403, {'error': 'Lokaler Zugriff erforderlich.'})
             if urlsplit(self.path).path in {'/login.css', '/tokens.css'}:
@@ -1753,7 +1758,9 @@ def main():
         parser.exit(2, f'{error}\n')
     server = make_server(app, args.port, args.allowed_hosts, args.host, args.allowed_origins,
                          access_token=access_token, identity_verifier=identity_verifier,
-                         bootstrap_emails=bootstrap_emails, bank_product_id=options.get('fints_product_id'))
+                         bootstrap_emails=bootstrap_emails, bank_product_id=options.get('fints_product_id'),
+                         backup_options_file=args.options_file,
+                         backup_build_manifest='/app/build-manifest.json' if args.options_file else None)
     if token_source == 'generated':
         # Printed once, when the token is created. Later starts reuse the stored file silently so
         # the token does not reappear in every rotated add-on log.
