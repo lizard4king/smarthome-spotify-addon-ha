@@ -1,5 +1,7 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.69` keeps verified local packages as the primary backup when no app-managed Drive target is configured. An optional Home Assistant Drive copy is configured separately. Native add-on file backups also exclude the local cockpit access-token file; native options metadata is not covered by that file exclusion, so the `access_token` option must be empty before a cloud copy. Actual schedule, OAuth, upload and restore acceptance remain separate. No bank or financial behavior changes.
+
 Version 0.2.68 distinguishes successful refreshes from additional bank registrations
 that still require setup. Actual failures and per-connection actions remain visible.
 

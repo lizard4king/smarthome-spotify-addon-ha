@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.69
+
+- Die lokale Hauptsicherung bleibt ohne app-internes Drive-Ziel sichtbar; eine separat eingerichtete Zusatzkopie wird nicht als fehlgeschlagene Hauptsicherung ausgegeben. Unbekannte und fehlende lokale Pakete bleiben erkennbar.
+- Native Add-on-Dateisicherungen schließen zusätzlich die lokale Cockpit-Zugriffsschlüsseldatei aus. Banktresor-Ausschlüsse bleiben erhalten; Cloud-Kopie und Wiederherstellung benötigen eine gesonderte praktische Abnahme.
+
 ## 0.2.68
 
 - Erfolgreiche Kontoabrufe erscheinen trotz weiterer noch nicht eingerichteter Bankregistrierung als erfolgreich. Echte Abruffehler und offene Einrichtungsaktionen bleiben getrennt erkennbar.

@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "e130165c2b162344a5e9b3cc8378acafb05d501ad70ae73c65d349d382d908cb",
-  "addon_version": "0.2.68",
+  "addon_tree_sha256": "b411211b1d9aa6262d75b3bdd4649f5ca31ea3656d3bd5502dbf1730c4a29e2c",
+  "addon_version": "0.2.69",
   "deployment_files": {
-    "Dockerfile": "25d788704be29f94cd6cb94b8ee67722846c67d7aad6ca2bffa61ec775f639b7",
-    "README.md": "d66392e60fce3bdd83ecb9c5dafe00565531f82bc341fdf1833de9773e412033",
+    "Dockerfile": "cf30078613f0fb52bf763fe3754c6ad0887055f51d56789033b0468c41276cef",
+    "README.md": "18036e5943377d49fe81844e98bee1889bacf30844e1e367191d25296562c976",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "57b79cbe74d264dce854dd1306aec7acdf6261eac0ca927cec7dd35242708418",
+    "config.yaml": "73e6d4da4128538030e38b2ec3e358ca151be2e23d5ca20c28698d809d706204",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -209,7 +209,7 @@
     "static/administration.css": "2a6e58917864374a09f7d76d2fe3ba61580fad427fe06b3051db1136377dfb0e",
     "static/administration.js": "3fd66a2f50374e9b1fd6391f59719c3cb53151da2d5d626ea55a2a2269c242f4",
     "static/analytics.js": "fbd02eae4352937cb163b234a6908acb178d0930224149dc3ab5cc726d666d43",
-    "static/app.js": "6df8d10748317bf6e149cb0a0390f73f3b5690da876606d41b61656eed7eb7d0",
+    "static/app.js": "b69fae2042afb4e76e9413ba028e1a3f4b93efb8c247a4fdb8d8823cb50a220a",
     "static/approvals.js": "76f46875bb8b27b4d4363de7eda8d5f3fedc20544522cfebd932e767203a0275",
     "static/bank-ing.svg": "172e4562c1e35378afc6d43748b7d25188810e6744e43d01ad7da4cdac7be586",
     "static/bank-paypal.png": "b94a7952974e87a72f0b7a46ee3b3ea0f05801ac05bd7b166d9c173fac58ec56",
@@ -473,7 +473,7 @@
     "static/finanzguru.js": "473063d10b4faa2dae98d6927d58969ea23bbc0056bf4c23cc9b7b63aab5a0e5",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
     "static/home.js": "98cc87b3292cc12479757a31bac032d1a3f930ea4d248270630ca01aa70720de",
-    "static/index.html": "c05e30a833bbb8ffae3c21e9572a69e5fbb6c1a37e9bcc8d1fa962323f088174",
+    "static/index.html": "288fe62d474a63d22d66662ea33587f5419f776d2f15324c855a2c744452dd89",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/klarna-banking.css": "4dd7ac0bb39d69c89fb644349639253f2cbd8d7ffec4e68a0a3c0552693a7dae",
     "static/klarna-banking.js": "b36af5b19a1b9c63b20be09807c5024445b23bac7db115f13b8697bfd0676cf9",
@@ -507,6 +507,6 @@
     "web.py": "49097dfa983c0616b64f6591ce2d6e7413d9c02092845804f19caa8a0ee0e341"
   },
   "schema_version": 1,
-  "source_commit": "53933c1867f7e75a9dc67b2b83fbb3d3d192e394",
-  "source_tree_sha256": "d0531415dd3e7484dd1e0ba9cbea910ec4fe295e515d7946170f96ab2c10501c"
+  "source_commit": "0fd235958d9c7bfbd1d5a5eb105bfbaba265c1fb",
+  "source_tree_sha256": "9a016b807a6bfb2c388f4d3c2e43e9e608970eccd150b704e1674d753208c4a9"
 }
