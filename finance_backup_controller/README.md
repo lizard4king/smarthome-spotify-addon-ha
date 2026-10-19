@@ -1,8 +1,24 @@
 # Finance Backup Controller — kanonisches Prüf- und Veröffentlichungspaket
 
-Dieses eigenständige HA-App-Paket enthält genau **eine** `controller.py`. Beide Testdateien prüfen diese Fassung direkt. Die älteren Root-/`addon/`-Fassungen außerhalb dieses Ordners sind Prüfprototypen und gehören nicht zum späteren Veröffentlichungspaket. Es wurde nichts gebaut, installiert, aktiviert oder mit echten Daten ausgeführt.
+Dieses eigenständige HA-App-Paket enthält genau **eine** `controller.py`. Die synthetischen Tests prüfen diese Fassung und das explizite Recovery-Modul direkt. Die älteren Root-/`addon/`-Fassungen außerhalb dieses Ordners gehören nicht zu diesem Veröffentlichungspaket. Version 0.1.1 korrigiert die Wartebehandlung und ergänzt einen ausdrücklich ausgelösten Abgleich bereits gestarteter Sicherungen. Eine synthetische Prüfung ersetzt keine praktische Transfer- oder Wiederherstellungsabnahme.
 
 Der prüfbare Ablauf ist in [flow.svg](flow.svg) und [flow.png](flow.png) dargestellt.
+
+## Version 0.1.1: Warten und kontrollierter Abgleich
+
+Während längerer Archivierungsphasen garantiert Home Assistant kein JSON-Ereignis innerhalb von 30 Sekunden. `wait_completed` wartet nach einem reinen Lese-Timeout auf derselben bestehenden Verbindung weiter, höchstens bis zur unveränderten Gesamtfrist von 30 Minuten. Ein begrenzter daemon-Timer unterbricht bei Erreichen der absoluten Frist ausschließlich den eigenen Socket; nach dem Empfang wird die Frist erneut geprüft. Das verhindert auch, dass intern verarbeitete Ping/Pong-Nachrichten die Frist verlängern. Dieser Timer startet weder App noch Verbindung neu. Es gibt keine neue Anmeldung, Verbindung oder Wiederholung von Sicherungs- oder Löschbefehlen. Andere Transportfehler bleiben abbrechend.
+
+Ein bereits beendeter Prozess bleibt beendet. Der neue Modus `enabled: true`, `reconcile_pending: true`, `inspect_only: false`, `initialize_ui: false` ist eine gesonderte einmalige Betreiberhandlung. Er erzeugt und löscht keine Sicherung, verändert keine HA-Konfiguration und startet keinen Wochenplan, auch bei `apply_retention: true`.
+
+Er verlangt einen vorhandenen streng gültigen Pending-Eintrag mit zufälligem eigenem Namen, ursprünglicher Startzeit und gespeicherter Job-ID sowie keine offene Löschabsicht. Nach aktueller Finance-Prüfung müssen zweimal Inventar und Details genau dieselbe eindeutige neue Sicherung bestätigen: passendes ursprüngliches Zeitfenster, ausschließlich Finance, beide verschlüsselte Kopien, positive Größen und keine Fehler. Erst dann wird die vorhandene Sicherung einmal atomar in den eigenen Bestand übernommen und Pending geleert. Unklare, fehlende oder noch laufende Vorgänge bleiben blockiert. Locks und Zustandsdateien werden nicht zurückgesetzt.
+
+Nur nach erfolgreichem Abschluss einschließlich Verbindungsabbau erscheint `Pending backup reconciled; no backup created or deleted`. Ein Dateisystemfehler nach dem atomaren Austausch kann bereits einen neuen lokalen Stand hinterlassen; dann nicht automatisch zurückschreiben oder wiederholen, sondern prüfen. Anschließend den Recovery-Schalter wieder auf `false` setzen. Ein separat gestarteter Normalmodus berücksichtigt die übernommene Sicherung für die unveränderte Sieben-Tage-Frist.
+
+Der neue Schalter ist standardmäßig `false`; Rechte, Quell- und Zielvorgaben sowie der 84-Tage-Plan bleiben unverändert.
+
+`run_once_now: true` ist eine weitere ausdrücklich gewählte einmalige Betreiberhandlung, etwa für die Prüfung eines geänderten Sicherungsumfangs. Sie umgeht ausschließlich die Sieben-Tage-Wartefrist und erzeugt genau eine vollständig geprüfte neue Sicherung; vorhandene Eigentumsnachweise bleiben erhalten. Unklare Vorgänge, Locks, Bank-/Schlüsselausschlüsse, Verschlüsselungs- und Inhaltsprüfungen werden nicht umgangen. Der Modus kann nicht mit Diagnose, UI-Initialisierung oder Recovery kombiniert werden. Er beendet sich anschließend und aktiviert keinen Wochenplan. Vor dem getrennten Start des normalen Wochenbetriebs den Schalter wieder auf `false` setzen. CLI-Entsprechung: `--run-once --run-now`; ohne `--run-once` bleibt die CLI offline.
+
+Freigegeben sind ausschließlich Finance 0.2.69 und 0.2.70. Die vom geheimnisfreien Guard gemeldete Version muss exakt mit der frischen Supervisor-Angabe übereinstimmen. 0.2.70 lässt zusätzlich bereits erzeugte lokale Sicherungsarchive und Datenbankkopien aus künftigen äußeren Sicherungen heraus; diese Dateien werden nicht gelöscht.
 
 ## Rechte und Vorgaben
 
@@ -14,7 +30,7 @@ Offizielle Basisbilder: `ghcr.io/home-assistant/{arch}-base:3.24-2026.08.0` für
 
 ## Sicherheitsprüfung und Inhalt
 
-Vor jeder Sicherung wird über die feste interne GET-Route `http://supervisor/addons/{addon_slug}/info` ausschließlich Version **0.2.69** und der exakt erwartete Hostname (`addon_slug.replace('_', '-')`) geprüft. Anschließend folgt ein **tokenfreier** GET an genau diesen belegten Hostnamen auf Port 8785, Route `/health/backup-guard`. Nur die exakte Antwort `{"schema_version":1,"backup_safe":true,"addon_version":"0.2.69"}` ist zulässig. Die Supervisor-Bearer-Anmeldung wird niemals an Finance weitergegeben. Finance liest dafür die tatsächliche Optionsdatei bei jeder Anfrage neu und bestätigt nur ein ausdrücklich vorhandenes leeres `access_token`; fehlende, abweichende oder unlesbare Werte ergeben lediglich einen negativen Status ohne Details. Die Version stammt aus dem im Finance-Bild eingebundenen Buildmanifest. Der noch ungemergte Release 0.2.69 erhält diese Ergänzung; die Versionsnummer wird dafür nicht angehoben.
+Vor jeder Sicherung wird über die feste interne GET-Route `http://supervisor/addons/{addon_slug}/info` ausschließlich eine der freigegebenen Versionen **0.2.69 oder 0.2.70** und der exakt erwartete Hostname (`addon_slug.replace('_', '-')`) geprüft. Anschließend folgt ein **tokenfreier** GET an genau diesen belegten Hostnamen auf Port 8785, Route `/health/backup-guard`. Nur die exakte Struktur `{"schema_version":1,"backup_safe":true,"addon_version":"0.2.69"}` ist zulässig; bei installiertem 0.2.70 muss die Antwort stattdessen exakt `addon_version: "0.2.70"` melden. Die Supervisor-Bearer-Anmeldung wird niemals an Finance weitergegeben. Finance liest dafür die tatsächliche Optionsdatei bei jeder Anfrage neu und bestätigt nur ein ausdrücklich vorhandenes leeres `access_token`; fehlende, abweichende oder unlesbare Werte ergeben lediglich einen negativen Status ohne Details. Die Version stammt aus dem im Finance-Bild eingebundenen Buildmanifest. Die Freigabe ist an die separat geprüften Release-Inhalte gebunden; andere Versionsnummern bleiben gesperrt.
 
 Ein anderer oder unvollständiger Stand stoppt vor Backup-Mutationen. Der Slug besteht aus einem streng geprüften Pfadsegment; keine Redirects oder Umgebungs-Proxys. Antwortgröße je Abfrage höchstens 256 KiB, Socketwartezeit höchstens 20 Sekunden. Optionen, Token und rohe Fehlertexte werden niemals ausgegeben. Die Vorprüfung wird vor jedem eigenen Löschaufruf erneut durchgeführt. Das vom Info-Endpunkt nicht gelieferte `backup_exclude` wird nicht angenommen, sondern muss für die separat freigegebene Finance-Version belegt sein.
 
@@ -53,7 +69,7 @@ python -m unittest -v
 python controller.py --config config.example.json --state synthetic-state.json --dry-run
 ```
 
-Der erste Befehl führt alle **45 synthetischen Tests** gegen die eine kanonische Controllerfassung aus; die bestehenden 39 Tests bleiben erhalten. Keine Verbindung, keine echten Credentials, kein Containerbuild. Der zweite zeigt ausschließlich den Offline-Plan und erzeugt keine Zustandsdatei. Die Beispielkonfiguration enthält synthetische IDs. Ein realer CLI-Lauf benötigt zusätzlich `--run-once`; Löschungen außerdem `--apply-retention`. Diese Schalter erst nach gesonderter Betriebsfreigabe verwenden.
+Der erste Befehl führt alle **77 synthetischen Tests** gegen die eine kanonische Controllerfassung und die expliziten Betriebsmodi aus. Für den Test der tatsächlichen Timeoutklasse muss zusätzlich die verwendete websocket-client-Abhängigkeit installiert sein; andernfalls meldet dieser einzelne Test einen Skip. Keine Verbindung, keine echten Credentials, kein Containerbuild. Der zweite zeigt ausschließlich den Offline-Plan und erzeugt keine Zustandsdatei. Die Beispielkonfiguration enthält synthetische IDs. Ein realer CLI-Lauf benötigt zusätzlich `--run-once`; Löschungen außerdem `--apply-retention`. Diese Schalter erst nach gesonderter Betriebsfreigabe verwenden.
 
 ## Grenzen und Review-Differenz
 

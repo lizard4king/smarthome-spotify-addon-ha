@@ -14,12 +14,16 @@ import os
 from pathlib import Path
 import re
 import time
+import threading
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 import uuid
 
 
 class SafetyStop(Exception):
     """Safe, fixed diagnostic text only."""
+
+
+APPROVED_FINANCE_VERSIONS = frozenset({"0.2.69", "0.2.70"})
 
 
 def utc(value):
@@ -46,7 +50,7 @@ def validate_finance_info(response, config):
     """Default Supervisor role exposes version/hostname, not foreign options."""
     try:
         valid = (response["result"] == "ok"
-                 and response["data"]["version"] == "0.2.69"
+                 and response["data"]["version"] in APPROVED_FINANCE_VERSIONS
                  and response["data"]["hostname"] == config["addon_slug"].replace("_", "-"))
     except (KeyError, TypeError):
         valid = False
@@ -55,11 +59,13 @@ def validate_finance_info(response, config):
     return response["data"]["hostname"]
 
 
-def validate_backup_guard(response):
+def validate_backup_guard(response, expected_version="0.2.69"):
     if (not isinstance(response, dict)
             or set(response) != {"schema_version", "backup_safe", "addon_version"}
             or type(response["schema_version"]) is not int or response["schema_version"] != 1
-            or response["backup_safe"] is not True or response["addon_version"] != "0.2.69"):
+            or response["backup_safe"] is not True
+            or not isinstance(expected_version, str) or expected_version not in APPROVED_FINANCE_VERSIONS
+            or response["addon_version"] != expected_version):
         raise SafetyStop("Finance public backup guard failed; no backup attempted")
 
 
@@ -91,7 +97,7 @@ def supervisor_guard(config, token, opener=None):
         hostname = validate_finance_info(info, config)
         # Never send the Supervisor bearer token to the Finance process.
         guard = _guard_get("http://" + hostname + ":8785/health/backup-guard", {}, opener)
-        validate_backup_guard(guard)
+        validate_backup_guard(guard, info["data"]["version"])
     except Exception:
         # Includes parser and HTTP errors; never forward option/credential bodies.
         raise SafetyStop("Finance safety guard unavailable or unapproved metadata") from None
@@ -323,8 +329,31 @@ class HA:
         left = self.deadline - time.monotonic()
         if left <= 0:
             raise SafetyStop("Overall timeout; inspect pending operation")
-        self.socket.settimeout(min(left, 30))
-        message = json.loads(self.socket.recv())
+        socket = self.socket
+
+        def abort_receive():
+            try:
+                socket.abort()
+            except Exception:
+                # Transport details may contain secrets; never emit them.
+                pass
+
+        timer = threading.Timer(left, abort_receive)
+        timer.daemon = True
+        try:
+            timer.start()
+            socket.settimeout(min(left, 30))
+            try:
+                raw = socket.recv()
+            except Exception:
+                if time.monotonic() >= self.deadline:
+                    raise SafetyStop("Overall timeout; inspect pending operation") from None
+                raise
+            if time.monotonic() >= self.deadline:
+                raise SafetyStop("Overall timeout; inspect pending operation")
+        finally:
+            timer.cancel()
+        message = json.loads(raw)
         if not isinstance(message, dict):
             raise SafetyStop("Invalid WS message")
         return message
@@ -367,8 +396,20 @@ class HA:
         self.events.clear()
 
     def wait_completed(self):
+        try:
+            from websocket import WebSocketTimeoutException
+        except ImportError:
+            read_timeouts = (TimeoutError,)
+        else:
+            read_timeouts = (TimeoutError, WebSocketTimeoutException)
         while True:
-            event = self.events.pop(0) if self.events else self.receive()
+            if time.monotonic() >= self.deadline:
+                raise SafetyStop("Overall timeout; inspect pending operation")
+            try:
+                event = self.events.pop(0) if self.events else self.receive()
+            except read_timeouts:
+                # Keep waiting on this exact connection. No command/auth retry.
+                continue
             if event.get("type") == "event":
                 if event.get("id") != self.subscription:
                     raise SafetyStop("Unexpected completion subscription")
@@ -389,7 +430,7 @@ def inventory(api):
     return result["backups"]
 
 
-def run(api, state, now, apply_retention=False):
+def run(api, state, now, apply_retention=False, *, run_now=False):
     state.require_clear()
     config = state.config
     # Fresh installed version + actual runtime options, not a one-time approval.
@@ -405,7 +446,7 @@ def run(api, state, now, apply_retention=False):
     owned = state.data["owned"]
     if any(utc(o["created_utc"]) > now for o in owned):
         raise SafetyStop("Clock precedes owned backup")
-    if owned and now - max(utc(o["created_utc"]) for o in owned) < timedelta(days=7):
+    if owned and not run_now and now - max(utc(o["created_utc"]) for o in owned) < timedelta(days=7):
         return "not_due"
     api.subscribe()
     name = "finance-only-" + uuid.uuid4().hex
@@ -480,6 +521,7 @@ def main(argv=None):
     parser.add_argument("--run-once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--apply-retention", action="store_true")
+    parser.add_argument("--run-now", action="store_true")
     args = parser.parse_args(argv)
     try:
         config = json.loads(args.config.read_text(encoding="utf-8"))
@@ -502,7 +544,7 @@ def main(argv=None):
                 api = HA(socket)
                 api.authenticate(token)
                 token = None
-                print(run(api, state, datetime.now(timezone.utc), args.apply_retention))
+                print(run(api, state, datetime.now(timezone.utc), args.apply_retention, run_now=args.run_now))
             finally:
                 socket.close()
         return 0

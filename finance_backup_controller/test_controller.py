@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 from contextlib import redirect_stdout
@@ -49,7 +51,7 @@ class FakeAPI:
 
     def verify_addon(self, config):
         c.validate_finance_info(self.finance_info, config)
-        c.validate_backup_guard(self.backup_guard)
+        c.validate_backup_guard(self.backup_guard, self.finance_info["data"]["version"])
 
     def command(self, payload):
         self.calls.append(copy.deepcopy(payload))
@@ -100,6 +102,9 @@ class FakeSocket:
 
     def settimeout(self, value):
         assert 0 < value <= 30
+
+    def abort(self):
+        self.aborted = True
 
     def close(self):
         self.closed = True
@@ -248,6 +253,37 @@ class Tests(unittest.TestCase):
         c.prune(self.api, self.state, NOW + timedelta(days=300))
         self.assertFalse(self.deletes())
 
+    def test_explicit_run_now_bypasses_only_interval_and_keeps_prior_ownership(self):
+        old = backup(identifier="prior", date=NOW - timedelta(hours=1))
+        self.state.data["owned"] = [owned(old)]
+        self.api.backups = [old]
+        self.assertEqual(c.run(self.api, self.state, NOW, run_now=True), "completed")
+        self.assertEqual({record["backup_id"] for record in self.state.data["owned"]}, {"prior", "new"})
+        self.assertEqual(len([p for p in self.api.calls if p["type"] == "backup/generate"]), 1)
+        self.assertFalse(self.deletes())
+        self.state.data["pending"] = {"name": "uncertain"}
+        calls = len(self.api.calls)
+        with self.assertRaises(c.SafetyStop): c.run(self.api, self.state, NOW, run_now=True)
+        self.assertEqual(len(self.api.calls), calls)
+
+    def test_approved_versions_require_exact_supervisor_and_guard_agreement(self):
+        class Response(io.BytesIO):
+            def getcode(self): return 200
+        for installed in ("0.2.69", "0.2.70"):
+            for reported in ("0.2.69", "0.2.70", "0.2.71"):
+                self.api.finance_info["data"]["version"] = installed
+                self.api.backup_guard["addon_version"] = reported
+                count = []
+                def opener(request, timeout):
+                    count.append(request.full_url)
+                    payload = self.api.finance_info if len(count) == 1 else self.api.backup_guard
+                    return Response(json.dumps(payload).encode())
+                with self.subTest(installed=installed, reported=reported):
+                    if installed == reported: c.supervisor_guard(CFG, "SYNTHETIC_TOKEN", opener)
+                    else:
+                        with self.assertRaises(c.SafetyStop): c.supervisor_guard(CFG, "SYNTHETIC_TOKEN", opener)
+                self.assertEqual(len(count), 2)
+
     def test_lock_and_invalid_config_fail_closed(self):
         with c.lock(self.path):
             with self.assertRaises(c.SafetyStop):
@@ -294,7 +330,7 @@ class Tests(unittest.TestCase):
     def test_finance_guard_before_state_or_backup_mutation(self):
         variants = [{}, {"result": "error"},
                     {"result": "ok", "data": {"version": "0.2.68", "hostname": "fake-finance"}},
-                    {"result": "ok", "data": {"version": "0.2.70", "hostname": "fake-finance"}},
+                    {"result": "ok", "data": {"version": "0.2.71", "hostname": "fake-finance"}},
                     {"result": "ok", "data": {"version": "0.2.69"}},
                     {"result": "ok", "data": {"version": "0.2.69", "hostname": "other-finance"}},
                     {"result": "ok", "data": {"version": "0.2.69", "hostname": "evil/path"}}]
@@ -537,6 +573,181 @@ class InitializationTests(unittest.TestCase):
         self.assertEqual([p["type"] for p in socket.sent], ["auth"])
         self.assertNotIn("SYNTHETIC", str(error.exception))
         self.assertTrue(socket.closed)
+
+
+class CompletionReadTimeoutTests(unittest.TestCase):
+    @staticmethod
+    def completed():
+        return {"manager_state": "create_backup", "state": "completed"}
+
+    def test_python_read_timeouts_continue_on_same_connection_without_commands(self):
+        socket = FakeSocket([TimeoutError(), TimeoutError(), self.completed()])
+        api = c.HA(socket)
+        deadline = api.deadline
+        api.wait_completed()
+        self.assertIs(api.socket, socket)
+        self.assertEqual(api.deadline, deadline)
+        self.assertEqual(socket.sent, [])
+
+    def test_actual_websocket_client_timeout_continues(self):
+        try:
+            from websocket import WebSocketTimeoutException
+        except ImportError:
+            self.skipTest("websocket-client unavailable; run with runtime dependency for this case")
+        socket = FakeSocket([WebSocketTimeoutException("synthetic idle"), self.completed()])
+        api = c.HA(socket)
+        api.wait_completed()
+        self.assertIs(api.socket, socket)
+        self.assertEqual(socket.sent, [])
+
+    def test_repeated_read_timeouts_stop_at_original_overall_deadline(self):
+        clock = [0]
+
+        class TimedSocket(FakeSocket):
+            def recv(self):
+                clock[0] += 5
+                return super().recv()
+
+        socket = TimedSocket([TimeoutError(), TimeoutError()])
+        api = c.HA(socket)
+        api.deadline = 10
+        with patch.object(c.time, "monotonic", side_effect=lambda: clock[0]), patch.object(c.threading, "Timer"):
+            with self.assertRaisesRegex(c.SafetyStop, "Overall timeout"):
+                api.wait_completed()
+        self.assertEqual(api.deadline, 10)
+        self.assertEqual(socket.sent, [])
+
+    def test_other_errors_and_same_named_nonlibrary_error_propagate(self):
+        imitation = type("WebSocketTimeoutException", (Exception,), {})
+        for error in (ConnectionError("synthetic disconnect"), ValueError("synthetic invalid"), imitation()):
+            socket = FakeSocket([error, self.completed()])
+            with self.assertRaises(type(error)) as caught:
+                c.HA(socket).wait_completed()
+            self.assertIs(caught.exception, error)
+            self.assertEqual(socket.sent, [])
+
+    def test_failed_and_idle_still_stop_after_timeout(self):
+        for event in ({"manager_state": "create_backup", "state": "failed"}, {"manager_state": "idle"}):
+            socket = FakeSocket([TimeoutError(), event])
+            with self.assertRaises(c.SafetyStop):
+                c.HA(socket).wait_completed()
+            self.assertEqual(socket.sent, [])
+
+    def test_generate_is_sent_once_before_completion_timeouts(self):
+        socket = FakeSocket([
+            {"type": "result", "id": 1, "success": True, "result": {"backup_job_id": "synthetic-job"}},
+            TimeoutError(), TimeoutError(),
+            {"type": "event", "id": 99, "event": self.completed()},
+        ])
+        api = c.HA(socket)
+        api.subscription = 99
+        api.command({"type": "backup/generate", "name": "synthetic"})
+        api.wait_completed()
+        self.assertEqual(socket.sent, [{"type": "backup/generate", "name": "synthetic", "id": 1}])
+        self.assertIs(api.socket, socket)
+
+    def test_authentication_read_timeout_is_not_retried(self):
+        socket = FakeSocket([{"type": "auth_required"}, TimeoutError()])
+        with self.assertRaises(TimeoutError):
+            c.HA(socket).authenticate("synthetic-token")
+        self.assertEqual(socket.sent, [{"type": "auth", "access_token": "synthetic-token"}])
+
+    def test_command_read_timeout_is_not_retried(self):
+        socket = FakeSocket([TimeoutError(), {"type": "result", "id": 1, "success": True}])
+        with self.assertRaises(TimeoutError):
+            c.HA(socket).command({"type": "backup/generate", "name": "synthetic"})
+        self.assertEqual(len(socket.sent), 1)
+
+
+class AbsoluteReceiveDeadlineTests(unittest.TestCase):
+    class BlockingSocket(FakeSocket):
+        def __init__(self, control_frames=False, abort_raises=False):
+            super().__init__([])
+            self.released = threading.Event()
+            self.abort_count = 0
+            self.control_frames = control_frames
+            self.frames = 0
+            self.abort_raises = abort_raises
+
+        def recv(self):
+            if self.control_frames:
+                while not self.released.wait(0.002):
+                    self.frames += 1  # Simulate control frames consumed inside recv().
+            elif not self.released.wait(2):
+                raise AssertionError("Deadline guard failed to unblock recv")
+            return json.dumps({"manager_state": "create_backup", "state": "completed"})
+
+        def abort(self):
+            self.abort_count += 1
+            self.released.set()
+            if self.abort_raises:
+                raise ConnectionError("SYNTHETIC_PRIVATE_ABORT_DETAIL")
+
+    def test_blocking_receive_and_internal_control_frames_aborted_at_deadline(self):
+        for controls in (False, True):
+            own = self.BlockingSocket(control_frames=controls)
+            other = self.BlockingSocket()
+            api = c.HA(own, timeout=0.06)
+            before = time.monotonic()
+            with self.assertRaisesRegex(c.SafetyStop, "Overall timeout"):
+                api.receive()
+            elapsed = time.monotonic() - before
+            self.assertLess(elapsed, 1)
+            self.assertGreaterEqual(elapsed, 0.04)
+            self.assertEqual(own.abort_count, 1)
+            self.assertEqual(other.abort_count, 0)
+            self.assertEqual(own.sent, [])
+            if controls:
+                self.assertGreater(own.frames, 0)
+
+    def test_late_completed_rejected_before_json_parsing_and_timer_cancelled(self):
+        clock = [0]
+
+        class LateSocket(FakeSocket):
+            def recv(self):
+                clock[0] = 11
+                return "invalid JSON deliberately never parsed"
+
+        api = c.HA(LateSocket([])); api.deadline = 10
+        with patch.object(c.time, "monotonic", side_effect=lambda: clock[0]), patch.object(c.threading, "Timer") as timer:
+            with self.assertRaisesRegex(c.SafetyStop, "Overall timeout"):
+                api.wait_completed()
+            timer.return_value.cancel.assert_called_once_with()
+            self.assertTrue(timer.return_value.daemon)
+
+    def test_timer_cancelled_for_success_transport_and_parse_errors(self):
+        for value in ({"valid": True}, ConnectionError("synthetic"), []):
+            api = c.HA(FakeSocket([value]))
+            with patch.object(c.threading, "Timer") as timer:
+                if isinstance(value, Exception):
+                    with self.assertRaises(ConnectionError): api.receive()
+                elif isinstance(value, list):
+                    with self.assertRaises(c.SafetyStop): api.receive()
+                else:
+                    self.assertEqual(api.receive(), value)
+                timer.return_value.start.assert_called_once_with()
+                timer.return_value.cancel.assert_called_once_with()
+                self.assertTrue(timer.return_value.daemon)
+
+    def test_timer_cancelled_after_invalid_json(self):
+        class InvalidJSONSocket(FakeSocket):
+            def recv(self):
+                return "{"
+
+        with patch.object(c.threading, "Timer") as timer:
+            with self.assertRaises(json.JSONDecodeError):
+                c.HA(InvalidJSONSocket([])).receive()
+            timer.return_value.cancel.assert_called_once_with()
+
+    def test_abort_exception_is_silent_and_deadline_still_stops(self):
+        socket = self.BlockingSocket(abort_raises=True)
+        output = io.StringIO()
+        with redirect_stdout(output), patch("sys.stderr", output):
+            with self.assertRaises(c.SafetyStop) as error:
+                c.HA(socket, timeout=0.03).receive()
+        self.assertEqual(output.getvalue(), "")
+        self.assertNotIn("SYNTHETIC", str(error.exception))
+        self.assertEqual(socket.sent, [])
 
 
 if __name__ == "__main__": unittest.main()

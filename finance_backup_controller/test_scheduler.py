@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import controller
 import scheduler
@@ -43,6 +44,136 @@ class Tests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             self.assertEqual(scheduler.serve(self.data, clock=forbidden, sleep=forbidden, invoke=forbidden), 0)
         self.assertEqual([p.name for p in self.data.iterdir()], ["options.json"])
+
+    def test_reconciliation_is_explicit_single_shot_without_scheduling(self):
+        self.options_path.write_text(json.dumps(OPTIONS | {"enabled": True, "reconcile_pending": True}))
+        self.state_path.write_text("preserved-pending-state")
+        before = {p.name: p.read_bytes() for p in self.data.iterdir()}
+        calls = []
+        def recover(config, state_path, now):
+            calls.append((config, state_path, now))
+            return "Pending backup reconciled; no backup created or deleted"
+        def forbidden(*args): self.fail("Reconciliation entered another operation")
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(scheduler.serve(self.data, clock=lambda: NOW, sleep=forbidden,
+                                             invoke=forbidden, inspect=forbidden,
+                                             initialize=forbidden, reconcile=recover), 0)
+        self.assertEqual(calls, [(CONFIG, self.state_path, NOW)])
+        self.assertEqual(output.getvalue(), "Pending backup reconciled; no backup created or deleted\n")
+        self.assertEqual({p.name: p.read_bytes() for p in self.data.iterdir()}, before)
+
+    def test_reconciliation_disabled_conflicting_or_failed_never_retries(self):
+        self.assertIs(OPTIONS["reconcile_pending"], False)
+        self.options_path.write_text(json.dumps(OPTIONS | {"reconcile_pending": True}))
+        def forbidden(*args): self.fail("Disabled reconciliation attempted work")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(scheduler.serve(self.data, reconcile=forbidden, clock=forbidden), 0)
+        for other in ("inspect_only", "initialize_ui"):
+            with self.assertRaises(controller.SafetyStop):
+                scheduler.options_validate(OPTIONS | {"reconcile_pending": True, other: True})
+        self.options_path.write_text(json.dumps(OPTIONS | {"enabled": True, "reconcile_pending": True}))
+        calls = []
+        def fail(*args):
+            calls.append(True)
+            raise controller.SafetyStop("Synthetic uncertain recovery")
+        with redirect_stdout(io.StringIO()) as output, self.assertRaises(controller.SafetyStop):
+            scheduler.serve(self.data, reconcile=fail, clock=lambda: NOW, invoke=forbidden, sleep=forbidden)
+        self.assertEqual(calls, [True])
+        self.assertEqual(output.getvalue(), "")
+
+    def test_reconciliation_wrapper_uses_one_socket_and_closes_before_success(self):
+        controller.State(self.state_path, CONFIG).save()
+        class Socket:
+            def __init__(self):
+                self.frames = [json.dumps({"type": "auth_required"}),
+                               json.dumps({"type": "auth_ok", "ha_version": "2026.9.4"})]
+                self.sent, self.closed = [], 0
+            def settimeout(self, value): pass
+            def recv(self): return self.frames.pop(0)
+            def send(self, value): self.sent.append(json.loads(value))
+            def close(self): self.closed += 1
+        socket = Socket()
+        calls = []
+        def factory(url, timeout): calls.append((url, timeout)); return socket
+        with patch("recovery.reconcile", return_value="verified-existing-only") as recover:
+            result = scheduler.reconcile_once(CONFIG, self.state_path, NOW,
+                       socket_factory=factory, environ={"SUPERVISOR_TOKEN": "synthetic-token"})
+        self.assertEqual(result, "verified-existing-only")
+        self.assertEqual(calls, [("ws://supervisor/core/websocket", 30)])
+        self.assertEqual([message["type"] for message in socket.sent], ["auth"])
+        self.assertEqual(socket.closed, 1)
+        self.assertEqual(recover.call_count, 1)
+        self.assertEqual(recover.call_args.args[1].path, self.state_path)
+        self.assertEqual(recover.call_args.args[2], NOW)
+
+    def test_reconciliation_wrapper_missing_prerequisite_or_existing_lock_never_connects(self):
+        def forbidden(*args, **kwargs): self.fail("Blocked reconciliation connected")
+        with self.assertRaises(controller.SafetyStop):
+            scheduler.reconcile_once(CONFIG, self.state_path, NOW, socket_factory=forbidden, environ={})
+        controller.State(self.state_path, CONFIG).save()
+        lock_path = Path(str(self.state_path) + ".lock")
+        lock_path.write_text("synthetic-existing-lock")
+        with self.assertRaises(controller.SafetyStop):
+            scheduler.reconcile_once(CONFIG, self.state_path, NOW, socket_factory=forbidden,
+                                     environ={"SUPERVISOR_TOKEN": "synthetic-token"})
+        self.assertEqual(lock_path.read_text(), "synthetic-existing-lock")
+
+    def test_reconciliation_wrapper_redacts_transport_and_cleanup_failure(self):
+        controller.State(self.state_path, CONFIG).save()
+        class Socket:
+            def __init__(self, fail_close):
+                self.frames = [json.dumps({"type": "auth_required"}),
+                               json.dumps({"type": "auth_ok", "ha_version": "2026.9.4"})]
+                self.closed, self.fail_close = 0, fail_close
+            def settimeout(self, value): pass
+            def recv(self): return self.frames.pop(0)
+            def send(self, value): pass
+            def close(self):
+                self.closed += 1
+                if self.fail_close: raise RuntimeError("synthetic-secret-body")
+        for failure in ("recover", "close"):
+            socket = Socket(failure == "close")
+            with self.subTest(failure=failure), patch("recovery.reconcile") as recover:
+                if failure == "recover": recover.side_effect = RuntimeError("synthetic-secret-body")
+                else: recover.return_value = "must-not-report-success"
+                with self.assertRaises(controller.SafetyStop) as caught:
+                    scheduler.reconcile_once(CONFIG, self.state_path, NOW,
+                        socket_factory=lambda *args, **kwargs: socket,
+                        environ={"SUPERVISOR_TOKEN": "synthetic-token"})
+                self.assertNotIn("synthetic-secret", str(caught.exception))
+                self.assertEqual(socket.closed, 1)
+                self.assertFalse(Path(str(self.state_path) + ".lock").exists())
+
+    def test_explicit_run_once_now_preserves_state_and_never_enters_weekly_loop(self):
+        self.options_path.write_text(json.dumps(OPTIONS | {"enabled": True, "run_once_now": True}))
+        self.state(timedelta(hours=1))
+        calls = []
+        def execute(args):
+            calls.append(args)
+            saved = controller.State(self.state_path, CONFIG)
+            saved.data["owned"].append({"backup_id": "verified-new", "name": "finance-only-verified-new",
+                                        "created_utc": NOW.isoformat()})
+            saved.save()
+            return 0
+        def forbidden(*args): self.fail("One-shot entered periodic scheduling")
+        self.assertEqual(scheduler.serve(self.data, clock=lambda: NOW, sleep=forbidden, invoke=execute), 0)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("--run-now", calls[0])
+        self.assertEqual(len(controller.State(self.state_path, CONFIG).data["owned"]), 2)
+
+    def test_run_once_now_cannot_recover_uncertainty_or_accept_old_success(self):
+        self.options_path.write_text(json.dumps(OPTIONS | {"enabled": True, "run_once_now": True}))
+        saved = self.state(timedelta(hours=1))
+        with self.assertRaises(controller.SafetyStop):
+            scheduler.serve(self.data, clock=lambda: NOW, invoke=lambda args: 0)
+        saved.data["pending"] = {"uncertain": True}
+        saved.save()
+        def forbidden(*args): self.fail("Forced one-shot bypassed pending state")
+        with self.assertRaises(controller.SafetyStop):
+            scheduler.serve(self.data, clock=lambda: NOW, invoke=forbidden, sleep=forbidden)
+        for mode in ("inspect_only", "initialize_ui", "reconcile_pending"):
+            with self.assertRaises(controller.SafetyStop):
+                scheduler.options_validate(OPTIONS | {"run_once_now": True, mode: True})
 
     def test_strict_options_and_distinct_explicit_agents(self):
         bad_options = [OPTIONS | {"enabled": "false"}, OPTIONS | {"apply_retention": 1},
