@@ -261,6 +261,14 @@ class LumiRelay(VoiceGateway):
     async def _dispatch(self, req, payload, principal):
         if req.get("type") != "LaunchRequest":
             name = req.get("intent", {}).get("name")
+            if name == "AskChatGPTIntent":
+                question = req.get("intent", {}).get("slots", {}).get("Question", {}).get("value")
+                if isinstance(question, str) and len(question) <= MAX_QUESTION:
+                    control = question.strip().casefold()
+                    if control.endswith((".", "!", "?")):
+                        control = control[:-1]
+                    name = {"antwort": "GetCodexAnswerIntent",
+                            "wiederholen": "AMAZON.RepeatIntent"}.get(control, name)
             if name in {"AMAZON.StopIntent", "AMAZON.CancelIntent"}:
                 self._clear_answer_pages(principal)
                 self.pending.pop(principal, None)
@@ -395,6 +403,8 @@ class LumiRelay(VoiceGateway):
             return None
         if (set(result) == {"state", "error"} and result["state"] == "failed"
                 and isinstance(result["error"], str) and result["error"] in ERROR_MESSAGES):
+            if self.last_jobs.get(principal) != job:
+                return None
             text = ERROR_MESSAGES[result["error"]]
         elif set(result) == {"state", "answer"} and result["state"] == "done":
             if self.last_jobs.get(principal) != job:
