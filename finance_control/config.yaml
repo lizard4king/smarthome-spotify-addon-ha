@@ -1,7 +1,7 @@
 name: Finance Control
 slug: finance_control
 description: Privates Finance-Control-Cockpit als Home-Assistant-Add-on
-version: "0.2.68"
+version: "0.2.69"
 arch:
   - amd64
   - aarch64
@@ -28,4 +28,5 @@ backup: cold
 backup_exclude:
   - FinanceControl/bank-secrets
   - FinanceControl/bank-secrets/*
+  - FinanceControl/data/app_access_token
 stage: experimental

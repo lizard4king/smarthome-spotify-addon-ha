@@ -277,8 +277,20 @@ function renderProfileGoals(goals) {
 }
 function renderBackupStatus(status) {
   const node=$('backup-sync-status');
-  if(status?.error){node.textContent=`Lokale Sicherung aktiv · Drive-Abgleich benötigt technische Prüfung · ${status.pending} Paket(e) warten.`;return;}
-  if(!status?.configured){node.textContent=`Lokale Sicherung aktiv · ${status?.pending||0} Paket(e) warten auf ein konfiguriertes Drive-Ziel.`;return;}
+  if(!status || typeof status !== 'object' || typeof status.configured !== 'boolean'){
+    node.textContent='Sicherungsstatus derzeit nicht verfügbar.';return;
+  }
+  if(!status.configured){
+    const count=status.local_packages;
+    const inventory=Number.isInteger(count)&&count>=0
+      ? `${count} ${count===1?'lokales Sicherungspaket':'lokale Sicherungspakete'} vorhanden.`
+      : 'Anzahl lokaler Sicherungspakete unbekannt.';
+    node.textContent=status.local_packages===0
+      ? 'Lokale Hauptsicherung · Noch kein lokales Sicherungspaket bestätigt. Drive-Kopie optional/separat.'
+      : `Lokale Hauptsicherung · ${inventory} Drive-Kopie optional/separat.`;
+    return;
+  }
+  if(status.error){node.textContent=`Lokale Sicherung aktiv · Drive-Abgleich benötigt technische Prüfung · ${status.pending} Paket(e) warten.`;return;}
   if(!status.reachable){node.textContent=`Offline arbeitsfähig · ${status.pending} Sicherungspaket(e) warten lokal auf Drive.`;return;}
   node.textContent=status.pending?`Drive erreichbar · ${status.pending} Sicherungspaket(e) werden nachsynchronisiert.`:'Lokale Sicherung und Drive-Ablage sind synchron.';
 }
