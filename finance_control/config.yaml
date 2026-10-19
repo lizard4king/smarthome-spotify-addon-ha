@@ -1,7 +1,7 @@
 name: Finance Control
 slug: finance_control
 description: Privates Finance-Control-Cockpit als Home-Assistant-Add-on
-version: "0.2.69"
+version: "0.2.70"
 arch:
   - amd64
   - aarch64
@@ -29,4 +29,8 @@ backup_exclude:
   - FinanceControl/bank-secrets
   - FinanceControl/bank-secrets/*
   - FinanceControl/data/app_access_token
+  # Generated package outputs only; manual CSV/JSON exports remain included.
+  - FinanceControl/data/exports/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].zip
+  - FinanceControl/data/exports/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].partial
+  - FinanceControl/data/backups/*.sqlite
 stage: experimental

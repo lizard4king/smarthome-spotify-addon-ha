@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.70
+
+- Keep future native Finance-only backups compact by excluding generated package ZIPs, their partial files and local SQLite snapshot copies from their fixed output paths. No local file is removed or backup generation changed.
+- Preserve the active database, import originals, receipts, profile and manual CSV/JSON exports. Older excluded recovery points remain local; historical snapshots are not generally reproducible from current data.
+- Bind the secret-free backup guard to approved add-on version 0.2.70; archive size and restore acceptance remain separate checks.
+
 ## 0.2.69
 
 - Die lokale Hauptsicherung bleibt ohne app-internes Drive-Ziel sichtbar; eine separat eingerichtete Zusatzkopie wird nicht als fehlgeschlagene Hauptsicherung ausgegeben. Unbekannte und fehlende lokale Pakete bleiben erkennbar.

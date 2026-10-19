@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "8f4c0349a94b4a83f024023f766a0fa8b02045fa9182ce1efb2d4be9fbac25c6",
-  "addon_version": "0.2.69",
+  "addon_tree_sha256": "aefa02f114eea07bb7132187cf54c831bd85d954486d0f6d7fc255603a7dc928",
+  "addon_version": "0.2.70",
   "deployment_files": {
-    "Dockerfile": "cf30078613f0fb52bf763fe3754c6ad0887055f51d56789033b0468c41276cef",
-    "README.md": "4e4a850476723e3d17b771763aff7a89c37b3bf951d3868f3896d26186d7a364",
+    "Dockerfile": "d95a57cbccc0c23564de47c5486e2dc2b6e8ea5e62c7dd305570eaf0e3c177bb",
+    "README.md": "ee17eaf5128d1478ae371e287ffa676f15728ffa0a0f2bbf5cd5d4e4581ead98",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "73e6d4da4128538030e38b2ec3e358ca151be2e23d5ca20c28698d809d706204",
+    "config.yaml": "82e9150b79eae8319698122acf819b2dc6b02047964e16831038c6a7890e9340",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -29,7 +29,7 @@
     "analytics.py": "24f37f0e4c15208651076acfa9a6d2d72f03a4c17eda631c31734b3a411f882d",
     "approval_queue.py": "695768a0a9710ef09cb3415d15db8e0419ae64da845f93fb87e725dc755d4489",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
-    "backup_guard.py": "b38358c589b181b0a6cd345e02a60ffa93aad3b39a5f0262b5a3ea51d58a3799",
+    "backup_guard.py": "738f585ee276687c71994196510b229280e14481590212d99802ae0ac53f20ec",
     "backup_package.py": "2395d83e042a2edc41c01b770bcc7584b437023d66a3e02caf10d6311314030a",
     "bank_account_policy.py": "7c5366d8a6d7dc4070c0a33fe62be3334c4202a69f14b437f0c39d9ebd6b9881",
     "bank_archive.py": "c26d45d7642e21af36f1d94576c77e30437b4f5aa14f9ec393c2d6a6da9922bf",
@@ -508,6 +508,6 @@
     "web.py": "b5bba32e6a0fced543c6f5e18e569e4bb0acf5aeb41f2bbfe530b995e6cd827c"
   },
   "schema_version": 1,
-  "source_commit": "c814c6f1ee498aafdba4b2670834108542e0b643",
-  "source_tree_sha256": "f5985062d308dc725332b90213b76ec23f27f18f5826b24e8cae71e0720f5f48"
+  "source_commit": "66862a55c2a1e36b18f264e9915f4cd0cfc1e30d",
+  "source_tree_sha256": "4cce0b96568df93528d0c988ae34ff6c5bf4565344a190390a98ccb73ca4d9e9"
 }
