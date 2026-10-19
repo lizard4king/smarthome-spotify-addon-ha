@@ -1,0 +1,32 @@
+{
+  "name": "Finance Backup Controller (Prototype)",
+  "version": "0.1.0",
+  "slug": "finance_backup_controller",
+  "description": "Disabled-by-default Finance-only encrypted backup scheduler",
+  "arch": ["amd64", "aarch64"],
+  "startup": "application",
+  "boot": "manual",
+  "stage": "experimental",
+  "init": false,
+  "homeassistant_api": true,
+  "hassio_api": true,
+  "hassio_role": "default",
+  "options": {
+    "enabled": false,
+    "inspect_only": false,
+    "initialize_ui": false,
+    "apply_retention": false,
+    "addon_slug": "synthetic_finance_addon",
+    "local_agent_id": "synthetic.local",
+    "drive_agent_id": "synthetic.drive"
+  },
+  "schema": {
+    "enabled": "bool",
+    "inspect_only": "bool",
+    "initialize_ui": "bool",
+    "apply_retention": "bool",
+    "addon_slug": "str",
+    "local_agent_id": "str",
+    "drive_agent_id": "str"
+  }
+}
