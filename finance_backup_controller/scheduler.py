@@ -5,6 +5,7 @@ Deployment and the broad homeassistant_api permission require separate approval.
 """
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import signal
 import time
@@ -20,18 +21,46 @@ class StopRequested(BaseException):
 
 
 def options_validate(options):
-    keys = {"enabled", "inspect_only", "initialize_ui", "apply_retention", "addon_slug", "local_agent_id", "drive_agent_id"}
+    keys = {"enabled", "inspect_only", "initialize_ui", "reconcile_pending", "run_once_now", "apply_retention", "addon_slug", "local_agent_id", "drive_agent_id"}
     if not isinstance(options, dict) or set(options) != keys:
         raise controller.SafetyStop("Invalid app option keys")
-    if any(type(options[flag]) is not bool for flag in ("enabled", "inspect_only", "initialize_ui", "apply_retention")):
+    if any(type(options[flag]) is not bool for flag in ("enabled", "inspect_only", "initialize_ui", "reconcile_pending", "run_once_now", "apply_retention")):
         raise controller.SafetyStop("App flags must be boolean")
-    if options["inspect_only"] and options["initialize_ui"]:
+    if sum(options[flag] for flag in ("inspect_only", "initialize_ui", "reconcile_pending", "run_once_now")) > 1:
         raise controller.SafetyStop("Setup modes must not be combined")
     if options["inspect_only"] or options["initialize_ui"]:
         return None  # Configured source/destination placeholders are unused.
     config = {k: options[k] for k in ("addon_slug", "local_agent_id", "drive_agent_id")}
     controller.config_validate(config)
     return config
+
+
+def reconcile_once(config, state_path, now, *, socket_factory=None, environ=None):
+    """Explicit one-shot operator action; remote reads, one verified local save."""
+    from recovery import reconcile
+    token = (os.environ if environ is None else environ).get("SUPERVISOR_TOKEN")
+    if not isinstance(token, str) or not token or not Path(state_path).is_file():
+        raise controller.SafetyStop("Pending reconciliation prerequisites unavailable")
+    socket = None
+    try:
+        with controller.lock(state_path):
+            state = controller.State(state_path, config)
+            if socket_factory is None:
+                import websocket
+                websocket.enableTrace(False)
+                socket_factory = websocket.create_connection
+            socket = socket_factory("ws://supervisor/core/websocket", timeout=30)
+            try:
+                api = controller.HA(socket)
+                api.authenticate(token)
+                token = None
+                result = reconcile(api, state, now)
+            finally:
+                if socket is not None:
+                    socket.close()
+        return result
+    except Exception:
+        raise controller.SafetyStop("Pending reconciliation stopped; inspect existing state without retry") from None
 
 
 def next_delay(state, now):
@@ -48,13 +77,14 @@ def next_delay(state, now):
     return min(MAX_SLEEP, max(0, (last + WEEK - now).total_seconds()))
 
 
-def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspect=None, initialize=None):
+def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspect=None, initialize=None, reconcile=None):
     """Read options every hour at most; a failed one-shot is never retried here."""
     clock = clock or (lambda: datetime.now(timezone.utc))
     sleep = sleep or time.sleep
     invoke = invoke or controller.main
     inspect = inspect or controller.inspect_configuration
     initialize = initialize or controller.initialize_native_ui
+    reconcile = reconcile or reconcile_once
     data_dir = Path(data_dir)
     options_path = data_dir / "options.json"
     state_path = data_dir / "controller-state.json"
@@ -73,8 +103,14 @@ def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspec
             initialize()
             print("Native backup UI initialized; no backup created")
             return 0
+        if options["reconcile_pending"]:
+            print(reconcile(config, state_path, clock()))
+            return 0  # Never generate, prune or schedule after reconciliation.
         state = controller.State(state_path, config)
-        delay = next_delay(state, clock())
+        previous_ids = {record["backup_id"] for record in state.data["owned"]}
+        delay = next_delay(state, clock())  # Also validates uncertainty and clock.
+        if options["run_once_now"]:
+            delay = 0
         if delay:
             sleep(delay)
             continue
@@ -84,9 +120,17 @@ def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspec
         args = ["--config", str(config_path), "--state", str(state_path), "--run-once"]
         if options["apply_retention"]:
             args.append("--apply-retention")
+        if options["run_once_now"]:
+            args.append("--run-now")
         if invoke(args) != 0:
             print("Stopped after failed one-shot; operator action required")
             return 2
+        if options["run_once_now"]:
+            after = controller.State(state_path, config)
+            new_ids = {record["backup_id"] for record in after.data["owned"]} - previous_ids
+            if len(new_ids) != 1 or next_delay(after, clock()) <= 0:
+                raise controller.SafetyStop("No durable new success; one-shot stopped")
+            return 0
         # A successful return without a persisted success must never form a loop.
         after = controller.State(state_path, config)
         if next_delay(after, clock()) <= 0:
