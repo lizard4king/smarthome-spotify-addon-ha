@@ -11,6 +11,8 @@ MAX_ANSWERS = 32
 MAX_REQUESTS = 128
 CONTINUE_HINT = "Für den nächsten Teil sage: Alexa, frage Lumi Chat: Antwort."
 PENDING_TEXT = "Die Antwort wird noch erstellt. Sage in einem Moment: Alexa, frage Lumi Chat: Antwort."
+RETRIEVAL_FAILURE_TEXT = "Die Antwort konnte gerade nicht abgerufen werden. Bitte sage in einem Moment: Alexa, frage Lumi Chat: Antwort."
+SUBMISSION_TIMEOUT_TEXT = "Der Gesprächsdienst konnte die Anfrage nicht bestätigen. Ob sie angekommen ist, ist unklar. Bitte wiederhole den Auftrag vorerst nicht."
 ERROR_MESSAGES = {
     "timeout": "Die Antwort hat zu lange gedauert. Bitte stelle deine Frage erneut.",
     "unauthenticated": "Ich kann die Anmeldung von Lumi gerade nicht bestätigen. Bitte prüfe Codex Voice.",

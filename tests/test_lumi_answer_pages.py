@@ -256,8 +256,9 @@ async def test_stop_new_question_and_new_anonymous_session_cannot_reveal_old_pag
 @pytest.mark.parametrize("code", sorted(ERROR_MESSAGES))
 async def test_job_error_codes_map_only_to_fixed_speech(monkeypatch, code):
     gateway, _, _, _ = setup_gateway(monkeypatch)
+    current = gateway.last_jobs["principal"] = job()
     gateway._bridge_call = AsyncMock(return_value={"state": "failed", "error": code})
-    text = await gateway._poll_exact("principal", job())
+    text = await gateway._poll_exact("principal", current)
     assert text == ERROR_MESSAGES[code]
     await gateway.close()
 

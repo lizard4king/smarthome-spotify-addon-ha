@@ -12,14 +12,16 @@ from types import SimpleNamespace
 from aiohttp import web
 
 try:
-    from .answer_pages import AnswerPages, ERROR_MESSAGES, PENDING_TEXT
+    from .answer_pages import (AnswerPages, ERROR_MESSAGES, PENDING_TEXT,
+                               RETRIEVAL_FAILURE_TEXT, SUBMISSION_TIMEOUT_TEXT)
     from .lumi_greeting import LocalGreetings
     from .answer_delivery import AnswerDelivery, SPEECH_PORT
     from .security import Rejected
     from .voice_gateway import (OPAQUE_ID_RE, BridgeFailure, BridgeBusy, PendingJob, PENDING_TTL_SECONDS, MAX_QUESTION, MAX_REQUEST_CACHE, REQUEST_CACHE_TTL_SECONDS, BridgeJobMissing, VoiceGateway, BRIDGE_SECRET_RE, DEVICE_ID_RE,
                                 USER_ID_RE, SKILL_ID_RE, PERSON_ID_RE)
 except ImportError:
-    from answer_pages import AnswerPages, ERROR_MESSAGES, PENDING_TEXT
+    from answer_pages import (AnswerPages, ERROR_MESSAGES, PENDING_TEXT,
+                              RETRIEVAL_FAILURE_TEXT, SUBMISSION_TIMEOUT_TEXT)
     from lumi_greeting import LocalGreetings
     from answer_delivery import AnswerDelivery, SPEECH_PORT
     from security import Rejected
@@ -259,6 +261,14 @@ class LumiRelay(VoiceGateway):
     async def _dispatch(self, req, payload, principal):
         if req.get("type") != "LaunchRequest":
             name = req.get("intent", {}).get("name")
+            if name == "AskChatGPTIntent":
+                question = req.get("intent", {}).get("slots", {}).get("Question", {}).get("value")
+                if isinstance(question, str) and len(question) <= MAX_QUESTION:
+                    control = question.strip().casefold()
+                    if control.endswith((".", "!", "?")):
+                        control = control[:-1]
+                    name = {"antwort": "GetCodexAnswerIntent",
+                            "wiederholen": "AMAZON.RepeatIntent"}.get(control, name)
             if name in {"AMAZON.StopIntent", "AMAZON.CancelIntent"}:
                 self._clear_answer_pages(principal)
                 self.pending.pop(principal, None)
@@ -311,12 +321,21 @@ class LumiRelay(VoiceGateway):
         try:
             answer = await self._poll_exact(principal, job)
         except BridgeFailure as exc:
-            return self._speech(ERROR_MESSAGES.get(getattr(exc, "code", None), ERROR_MESSAGES["unavailable"]), end=False)
+            return self._speech(self._transport_failure_text(exc, known_job=True), end=False)
         if answer is None:
             return self._speech(PENDING_TEXT, end=False)
         if self.pages.available(principal) and request_id is not None:
             answer = self.pages.select(principal, request_id, repeat=repeat, first=True)
         return self._speech(answer, end=False)
+
+    @staticmethod
+    def _transport_failure_text(exc, *, known_job):
+        code = getattr(exc, "code", "unavailable")
+        if known_job and code in {"timeout", "unavailable"}:
+            return RETRIEVAL_FAILURE_TEXT
+        if not known_job and code == "timeout":
+            return SUBMISSION_TIMEOUT_TEXT
+        return ERROR_MESSAGES.get(code, ERROR_MESSAGES["unavailable"])
 
     async def _ask(self, req, payload, principal):
         slots = req.get("intent", {}).get("slots", {})
@@ -370,7 +389,7 @@ class LumiRelay(VoiceGateway):
             self.pending.pop(principal, None)
             return self._speech(PENDING_TEXT, end=False)
         except BridgeFailure as exc:
-            return self._speech(ERROR_MESSAGES.get(getattr(exc, "code", None), ERROR_MESSAGES["unavailable"]), end=False)
+            return self._speech(self._transport_failure_text(exc, known_job=slot.job is not None), end=False)
         finally:
             if not handed_off:
                 self.answer_delivery.release(slot)
@@ -384,6 +403,8 @@ class LumiRelay(VoiceGateway):
             return None
         if (set(result) == {"state", "error"} and result["state"] == "failed"
                 and isinstance(result["error"], str) and result["error"] in ERROR_MESSAGES):
+            if self.last_jobs.get(principal) != job:
+                return None
             text = ERROR_MESSAGES[result["error"]]
         elif set(result) == {"state", "answer"} and result["state"] == "done":
             if self.last_jobs.get(principal) != job:
