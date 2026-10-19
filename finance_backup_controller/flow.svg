@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="925" viewBox="0 0 1200 925">
+ <rect width="1200" height="925" fill="#fff"/>
+ <style>text{font-family:Arial,sans-serif;fill:#172b3a}.title{font-size:28px;font-weight:bold}.head{font-size:20px;font-weight:bold}.body{font-size:17px}.note{font-size:16px}rect.box{fill:#eef6fa;stroke:#63899f;stroke-width:2}.arrow{stroke:#446579;stroke-width:2;fill:none}</style>
+ <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#446579"/></marker></defs>
+ <text x="60" y="56" class="title">Finance-only Backup · Sicherheitsablauf</text>
+ <text x="60" y="88" class="note">Prüfprototyp · synthetisch getestet · keine reale Sicherung durch diesen Worker</text>
+ <text x="60" y="113" class="note">Diagnose: enabled + inspect_only → nur zwei Core-Leseabfragen; keine Sicherung, keine eigenen Dateien.</text>
+ <rect x="60" y="125" width="1080" height="64" rx="10" fill="#f3f6ec" stroke="#82935d"/>
+ <text x="80" y="150" class="body">Setup: enabled + initialize_ui (ohne inspect_only) → nur UI-Flag setzen und vollständig rücklesen.</text>
+ <text x="80" y="175" class="note">Schlüssel vorhanden · nativer Plan Never · alle Limits null · keine Sicherung, Löschung oder eigene Datei.</text>
+ <g transform="translate(0,75)">
+ <rect x="60" y="130" width="470" height="115" rx="10" class="box"/>
+ <text x="85" y="164" class="head">Standard / --dry-run</text><text x="85" y="196" class="body">Offline-Plan; keine Verbindung, kein Schreiben.</text><text x="85" y="222" class="body">Explizite Add-on-, lokale und Drive-ID.</text>
+ <rect x="650" y="130" width="490" height="115" rx="10" class="box"/>
+ <text x="675" y="164" class="head">--run-once: aktuelle Sicherheitsprüfung</text><text x="675" y="196" class="body">Supervisor-Version + tokenfreier Finance-Guard.</text><text x="675" y="222" class="body">Beide Agents; HA-Schlüssel nur im RAM; Verschlüsselung.</text>
+ <path d="M530 188 H640" class="arrow" marker-end="url(#a)"/>
+ <path d="M895 245 V285" class="arrow" marker-end="url(#a)"/>
+ <rect x="650" y="295" width="490" height="130" rx="10" class="box"/>
+ <text x="675" y="330" class="head">Absicht dauerhaft vor Erzeugung speichern</text><text x="675" y="362" class="body">Genau 1 Add-on → genau 2 verschlüsselte Kopien.</text><text x="675" y="390" class="body">Kein Core, keine HA-Datenbank, keine Ordner.</text>
+ <path d="M895 425 V465" class="arrow" marker-end="url(#a)"/>
+ <rect x="650" y="475" width="490" height="130" rx="10" class="box"/>
+ <text x="675" y="510" class="head">Erfolg unabhängig nachprüfen</text><text x="675" y="542" class="body">Neues completed + neue eindeutige ID + Details.</text><text x="675" y="570" class="body">Inhalte, beide Agents, protected, keine Fehler.</text>
+ <path d="M650 540 H540" class="arrow" marker-end="url(#a)"/>
+ <rect x="60" y="475" width="470" height="130" rx="10" class="box"/>
+ <text x="85" y="510" class="head">Erfolgreiche eigene ID dauerhaft speichern</text><text x="85" y="542" class="body">Erst dann nächste Sicherung nach ≥ 7 Tagen.</text><text x="85" y="570" class="body">Ohne --apply-retention: Ende ohne Löschung.</text>
+ <path d="M295 605 V645" class="arrow" marker-end="url(#a)"/>
+ <rect x="60" y="655" width="1080" height="130" rx="10" class="box"/>
+ <text x="85" y="690" class="head">Optionale Aufbewahrung: nur eigene, geprüfte IDs älter als 84 Tage</text><text x="85" y="722" class="body">Neueste erfolgreiche Kopie behalten; alte Metadaten erneut prüfen; Delete-Intent vor Löschaufruf speichern.</text><text x="85" y="750" class="body">Unterbrechung / Teilfehler / Unklarheit → Stop, keine automatische Wiederholung, manuelle Klärung.</text>
+ <rect x="60" y="295" width="470" height="130" rx="10" fill="#fff5e8" stroke="#bb8b4b" stroke-width="2"/>
+ <text x="85" y="330" class="head">Abbruchschranken</text><text x="85" y="362" class="body">Finance-Guard · native Kopien-/Tagelimits · Pending</text><text x="85" y="390" class="body">Schlüssel fehlt · Timeout · falsche Inhalte · Fehler</text>
+ <text x="60" y="824" class="note">Grenze: native Delete-API löscht eine ID auf allen Agents; Prüfung und Löschung sind nicht atomar.</text>
+ </g>
+</svg>
