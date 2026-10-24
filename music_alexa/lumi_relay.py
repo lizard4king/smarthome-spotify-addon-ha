@@ -1,0 +1,311 @@
+"""Optional Lambda HMAC relay, isolated from music and direct Alexa state."""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import json
+import re
+import time
+from types import SimpleNamespace
+
+from aiohttp import web
+
+try:
+    from .answer_delivery import AnswerDelivery, SPEECH_PORT
+    from .security import Rejected
+    from .voice_gateway import (OPAQUE_ID_RE, BridgeFailure, PendingJob, PENDING_TTL_SECONDS, MAX_QUESTION, BridgeJobMissing, VoiceGateway, BRIDGE_SECRET_RE, DEVICE_ID_RE,
+                                USER_ID_RE, SKILL_ID_RE)
+except ImportError:
+    from answer_delivery import AnswerDelivery, SPEECH_PORT
+    from security import Rejected
+    from voice_gateway import (OPAQUE_ID_RE, BridgeFailure, PendingJob, PENDING_TTL_SECONDS, MAX_QUESTION, BridgeJobMissing, VoiceGateway, BRIDGE_SECRET_RE, DEVICE_ID_RE,
+                               USER_ID_RE, SKILL_ID_RE)
+
+PATH = "/lumi/voice"
+DEADLINE_SECONDS = 6.3
+MAX_NONCES = 256
+NONCE_TTL = 61
+AUTHENTICATED_NONCE = web.RequestKey("lumi_authenticated_nonce", str)
+
+
+def lumi_mappings(value):
+    if not isinstance(value, list) or len(value) > 256:
+        raise Rejected("Invalid Lumi mappings")
+    result = {}
+    for row in value:
+        if (not isinstance(row, dict) or set(row) != {"device_id", "user_id"}
+                or not isinstance(row["device_id"], str)
+                or not DEVICE_ID_RE.fullmatch(row["device_id"])
+                or not isinstance(row["user_id"], str)
+                or not USER_ID_RE.fullmatch(row["user_id"])
+                or row["device_id"] in result):
+            raise Rejected("Invalid Lumi mappings")
+        result[row["device_id"]] = dict(row)
+    return result
+
+
+def lumi_relay_enabled(settings):
+    skill = getattr(settings, "lumi_skill_id", "")
+    secret = getattr(settings, "lumi_relay_secret", "")
+    mappings = getattr(settings, "lumi_device_mappings", [])
+    lumi_mappings(mappings)
+    if skill == "" and secret == "" and not mappings:
+        return False
+    internal = getattr(settings, "voice_bridge_secret", "")
+    if (not isinstance(skill, str) or not SKILL_ID_RE.fullmatch(skill)
+            or not isinstance(secret, str) or not BRIDGE_SECRET_RE.fullmatch(secret)
+            or not isinstance(internal, str) or not BRIDGE_SECRET_RE.fullmatch(internal)):
+        raise Rejected("Invalid Lumi relay configuration")
+    return True
+
+
+def mac(secret, prefix, nonce, status_or_timestamp, body):
+    if prefix == "POST":
+        parts = [prefix, PATH, status_or_timestamp, nonce]
+    else:
+        parts = [prefix, PATH, nonce, str(status_or_timestamp)]
+    parts.append(hashlib.sha256(body).hexdigest())
+    return hmac.new(secret.encode(), "\n".join(parts).encode(), hashlib.sha256).hexdigest()
+
+
+def _keys(value, allowed, required=()):
+    if not isinstance(value, dict) or not set(value) <= set(allowed) or not set(required) <= set(value):
+        raise Rejected("Invalid relay event")
+
+
+def validate_event(payload, skill):
+    # Exact allowlists ensure no Amazon API/user access token reaches the bridge.
+    _keys(payload, {"version", "context", "session", "request"}, {"context", "session", "request"})
+    _keys(payload["context"], {"System"}, {"System"})
+    system = payload["context"]["System"]
+    _keys(system, {"application", "user", "device", "person"}, {"application", "user", "device"})
+    session = payload["session"]
+    _keys(session, {"application", "user", "person", "sessionId", "new"}, {"application"})
+    if "sessionId" in session and (
+        not isinstance(session["sessionId"], str)
+        or not 1 <= len(session["sessionId"]) <= 1024
+    ):
+        raise Rejected("Invalid relay session")
+    for container in (system, session):
+        _keys(container["application"], {"applicationId"}, {"applicationId"})
+        if container["application"]["applicationId"] != skill:
+            raise Rejected("Invalid relay skill")
+        if "user" in container:
+            _keys(container["user"], {"userId"}, {"userId"})
+        if "person" in container:
+            _keys(container["person"], {"personId"}, {"personId"})
+    if "user" in session and session["user"] != system["user"]:
+        raise Rejected("Invalid relay user")
+    if "person" in session and "person" in system and session["person"] != system["person"]:
+        raise Rejected("Invalid relay person")
+    _keys(system["device"], {"deviceId"}, {"deviceId"})
+    req = payload["request"]
+    _keys(req, {"type", "requestId", "timestamp", "locale", "intent"}, {"type", "requestId"})
+    if (req["type"] not in {"IntentRequest", "LaunchRequest"} or not isinstance(req["requestId"], str)
+            or not 1 <= len(req["requestId"]) <= 1024):
+        raise Rejected("Invalid relay request")
+    if req["type"] == "LaunchRequest":
+        if "intent" in req:
+            raise Rejected("Invalid relay launch")
+        return
+    if "intent" not in req:
+        raise Rejected("Invalid relay intent")
+    intent = req["intent"]
+    _keys(intent, {"name", "slots"}, {"name"})
+    if intent["name"] not in {"AskChatGPTIntent", "GetCodexAnswerIntent", "AMAZON.RepeatIntent",
+                              "AMAZON.StopIntent", "AMAZON.CancelIntent"}:
+        raise Rejected("Invalid relay intent")
+    if "slots" in intent:
+        _keys(intent["slots"], {"Question"})
+        if "Question" in intent["slots"]:
+            _keys(intent["slots"]["Question"], {"name", "value"})
+
+
+class LumiRelay(VoiceGateway):
+    def __init__(self, session, settings, *, pairing_observer=None, answer_port=SPEECH_PORT):
+        enabled = lumi_relay_enabled(settings)
+        proxy = SimpleNamespace(voice_skill_id=settings.lumi_skill_id if enabled else "",
+                                voice_bridge_secret=settings.voice_bridge_secret if enabled else "")
+        # Submit + polling window + a last in-flight poll stay below 6.3s:
+        # 1.0 + 4.0 + 1.0 leaves 0.3s for request/response processing.
+        # Lambda must allow 7.0s for this relay (Alexa's overall limit is 8s).
+        super().__init__(session, proxy, lambda: lumi_mappings(settings.lumi_device_mappings),
+                         bridge_timeout_seconds=1.0, submit_poll_seconds=4.0)
+        self.lumi_skill_id = settings.lumi_skill_id if enabled else ""
+        self.relay_secret = settings.lumi_relay_secret if enabled else ""
+        self.nonces = {}
+        self.pairing_observer = pairing_observer
+        self.answer_delivery = AnswerDelivery(session, settings, self.devices_callable,
+                                              self._poll_exact, port=answer_port,
+                                              finish=self._delivery_finished)
+
+    def _authenticate(self, request, body):
+        if (request.method != "POST" or request.raw_path != PATH
+                or request.content_type != "application/json"
+                or request.headers.get("Content-Encoding", "identity") != "identity"):
+            raise Rejected("Invalid relay transport")
+        headers = request.headers
+        names = ("X-Lumi-Timestamp", "X-Lumi-Nonce", "X-Lumi-Signature")
+        if any(len(headers.getall(name, [])) != 1 for name in names):
+            raise Rejected("Invalid relay headers")
+        stamp, nonce, signature = (headers[name] for name in names)
+        if (not re.fullmatch(r"[0-9]{1,12}", stamp)
+                or abs(time.time() - int(stamp)) > 30
+                or not re.fullmatch(r"[0-9a-f]{32}", nonce)
+                or not re.fullmatch(r"[0-9a-f]{64}", signature)
+                or not hmac.compare_digest(signature, mac(self.relay_secret, "POST", nonce, stamp, body))):
+            raise Rejected("Invalid relay authentication")
+        now = time.monotonic()
+        self.nonces = {key: expires for key, expires in self.nonces.items() if expires > now}
+        # No await between replay/capacity check and admission.
+        if nonce in self.nonces or len(self.nonces) >= MAX_NONCES:
+            raise Rejected("Invalid relay nonce")
+        self.nonces[nonce] = now + NONCE_TTL
+        request[AUTHENTICATED_NONCE] = nonce
+
+    def _principal_inputs(self, payload):
+        principal, device, user = super()._principal_inputs(payload)
+        namespace = json.dumps([PATH, self.settings.voice_skill_id, principal], separators=(",", ":")).encode()
+        principal = hmac.new(self.secret.encode(), namespace, hashlib.sha256).hexdigest()
+        return principal, device, user
+
+    async def _handle(self, request):
+        if not self._allow_peer(request.remote or "unknown", time.monotonic()):
+            return self._json({"error": "Request limit"}, status=429)
+        try:
+            body = await self._read_body(request)
+            self._authenticate(request, body)
+            payload = json.loads(body)
+            validate_event(payload, self.settings.voice_skill_id)
+            principal, device, user = self._principal_inputs(payload)
+        except Exception:
+            return self._json({"error": "Invalid relay request"}, status=400)
+        if self.active_verified >= 4:
+            return self._json({"error": "Relay busy"}, status=503)
+        self.active_verified += 1
+        try:
+            return await self._process_verified(payload, body, principal, device, user)
+        finally:
+            self.active_verified -= 1
+
+    async def handle(self, request):
+        try:
+            async with asyncio.timeout(DEADLINE_SECONDS):
+                response = await self._handle(request) if self.enabled else self._json({"error": "Not found"}, status=404)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            response = self._error("Der Gesprächsdienst ist gerade nicht erreichbar.")
+        nonce = request.get(AUTHENTICATED_NONCE)
+        if nonce:
+            response.headers["X-Lumi-Response-Signature"] = mac(
+                self.relay_secret, "RESPONSE", nonce, response.status, response.body)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    async def _dispatch(self, req, payload, principal):
+        if req.get("type") != "LaunchRequest":
+            name = req.get("intent", {}).get("name")
+            if name in {"AMAZON.StopIntent", "AMAZON.CancelIntent"}:
+                _, device, _ = self._principal_inputs(payload)
+                previous = self.answer_delivery.cancel(device)
+                if previous:
+                    self.pending.pop(previous.principal, None)
+                    self.last_jobs.pop(previous.principal, None)
+            if name == "AskChatGPTIntent":
+                return await self._ask(req, payload, principal)
+            if name in {"AMAZON.RepeatIntent", "GetCodexAnswerIntent"}:
+                _, device, _ = self._principal_inputs(payload)
+                slot = self.answer_delivery.slots.get(device)
+                if slot and slot.principal == principal:
+                    return self._speech("Einen Moment.", end=True)
+            return await super()._dispatch(req, payload, principal)
+        return self._speech("Da bist du.", end=False)
+
+    async def _get_answer(self, principal):
+        self._expire_pending(time.monotonic())
+        if principal not in self.pending and principal not in self.last_jobs:
+            return self._speech("Es gibt keine fertige Antwort. Stelle deine Frage bitte noch einmal.", end=False)
+        answer = await self._poll(principal)
+        if answer is None:
+            return self._speech("Die Antwort dauert länger. Für dieses Gerät ist keine automatische Sprachausgabe eingerichtet.")
+        return self._speech(answer, end=False)
+
+    async def _ask(self, req, payload, principal):
+        slots = req.get("intent", {}).get("slots", {})
+        question = slots.get("Question", {}).get("value")
+        if not isinstance(question, str) or not question.strip() or len(question) > MAX_QUESTION:
+            return self._speech("Welche kurze Frage soll ich beantworten?", end=False)
+        _, device, user = self._principal_inputs(payload)
+        previous = self.answer_delivery.cancel(device)
+        if previous:
+            self.pending.pop(previous.principal, None)
+            self.last_jobs.pop(previous.principal, None)
+        slot = self.answer_delivery.reserve(principal, device, user)
+        if slot is None:
+            return self._speech("Der Gesprächsdienst ist gerade ausgelastet.")
+        handed_off = False
+        try:
+            started = time.monotonic()
+            result = await self._bridge_call("/v1/submit", self._submission_value(
+                req, payload, principal, " ".join(question.split())))
+            if (set(result) != {"job_id", "state"} or result.get("state") not in {"pending", "done", "failed"}
+                    or not isinstance(result.get("job_id"), str) or not OPAQUE_ID_RE.fullmatch(result["job_id"])):
+                raise BridgeFailure("Invalid bridge response")
+            if not self.answer_delivery.current(slot):
+                return self._speech("Die Anfrage wurde abgebrochen.")
+            job = slot.job = PendingJob(result["job_id"], started + PENDING_TTL_SECONDS)
+            slot.request_id = hmac.new(self.secret.encode(),
+                ("lumi-answer-delivery-v1\n" + principal + "\n" + job.job_id).encode(), hashlib.sha256).hexdigest()[:32]
+            self._expire_pending(time.monotonic())
+            active_jobs = {(item.principal, item.job) for item in self.answer_delivery.slots.values() if item.job}
+            self.pending = {key: value for key, value in self.pending.items() if (key, value) in active_jobs}
+            self.pending[principal] = job
+            self._store_last_job(principal, job)
+            until = time.monotonic() + self.submit_poll_seconds
+            while True:
+                answer = await self._poll_exact(principal, job)
+                if not self.answer_delivery.current(slot):
+                    return self._speech("Die Anfrage wurde abgebrochen.")
+                if answer is not None:
+                    return self._speech(answer, end=False)
+                if time.monotonic() >= until:
+                    break
+                await asyncio.sleep(min(0.12, max(0, until - time.monotonic())))
+            handed_off = self.answer_delivery.start(slot)
+            if handed_off:
+                return self._speech("Einen Moment.", end=True)
+            self.pending.pop(principal, None)
+            return self._speech("Die Antwort dauert länger. Für dieses Gerät ist keine automatische Sprachausgabe eingerichtet.", end=True)
+        finally:
+            if not handed_off:
+                self.answer_delivery.release(slot)
+
+    async def _poll_exact(self, principal, job):
+        try:
+            result = await self._bridge_call("/v1/result", {"principal": principal, "job_id": job.job_id})
+        except BridgeJobMissing:
+            result = {"state": "failed", "error": "unavailable"}
+        if result == {"state": "pending"}:
+            return None
+        if result == {"state": "failed", "error": "unavailable"}:
+            text = "Der Gesprächsdienst ist gerade nicht erreichbar."
+        elif set(result) == {"state", "answer"} and result["state"] == "done":
+            text = self._spoken(result["answer"])
+        else:
+            raise BridgeFailure("Invalid bridge response")
+        if self.pending.get(principal) == job:
+            self.pending.pop(principal, None)
+        return text
+
+    def _delivery_finished(self, slot):
+        if slot.job is not None and self.pending.get(slot.principal) == slot.job:
+            self.pending.pop(slot.principal, None)
+
+    async def close(self):
+        await self.answer_delivery.close()
+
+    def _submission_value(self, req, payload, principal, question):
+        return {"principal": principal, "request_id": req["requestId"], "question": question}
+

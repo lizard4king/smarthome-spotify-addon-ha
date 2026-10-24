@@ -22,8 +22,12 @@ from aiohttp import web
 
 try:
     from .security import AlexaVerifier, Grants, Rejected, origin, stream_target
+    from .voice_gateway import VoiceGateway, voice_gateway_enabled
+    from .lumi_relay import LumiRelay, lumi_relay_enabled
 except ImportError:
     from security import AlexaVerifier, Grants, Rejected, origin, stream_target
+    from voice_gateway import VoiceGateway, voice_gateway_enabled
+    from lumi_relay import LumiRelay, lumi_relay_enabled
 
 LOG = logging.getLogger("music_alexa")
 MAX_BODY = 32768
@@ -84,6 +88,13 @@ class Settings:
     stream_grant_ttl: int = 900
     device_mappings: list = field(default_factory=list)
     data_dir: Path = Path("/data")
+    voice_skill_id: str = ""
+    voice_bridge_secret: str = ""
+    lumi_skill_id: str = ""
+    lumi_relay_secret: str = ""
+    lumi_device_mappings: list = field(default_factory=list)
+    lumi_answer_targets_json: str = ""
+    lumi_answer_bridge_secret: str = ""
 
     def __post_init__(self):
         if (not re.fullmatch(r"amzn1\.ask\.skill\.[0-9a-fA-F-]{36}", self.skill_id)
@@ -98,6 +109,8 @@ class Settings:
         if urlsplit(self.ma_stream_origin).port != 8097 or urlsplit(self.ma_api_url).port != 8095:
             raise Rejected("Unexpected MA port")
         mappings(self.device_mappings)
+        voice_gateway_enabled(self)
+        lumi_relay_enabled(self)
 
     @classmethod
     def load(cls, path: Path):
@@ -107,7 +120,14 @@ class Settings:
         keys = {key: raw[key] for key in ("skill_id", "app_username", "app_password", "ma_api_url",
                                          "ma_api_token", "ma_stream_origin", "public_base_url")}
         return cls(**keys, stream_grant_ttl=raw.get("stream_grant_ttl", 900),
-                   device_mappings=raw.get("device_mappings", []))
+                   device_mappings=raw.get("device_mappings", []),
+                   voice_skill_id=raw.get("voice_skill_id", ""),
+                   voice_bridge_secret=raw.get("voice_bridge_secret", ""),
+                   lumi_skill_id=raw.get("lumi_skill_id", ""),
+                   lumi_relay_secret=raw.get("lumi_relay_secret", ""),
+                   lumi_device_mappings=raw.get("lumi_device_mappings", []),
+                   lumi_answer_targets_json=raw.get("lumi_answer_targets_json", ""),
+                   lumi_answer_bridge_secret=raw.get("lumi_answer_bridge_secret", ""))
 
 
 def speech(text: str) -> dict:
@@ -138,15 +158,24 @@ class Companion:
                 self.devices = mappings(saved["mappings"])
         self.seen: dict[str, str] = {}
         self.pending: dict[str, dict] = {}
+        # At most one current playback record per configured player. Raw Alexa
+        # stream tokens are never retained here; only their SHA-256 digest is.
+        self.playback_status: dict[str, dict] = {}
+        self.status_revision = 0
+        self.playback_generations: dict[str, int] = {}
         self.replies: dict[str, tuple[float, str, dict]] = {}
         self.request_times: list[float] = []
         self.pre_auth_times: dict[str, list[float]] = {}
         self.verifications = 0
         self.active_streams = 0
         self.active_grants: dict[str, int] = {}
+        self.resume_tasks: dict[str, asyncio.Task] = {}
+        self.mapping_updates = 0
         self.command_lock = asyncio.Lock()
         self.dispatch_lock = asyncio.Lock()
         self.open_streams: dict[asyncio.Task, tuple[str, object]] = {}
+        self.voice = VoiceGateway(session, settings, lambda: self.devices)
+        self.lumi = LumiRelay(session, settings)
 
     def options_digest(self) -> str:
         value = json.dumps(self.settings.device_mappings, sort_keys=True).encode()
@@ -178,12 +207,18 @@ class Companion:
         app.router.add_post("/devices", self.set_devices)
         app.router.add_get("/alexa/intents", self.intents)
         app.router.add_post("/ma/push-url", self.push)
+        app.router.add_get("/ma/playback-status", self.get_playback_status)
         return app
 
     def public_app(self) -> web.Application:
         app = web.Application(client_max_size=MAX_BODY, middlewares=[safe_errors])
+        app.on_cleanup.append(self._cleanup_resume_tasks)
         app.router.add_post("/", self.alexa)
         app.router.add_get("/stream/{token}.mp3", self.stream)
+        if self.voice.enabled:
+            app.router.add_post("/voice", self.voice.handle)
+        if self.lumi.enabled:
+            app.router.add_post("/lumi/voice", self.lumi.handle)
         return app
 
     async def status(self, request):
@@ -203,31 +238,40 @@ class Companion:
             selected = mappings(value)
         except (ValueError, TypeError):
             raise web.HTTPBadRequest(text="Invalid mappings") from None
-        # A successful admin response is a boundary: no dispatch on the old
-        # mapping can remain in flight, and no old grant can register afterward.
-        async with self.dispatch_lock:
-            self.settings.data_dir.mkdir(parents=True, exist_ok=True)
-            tmp = self.settings.data_dir / "devices.json.tmp"
-            tmp.write_text(json.dumps({"version": 1, "options_digest": self.options_digest(),
-                                       "mappings": value}), encoding="utf-8")
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, self.settings.data_dir / "devices.json")
-            affected = {device for device in self.devices if self.devices[device] != selected.get(device)}
-            self.devices = selected
-            for task, (device, transport) in list(self.open_streams.items()):
-                if device in affected:
-                    if transport:
-                        transport.close()
-                    task.cancel()
-            self.pending.clear()
-            self.grants.items.clear()
-            self.replies.clear()
+        # Drain accepted resume commands before changing mappings. Internal MA
+        # push requests remain available while new Alexa dispatch is fenced.
+        self.mapping_updates += 1
+        try:
+            if self.resume_tasks:
+                await asyncio.gather(*list(self.resume_tasks.values()), return_exceptions=True)
+            # A successful admin response is a boundary: no dispatch on the old
+            # mapping can remain in flight, and no old grant can register afterward.
+            async with self.dispatch_lock:
+                self.settings.data_dir.mkdir(parents=True, exist_ok=True)
+                tmp = self.settings.data_dir / "devices.json.tmp"
+                tmp.write_text(json.dumps({"version": 1, "options_digest": self.options_digest(),
+                                           "mappings": value}), encoding="utf-8")
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, self.settings.data_dir / "devices.json")
+                affected = {device for device in self.devices if self.devices[device] != selected.get(device)}
+                self.devices = selected
+                for task, (device, transport) in list(self.open_streams.items()):
+                    if device in affected:
+                        if transport:
+                            transport.close()
+                        task.cancel()
+                self.pending.clear()
+                self.playback_status.clear()
+                self.grants.items.clear()
+                self.replies.clear()
+        finally:
+            self.mapping_updates -= 1
         return web.json_response({"status": "ok", "configured_devices": len(selected)})
 
     async def intents(self, request):
         # MA concatenates this spoken-command prefix with the first utterance.
-        # It is not the interaction-model invocationName ("music assistant").
-        return web.json_response({"locale": "de-DE", "invocationName": "sag music assistant", "intents": [
+        return web.json_response({"locale": "de-DE", "invocationName": "sag eigene musik", "intents": [
+            {"intent": "PlayAudio", "utterances": ["spiele audio"]},
             {"intent": "AMAZON.PauseIntent", "utterances": ["pausieren"]},
             {"intent": "AMAZON.ResumeIntent", "utterances": ["fortsetzen"]},
             {"intent": "AMAZON.StopIntent", "utterances": ["stopp"]},
@@ -238,34 +282,125 @@ class Companion:
             raise web.HTTPBadRequest(text="JSON required")
         try:
             payload = await request.json()
-            target = stream_target(payload["streamUrl"], self.settings.ma_stream_origin,
-                                   {row["player_id"] for row in self.devices.values()})
-            # Keep only short display metadata; never proxy imageUrl/public cover APIs.
-            self.pending[target.player_id] = {"target": target,
-                                              "received": time.monotonic()}
+            if not isinstance(payload, dict):
+                raise Rejected("Invalid stream")
+            has_playback_id = "playback_id" in payload
+            playback_id = payload.get("playback_id")
+            if has_playback_id and (not isinstance(playback_id, str)
+                    or re.fullmatch(r"[0-9a-f]{32}", playback_id) is None):
+                raise Rejected("Invalid playback id")
+            async with self.dispatch_lock:
+                target = stream_target(payload["streamUrl"], self.settings.ma_stream_origin,
+                                       {row["player_id"] for row in self.devices.values()})
+                current = self.playback_status.get(target.player_id)
+                if current and (current["playback_id"] != playback_id
+                                or current["stream_path"] != target.path):
+                    self.playback_status.pop(target.player_id, None)
+                # Keep only validated route data; never proxy imageUrl/public cover APIs.
+                self.pending[target.player_id] = {"target": target,
+                                                  "playback_id": playback_id,
+                                                  "received": time.monotonic()}
         except (KeyError, ValueError, TypeError):
             raise web.HTTPBadRequest(text="Invalid stream") from None
         return web.json_response({"status": "ok"})
 
-    async def ma_command(self, command: str, args: dict):
+    async def get_playback_status(self, request):
+        player_id = request.query.get("player_id", "")
+        if not isinstance(player_id, str) or not player_id or len(player_id) > 1024:
+            raise web.HTTPBadRequest(text="Invalid player")
+        # This is a synchronous snapshot on the event loop; it cannot interleave
+        # with synchronous mapping/status mutations, and must not queue behind MA I/O.
+        row = next((item for item in self.devices.values()
+                    if item["player_id"] == player_id), None)
+        if row is None:
+            raise web.HTTPNotFound(text="Unknown player")
+        record = self.playback_status.get(player_id)
+        if record and record["device_id"] == row["device_id"] \
+                and record["user_id"] == row["user_id"]:
+            return web.json_response({"player_id": player_id,
+                                      "playback_id": record["playback_id"],
+                                      "stream_path": record["stream_path"],
+                                      "state": record["state"],
+                                      "revision": record["revision"],
+                                      "generation": record["generation"],
+                                      "offset_ms": record["offset_ms"],
+                                      "observed_at": record["observed_at"]})
+        pending = self.pending.get(player_id)
+        if (pending and pending["playback_id"] is not None
+                and time.monotonic() - pending["received"] <= 3600):
+            return web.json_response({"player_id": player_id,
+                                      "playback_id": pending["playback_id"],
+                                      "stream_path": pending["target"].path,
+                                      "state": "pending"})
+        return web.json_response({"player_id": player_id, "playback_id": None,
+                                  "stream_path": None, "state": "unknown"})
+
+    async def ma_command(self, command: str, args: dict, *, timeout: int = 2):
         async with self.session.post(self.settings.ma_api_url + "/api",
                                      headers={"Authorization": "Bearer " + self.settings.ma_api_token,
                                               "Accept-Encoding": "identity"},
                                      json={"message_id": secrets.token_hex(8), "command": command, "args": args}, allow_redirects=False,
-                                     timeout=aiohttp.ClientTimeout(total=2), auto_decompress=False) as response:
+                                     timeout=aiohttp.ClientTimeout(total=timeout), auto_decompress=False) as response:
             if response.status != 200:
                 raise Rejected("MA command failed")
             result = await json_limited(response)
-            if isinstance(result, dict) and result.get("error_code"):
+            if isinstance(result, dict) and (result.get("error_code") or result.get("error")):
                 raise Rejected("MA command failed")
             # HTTP /api returns the result directly, unlike the WebSocket envelope.
             return result
+
+    async def _cleanup_resume_tasks(self, _app):
+        tasks = list(self.resume_tasks.values())
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _prepare_resume(self, row: dict) -> dict:
+        """Return promptly; MA's fresh PlayAudio arrives on a separate request."""
+        device = row["device_id"]
+        if device in self.resume_tasks:
+            return directive()
+        association = dict(row)
+
+        async def resume_queue():
+            try:
+                # No dispatch_lock across MA I/O: play_media pushes a fresh URL
+                # back to us and must be able to acquire that lock.
+                if self.devices.get(device) != association:
+                    return
+                await self.ma_command("player_queues/resume",
+                                      {"queue_id": association["player_id"], "fade_in": False},
+                                      timeout=30)
+            except (Rejected, aiohttp.ClientError, asyncio.TimeoutError, KeyError):
+                LOG.warning("MA queue resume failed")
+            except Exception:
+                # Never leak exception text: HTTP failures can embed credentials.
+                LOG.warning("Unexpected MA queue resume failure")
+            finally:
+                self.resume_tasks.pop(device, None)
+
+        self.resume_tasks[device] = asyncio.create_task(resume_queue())
+        return directive()
 
     def play(self, row: dict, offset: int = 0) -> dict:
         pending = self.pending.get(row["player_id"])
         if not pending or time.monotonic() - pending["received"] > 3600:
             return speech("Für diesen Lautsprecher ist noch keine Wiedergabe vorbereitet.")
         token = self.grants.issue(pending["target"], row["device_id"])
+        if pending["playback_id"] is not None:
+            generation = self.playback_generations.get(row["player_id"], 0) + 1
+            self.playback_generations[row["player_id"]] = generation
+            self.status_revision += 1
+            self.playback_status[row["player_id"]] = {
+                "playback_id": pending["playback_id"],
+                "token_hash": hashlib.sha256(token.encode("ascii")).hexdigest(),
+                "device_id": row["device_id"], "user_id": row["user_id"],
+                "stream_path": pending["target"].path, "state": "pending",
+                "transport_complete": False, "finished_received": False,
+                "generation": generation, "revision": self.status_revision,
+                "offset_ms": None, "observed_at": None,
+            }
         return directive({"type": "AudioPlayer.Play", "playBehavior": "REPLACE_ALL", "audioItem": {
             "stream": {"token": token, "url": self.settings.public_base_url + "/stream/" + token + ".mp3",
                        "offsetInMilliseconds": offset}}})
@@ -318,6 +453,8 @@ class Companion:
             # Recheck after waiting: an already verified request must not use a stale
             # association or silently switch to a newly associated player.
             async with self.dispatch_lock:
+                if self.mapping_updates:
+                    return web.json_response({"error": "Device mappings updating"}, status=409)
                 if self.devices.get(device) != row:
                     return web.json_response({"error": "Device mapping changed"}, status=403)
                 cached = self.replies.get(request_id)
@@ -336,20 +473,58 @@ class Companion:
         request_type = req.get("type")
         if not isinstance(request_type, str):
             raise Rejected("Invalid Alexa request")
+        if request_type in {"AudioPlayer.PlaybackStarted", "AudioPlayer.PlaybackFinished",
+                            "AudioPlayer.PlaybackStopped"}:
+            token = req.get("token")
+            if (not isinstance(token, str)
+                    or re.fullmatch(r"[A-Za-z0-9_-]{43}", token) is None):
+                raise Rejected("Invalid Alexa request")
+            record = self.playback_status.get(row["player_id"])
+            if (record is not None
+                    and record["device_id"] == row["device_id"]
+                    and hmac.compare_digest(record["user_id"], row["user_id"])
+                    and hmac.compare_digest(record["token_hash"],
+                                            hashlib.sha256(token.encode("ascii")).hexdigest())):
+                if record["state"] not in {"stopped", "finished"}:
+                    changed = False
+                    if request_type == "AudioPlayer.PlaybackStopped":
+                        offset = req.get("offsetInMilliseconds")
+                        record["offset_ms"] = (offset if isinstance(offset, int)
+                                                and not isinstance(offset, bool)
+                                                and 0 <= offset <= 86400000 else None)
+                        record["state"] = "stopped"
+                        changed = True
+                    elif request_type == "AudioPlayer.PlaybackFinished":
+                        if not record["finished_received"]:
+                            record["finished_received"] = True
+                            changed = True
+                        if record["transport_complete"]:
+                            changed = changed or record["state"] != "finished"
+                            record["state"] = "finished"
+                    else:
+                        if record["state"] != "started":
+                            offset = req.get("offsetInMilliseconds")
+                            record["offset_ms"] = (offset if isinstance(offset, int)
+                                                    and not isinstance(offset, bool)
+                                                    and 0 <= offset <= 86400000 else None)
+                            record["state"] = "started"
+                            changed = True
+                    if changed:
+                        if request_type != "AudioPlayer.PlaybackFinished":
+                            record["observed_at"] = time.time()
+                        self.status_revision += 1
+                        record["revision"] = self.status_revision
+            return {"version": "1.0", "response": {}}
         if request_type.startswith("AudioPlayer.") or request_type == "SessionEndedRequest":
             return {"version": "1.0", "response": {}}
         intent = req.get("intent", {}).get("name") if request_type == "IntentRequest" else None
-        if request_type == "LaunchRequest" or intent == "PlayAudio":
+        if intent == "PlayAudio":
             return self.play(row)
+        if request_type == "LaunchRequest" or intent == "AMAZON.ResumeIntent":
+            return self._prepare_resume(row)
         if intent in {"AMAZON.StopIntent", "AMAZON.CancelIntent", "AMAZON.PauseIntent"}:
             # Native MA stop/pause itself invokes these intents: never echo a MA command back.
             return directive({"type": "AudioPlayer.Stop"})
-        if intent == "AMAZON.ResumeIntent":
-            audio_state = context.get("AudioPlayer")
-            offset = audio_state.get("offsetInMilliseconds", 0) if isinstance(audio_state, dict) else 0
-            if not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 86400000:
-                offset = 0
-            return self.play(row, offset)
         if intent in {"AMAZON.NextIntent", "AMAZON.PreviousIntent", "AMAZON.StartOverIntent"}:
             try:
                 async with self.command_lock:
@@ -416,6 +591,11 @@ class Companion:
                 if request.method == "GET":
                     async for chunk in upstream.content.iter_chunked(16384):
                         await response.write(chunk)
+                    # Only a full, non-Range GET whose upstream iterator ended
+                    # cleanly can complete this token's transport. Record it
+                    # before downstream write_eof, as the audio body is done.
+                    if upstream.status == 200 and "Range" not in request.headers:
+                        await self._mark_transport_complete(grant, token)
                 await response.write_eof()
                 return response
         except (aiohttp.ClientError, asyncio.TimeoutError, ConnectionResetError, BrokenPipeError):
@@ -432,6 +612,27 @@ class Companion:
             if not self.active_grants[token]:
                 self.active_grants.pop(token)
 
+    async def _mark_transport_complete(self, grant, token: str) -> None:
+        """Record clean full-body EOF only for the still-current mapped playback."""
+        token_hash = hashlib.sha256(token.encode("ascii")).hexdigest()
+        async with self.dispatch_lock:
+            row = self.devices.get(grant.device_id)
+            if not row or row["player_id"] != grant.target.player_id:
+                return
+            record = self.playback_status.get(row["player_id"])
+            if (record is None or record["device_id"] != row["device_id"]
+                    or not hmac.compare_digest(record["user_id"], row["user_id"])
+                    or record["stream_path"] != grant.target.path
+                    or not hmac.compare_digest(record["token_hash"], token_hash)):
+                return
+            record["transport_complete"] = True
+            if record["state"] not in {"stopped", "finished"}:
+                if record["finished_received"]:
+                    if record["state"] != "finished":
+                        record["state"] = "finished"
+                        self.status_revision += 1
+                        record["revision"] = self.status_revision
+
 
 @web.middleware
 async def safe_errors(request, handler):
@@ -440,13 +641,15 @@ async def safe_errors(request, handler):
         response.headers["Cache-Control"] = "no-store"
         return response
     except web.HTTPException as exc:
-        return web.json_response({"error": "Request rejected"}, status=exc.status)
+        return web.json_response({"error": "Request rejected"}, status=exc.status,
+                                 headers={"Cache-Control": "no-store"})
     except asyncio.CancelledError:
         raise
     except Exception:
         # Tracebacks from HTTP libraries can embed tokens and URLs; log no exception text.
         LOG.warning("Request failed")
-        return web.json_response({"error": "Request failed"}, status=500)
+        return web.json_response({"error": "Request failed"}, status=500,
+                                 headers={"Cache-Control": "no-store"})
 
 
 async def main():
@@ -466,6 +669,7 @@ async def main():
                 asyncio.get_running_loop().add_signal_handler(signum, stop.set)
             await stop.wait()
         finally:
+            await service.lumi.close()
             for runner in runners:
                 await runner.cleanup()
 
