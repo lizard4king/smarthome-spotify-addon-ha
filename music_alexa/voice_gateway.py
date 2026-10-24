@@ -26,6 +26,7 @@ MAX_BODY = 32768
 MAX_BRIDGE_BODY = 4096
 MAX_BRIDGE_RESPONSE = 32768
 MAX_QUESTION = 600
+# Match the authenticated bridge answer limit and the Lambda relay validator.
 MAX_SPEECH = 6000
 DEADLINE_SECONDS = 6.5
 SUBMIT_POLL_SECONDS = 2.0
@@ -313,11 +314,10 @@ class VoiceGateway:
             return await self._get_answer(principal)
         if len(self.pending) >= MAX_PENDING:
             return self._speech("Der Gesprächsdienst ist gerade ausgelastet.")
-        result = await self._bridge_call("/v1/submit", {
-            "principal": principal,
-            "request_id": req["requestId"],
-            "question": question,
-        })
+        result = await self._bridge_call(
+            "/v1/submit",
+            self._submission_value(req, payload, principal, question),
+        )
         state = result.get("state")
         if set(result) != {"job_id", "state"} or state not in {"pending", "done", "failed"}:
             raise BridgeFailure("Invalid bridge response")
@@ -348,6 +348,16 @@ class VoiceGateway:
             return self._speech("Die Antwort wird noch erstellt. Sage: Antwort.", end=False,
                                 reprompt="Sage Antwort, um die fertige Antwort abzurufen.")
         return self._speech(answer, end=False, reprompt="Möchtest du noch etwas wissen?")
+
+    def _submission_value(
+        self, req: dict, payload: dict, principal: str, question: str
+    ) -> dict:
+        """Build the legacy bridge request; specialized relays may add metadata."""
+        return {
+            "principal": principal,
+            "request_id": req["requestId"],
+            "question": question,
+        }
 
     async def _poll(self, principal: str) -> str | None:
         pending = self.pending.get(principal) or self.last_jobs.get(principal)

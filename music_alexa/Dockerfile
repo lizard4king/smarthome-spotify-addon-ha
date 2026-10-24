@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir --disable-pip-version-check -r /app/requirements.txt
-COPY companion.py security.py voice_gateway.py lumi_relay.py answer_delivery.py /app/
+COPY companion.py security.py voice_gateway.py lumi_relay.py lumi_pairing.py lumi_identity.py answer_delivery.py /app/
 COPY run.sh /app/run.sh
 RUN chmod 755 /app/run.sh
 EXPOSE 5000 5001

@@ -28,6 +28,7 @@ DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8098
 
 _PRINCIPAL_RE = re.compile(r"[0-9a-f]{64}\Z")
+_MEMORY_KEY_RE = re.compile(r"[0-9a-f]{64}\Z")
 _NONCE_RE = re.compile(r"[0-9a-f]{32}\Z")
 _SIGNATURE_RE = re.compile(r"[0-9a-f]{64}\Z")
 _JOB_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
@@ -47,6 +48,18 @@ def _json_bytes(value: dict) -> bytes:
 
 def _mac(key: bytes, data: bytes) -> str:
     return hmac.new(key, data, hashlib.sha256).hexdigest()
+
+
+def _valid_memory(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and set(value) == {"person_key", "session_key"}
+        and all(
+            isinstance(value[key], str)
+            and (value[key] == "" or _MEMORY_KEY_RE.fullmatch(value[key]))
+            for key in ("person_key", "session_key")
+        )
+    )
 
 
 class VoiceJobs:
@@ -71,8 +84,23 @@ class VoiceJobs:
                 self._dedupe.pop((record["principal"], record["request_id"]), None)
         self._queue = deque(job_id for job_id in self._queue if job_id in self._records)
 
-    def submit(self, principal: str, request_id: str, question: str) -> tuple[int, dict]:
-        digest = hashlib.sha256(question.encode("utf-8")).hexdigest()
+    def submit(
+        self, principal: str, request_id: str, question: str | None = None,
+        memory: dict[str, str] | None = None,
+        *, kind: str | None = None,
+    ) -> tuple[int, dict]:
+        if kind not in (None, "greeting"):
+            return 400, {"error": "invalid request"}
+        if kind == "greeting" and (question is not None or not _valid_memory(memory)):
+            return 400, {"error": "invalid request"}
+        if kind is None and (not isinstance(question, str) or not question.strip()
+                             or len(question) > MAX_QUESTION_CHARS):
+            return 400, {"error": "invalid request"}
+        if memory is not None and not _valid_memory(memory):
+            return 400, {"error": "invalid request"}
+        digest_value = ({"kind": "greeting", "memory": memory} if kind == "greeting"
+                        else {"question": question, "memory": memory})
+        digest = hashlib.sha256(_json_bytes(digest_value)).hexdigest()
         now = self._clock()
         with self._condition:
             if self._closed:
@@ -92,15 +120,21 @@ class VoiceJobs:
             if self._active_principal == principal or any(r["principal"] == principal for r in inflight):
                 return 429, {"error": "busy"}
             job_id = secrets.token_hex(16)
-            self._records[job_id] = {
+            record = {
                 "principal": principal,
                 "request_id": request_id,
                 "question_hash": digest,
-                "question": question,
                 "created": now,
                 "state": "pending",
                 "answer": None,
             }
+            if kind == "greeting":
+                record["kind"] = "greeting"
+            else:
+                record["question"] = question
+            if memory is not None:
+                record["memory"] = dict(memory)
+            self._records[job_id] = record
             self._dedupe[(principal, request_id)] = job_id
             self._queue.append(job_id)
             self._condition.notify()
@@ -132,12 +166,33 @@ class VoiceJobs:
                     continue
                 record["state"] = "running"
                 self._active_principal = record["principal"]
-                question = record.pop("question")
+                kind = record.pop("kind", None)
+                question = record.pop("question", None)
+                memory = record.pop("memory", None)
             try:
                 if not self.runtime.authenticated():
                     raise RuntimeError("unavailable")
-                query = getattr(self.runtime, "query_voice", self.runtime.query)
-                answer = query(question)
+                if kind == "greeting":
+                    greeting = getattr(self.runtime, "greet_lumi", None)
+                    if not callable(greeting):
+                        raise RuntimeError("unavailable")
+                    answer = greeting(memory=dict(memory))
+                elif memory is None:
+                    query = getattr(self.runtime, "query_voice", self.runtime.query)
+                    answer = query(question)
+                else:
+                    query_lumi = getattr(self.runtime, "query_lumi", None)
+                    if not callable(query_lumi):
+                        raise RuntimeError("unavailable")
+                    query_request = getattr(self.runtime, "query_lumi_request", None)
+                    if callable(query_request):
+                        operation_id = hashlib.sha256(_json_bytes({
+                            "principal": record["principal"],
+                            "request_id": record["request_id"],
+                        })).hexdigest()
+                        answer = query_request(question, memory=dict(memory), request_id=operation_id)
+                    else:
+                        answer = query_lumi(question, memory=dict(memory))
                 if not isinstance(answer, str) or len(answer) > MAX_ANSWER_CHARS:
                     raise RuntimeError("unavailable")
             except Exception as exc:
@@ -332,13 +387,29 @@ class _VoiceHandler(BaseHTTPRequestHandler):
             if not isinstance(principal, str) or not _PRINCIPAL_RE.fullmatch(principal):
                 raise _ProtocolError(400, "invalid request")
             if path == "/v1/submit":
-                if set(data) != {"principal", "request_id", "question"}:
+                legacy_fields = {"principal", "request_id", "question"}
+                memory_fields = legacy_fields | {"memory"}
+                greeting_fields = {"principal", "request_id", "kind", "memory"}
+                if set(data) not in (legacy_fields, memory_fields, greeting_fields):
                     raise _ProtocolError(400, "invalid request")
                 request_id = data.get("request_id")
                 question = data.get("question")
-                if not isinstance(request_id, str) or not 1 <= len(request_id) <= 1024 or not isinstance(question, str) or not question.strip() or len(question) > MAX_QUESTION_CHARS:
+                if not isinstance(request_id, str) or not 1 <= len(request_id) <= 1024:
                     raise _ProtocolError(400, "invalid request")
-                status, result = self.server.jobs.submit(principal, request_id, question.strip())
+                greeting = set(data) == greeting_fields
+                if greeting:
+                    if data["kind"] != "greeting":
+                        raise _ProtocolError(400, "invalid request")
+                elif not isinstance(question, str) or not question.strip() or len(question) > MAX_QUESTION_CHARS:
+                    raise _ProtocolError(400, "invalid request")
+                memory_present = "memory" in data
+                memory = data.get("memory")
+                if memory_present and not _valid_memory(memory):
+                    raise _ProtocolError(400, "invalid request")
+                status, result = self.server.jobs.submit(
+                    principal, request_id, None if greeting else question.strip(), memory=memory,
+                    kind="greeting" if greeting else None,
+                )
             else:
                 if set(data) != {"principal", "job_id"}:
                     raise _ProtocolError(400, "invalid request")

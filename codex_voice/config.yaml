@@ -27,7 +27,11 @@
     "enable_control": "bool",
     "control_bridge_secret": "password",
     "voice_model": "str",
-    "voice_reasoning_effort": "str"
+    "voice_reasoning_effort": "str",
+    "lumi_memory_enabled": "bool",
+    "lumi_memory_owner_keys": [
+      "str"
+    ]
   },
   "tmpfs": true,
   "apparmor": true,
@@ -37,13 +41,15 @@
   "full_access": false,
   "privileged": [],
   "slug": "codex_voice",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "options": {
     "authorized_user_ids": [],
     "voice_bridge_secret": "",
     "enable_control": false,
     "control_bridge_secret": "",
     "voice_model": "",
-    "voice_reasoning_effort": "low"
+    "voice_reasoning_effort": "low",
+    "lumi_memory_enabled": false,
+    "lumi_memory_owner_keys": []
   }
 }

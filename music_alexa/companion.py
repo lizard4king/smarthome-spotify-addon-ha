@@ -24,10 +24,14 @@ try:
     from .security import AlexaVerifier, Grants, Rejected, origin, stream_target
     from .voice_gateway import VoiceGateway, voice_gateway_enabled
     from .lumi_relay import LumiRelay, lumi_relay_enabled
+    from .lumi_pairing import LumiPairingObserver
+    from .lumi_identity import LumiIdentityObserver
 except ImportError:
     from security import AlexaVerifier, Grants, Rejected, origin, stream_target
     from voice_gateway import VoiceGateway, voice_gateway_enabled
     from lumi_relay import LumiRelay, lumi_relay_enabled
+    from lumi_pairing import LumiPairingObserver
+    from lumi_identity import LumiIdentityObserver
 
 LOG = logging.getLogger("music_alexa")
 MAX_BODY = 32768
@@ -175,7 +179,10 @@ class Companion:
         self.dispatch_lock = asyncio.Lock()
         self.open_streams: dict[asyncio.Task, tuple[str, object]] = {}
         self.voice = VoiceGateway(session, settings, lambda: self.devices)
-        self.lumi = LumiRelay(session, settings)
+        self.lumi_pairing = LumiPairingObserver()
+        self.lumi_identity = LumiIdentityObserver()
+        self.lumi = LumiRelay(session, settings, pairing_observer=self.lumi_pairing,
+                              identity_observer=self.lumi_identity)
 
     def options_digest(self) -> str:
         value = json.dumps(self.settings.device_mappings, sort_keys=True).encode()
@@ -205,6 +212,12 @@ class Companion:
         app.router.add_get("/status", self.status)
         app.router.add_get("/devices", self.get_devices)
         app.router.add_post("/devices", self.set_devices)
+        app.router.add_get("/lumi/pairing", self.get_lumi_pairing)
+        app.router.add_post("/lumi/pairing", self.open_lumi_pairing)
+        app.router.add_delete("/lumi/pairing", self.close_lumi_pairing)
+        app.router.add_get("/lumi/identity", self.get_lumi_identity)
+        app.router.add_post("/lumi/identity", self.open_lumi_identity)
+        app.router.add_delete("/lumi/identity", self.close_lumi_identity)
         app.router.add_get("/alexa/intents", self.intents)
         app.router.add_post("/ma/push-url", self.push)
         app.router.add_get("/ma/playback-status", self.get_playback_status)
@@ -225,6 +238,51 @@ class Companion:
         return web.json_response({"service": "music-alexa", "configured_devices": len(self.devices),
                                   "pending_players": len(self.pending), "active_streams": self.active_streams,
                                   "live_playback_verified": False})
+
+    async def get_lumi_pairing(self, request):
+        return web.json_response(self.lumi_pairing.snapshot(), headers={"Cache-Control": "no-store"})
+
+    async def open_lumi_pairing(self, request):
+        if request.content_type != "application/json":
+            return web.json_response({"error": "Invalid pairing window"}, status=400,
+                                     headers={"Cache-Control": "no-store"})
+        try:
+            value = await request.json()
+            if not isinstance(value, dict) or set(value) != {"duration_seconds"}:
+                raise ValueError("invalid request")
+            duration = value["duration_seconds"]
+            self.lumi_pairing.open(duration)
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid pairing window"}, status=400,
+                                     headers={"Cache-Control": "no-store"})
+        return web.json_response({"status": "open", "remaining_seconds": duration},
+                                 headers={"Cache-Control": "no-store"})
+
+    async def close_lumi_pairing(self, request):
+        self.lumi_pairing.close()
+        return web.json_response({"status": "closed"}, headers={"Cache-Control": "no-store"})
+
+    async def get_lumi_identity(self, request):
+        return web.json_response(self.lumi_identity.snapshot(), headers={"Cache-Control": "no-store"})
+
+    async def open_lumi_identity(self, request):
+        if request.content_type != "application/json":
+            return web.json_response({"error": "Invalid identity window"}, status=400,
+                                     headers={"Cache-Control": "no-store"})
+        try:
+            value = await request.json()
+            if not isinstance(value, dict) or set(value) != {"duration_seconds"}:
+                raise ValueError("invalid request")
+            duration = self.lumi_identity.open(value["duration_seconds"])
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid identity window"}, status=400,
+                                     headers={"Cache-Control": "no-store"})
+        return web.json_response({"status": "open", "remaining_seconds": duration},
+                                 headers={"Cache-Control": "no-store"})
+
+    async def close_lumi_identity(self, request):
+        self.lumi_identity.close()
+        return web.json_response({"status": "closed"}, headers={"Cache-Control": "no-store"})
 
     async def get_devices(self, request):
         return web.json_response({"mappings": list(self.devices.values()),
