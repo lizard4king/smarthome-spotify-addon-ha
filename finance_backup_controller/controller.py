@@ -23,7 +23,7 @@ class SafetyStop(Exception):
     """Safe, fixed diagnostic text only."""
 
 
-APPROVED_FINANCE_VERSIONS = frozenset({"0.2.69", "0.2.70"})
+APPROVED_FINANCE_VERSIONS = frozenset({"0.2.69", "0.2.70", "0.2.71", "0.2.72"})
 
 
 def utc(value):
@@ -430,8 +430,10 @@ def inventory(api):
     return result["backups"]
 
 
-def run(api, state, now, apply_retention=False, *, run_now=False):
+def run(api, state, now, apply_retention=False, *, run_now=False, retained_backups=2):
     state.require_clear()
+    if type(retained_backups) is not int or not 2 <= retained_backups <= 100:
+        raise SafetyStop("Retained backup count must be an integer from 2 to 100")
     config = state.config
     # Fresh installed version + actual runtime options, not a one-time approval.
     # Must precede pending state and every generate/delete operation in this run.
@@ -480,26 +482,25 @@ def run(api, state, now, apply_retention=False, *, run_now=False):
     state.data["pending"] = None
     state.save()
     if apply_retention:
-        prune(api, state, now)
+        prune(api, state, retained_backups)
     return "completed"
 
 
-def prune(api, state, now):
+def prune(api, state, retained_backups=2):
     state.require_clear()
+    if type(retained_backups) is not int or not 2 <= retained_backups <= 100:
+        raise SafetyStop("Retained backup count must be an integer from 2 to 100")
     owned = state.data["owned"]
-    if not owned:
+    if len(owned) <= retained_backups:
         return
-    latest = max(owned, key=lambda o: utc(o["created_utc"]))
-    # Verify retained recovery point before deleting any older owned backup.
-    latest_details = api.command({"type": "backup/details", "backup_id": latest["backup_id"]})
-    if latest_details["agent_errors"] or not matches(latest_details["backup"], latest, state.config):
-        raise SafetyStop("Latest successful backup is not currently verified")
-    for old in list(owned):
-        if old == latest or now - utc(old["created_utc"]) <= timedelta(days=84):
-            continue
-        details = api.command({"type": "backup/details", "backup_id": old["backup_id"]})
-        if details["agent_errors"] or not matches(details["backup"], old, state.config):
-            raise SafetyStop("Old backup changed or unavailable; no deletion")
+    ordered = sorted(owned, key=lambda o: (utc(o["created_utc"]), o["backup_id"]), reverse=True)
+    # Verify all retained recovery points and deletion candidates before the
+    # first mutation. Each point must still have both encrypted physical copies.
+    for record in ordered:
+        details = api.command({"type": "backup/details", "backup_id": record["backup_id"]})
+        if details["agent_errors"] or not matches(details["backup"], record, state.config):
+            raise SafetyStop("Owned backup changed or unavailable; no deletion")
+    for old in ordered[retained_backups:]:
         api.verify_addon(state.config)
         state.data["delete_intent"] = dict(old)
         state.save()  # Keep on interrupted/partial deletion: no automatic retry.
@@ -521,14 +522,17 @@ def main(argv=None):
     parser.add_argument("--run-once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--apply-retention", action="store_true")
+    parser.add_argument("--retained-backups", type=int, default=2)
     parser.add_argument("--run-now", action="store_true")
     args = parser.parse_args(argv)
     try:
         config = json.loads(args.config.read_text(encoding="utf-8"))
         config_validate(config)
+        if not 2 <= args.retained_backups <= 100:
+            raise SafetyStop("Retained backup count must be from 2 to 100")
         if not args.run_once or args.dry_run:
             print(json.dumps({"mode": "offline-plan", "generate": generation(config, "finance-only-<random>"),
-                              "retention_days": 84, "retention_enabled": False}))
+                              "retained_backups": args.retained_backups, "retention_enabled": False}))
             return 0
         token = os.environ.get("SUPERVISOR_TOKEN")
         if not token:
@@ -544,7 +548,8 @@ def main(argv=None):
                 api = HA(socket)
                 api.authenticate(token)
                 token = None
-                print(run(api, state, datetime.now(timezone.utc), args.apply_retention, run_now=args.run_now))
+                print(run(api, state, datetime.now(timezone.utc), args.apply_retention,
+                          run_now=args.run_now, retained_backups=args.retained_backups))
             finally:
                 socket.close()
         return 0

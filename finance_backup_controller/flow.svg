@@ -25,7 +25,7 @@
  <text x="85" y="510" class="head">Erfolgreiche eigene ID dauerhaft speichern</text><text x="85" y="542" class="body">Erst dann nächste Sicherung nach ≥ 7 Tagen.</text><text x="85" y="570" class="body">Ohne --apply-retention: Ende ohne Löschung.</text>
  <path d="M295 605 V645" class="arrow" marker-end="url(#a)"/>
  <rect x="60" y="655" width="1080" height="130" rx="10" class="box"/>
- <text x="85" y="690" class="head">Optionale Aufbewahrung: nur eigene, geprüfte IDs älter als 84 Tage</text><text x="85" y="722" class="body">Neueste erfolgreiche Kopie behalten; alte Metadaten erneut prüfen; Delete-Intent vor Löschaufruf speichern.</text><text x="85" y="750" class="body">Unterbrechung / Teilfehler / Unklarheit → Stop, keine automatische Wiederholung, manuelle Klärung.</text>
+ <text x="85" y="690" class="head">Optionale Aufbewahrung: nur überzählige eigene, geprüfte IDs</text><text x="85" y="722" class="body">Zwei neueste vollständige Sicherungen behalten; alle Metadaten prüfen; Delete-Intent vor Löschung speichern.</text><text x="85" y="750" class="body">Unterbrechung / Teilfehler / Unklarheit → Stop, keine automatische Wiederholung, manuelle Klärung.</text>
  <rect x="60" y="295" width="470" height="130" rx="10" fill="#fff5e8" stroke="#bb8b4b" stroke-width="2"/>
  <text x="85" y="330" class="head">Abbruchschranken</text><text x="85" y="362" class="body">Finance-Guard · native Kopien-/Tagelimits · Pending</text><text x="85" y="390" class="body">Schlüssel fehlt · Timeout · falsche Inhalte · Fehler</text>
  <text x="60" y="824" class="note">Grenze: native Delete-API löscht eine ID auf allen Agents; Prüfung und Löschung sind nicht atomar.</text>

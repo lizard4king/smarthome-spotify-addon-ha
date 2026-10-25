@@ -1,6 +1,6 @@
 {
   "name": "Finance Backup Controller (Prototype)",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "slug": "finance_backup_controller",
   "description": "Disabled-by-default Finance-only encrypted backup scheduler",
   "arch": ["amd64", "aarch64"],
@@ -18,6 +18,7 @@
     "reconcile_pending": false,
     "run_once_now": false,
     "apply_retention": false,
+    "retained_backups": 2,
     "addon_slug": "synthetic_finance_addon",
     "local_agent_id": "synthetic.local",
     "drive_agent_id": "synthetic.drive"
@@ -29,6 +30,7 @@
     "reconcile_pending": "bool",
     "run_once_now": "bool",
     "apply_retention": "bool",
+    "retained_backups": "int(2,100)",
     "addon_slug": "str",
     "local_agent_id": "str",
     "drive_agent_id": "str"

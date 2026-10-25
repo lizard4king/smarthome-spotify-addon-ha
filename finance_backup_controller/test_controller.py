@@ -174,7 +174,7 @@ class Tests(unittest.TestCase):
             self.assertFalse(self.state.data["owned"])
             self.assertFalse(self.deletes())
 
-    def test_retention_only_owned_strictly_older_84days_keeps_latest(self):
+    def test_retention_keeps_two_newest_owned_and_foreign(self):
         old = backup("old", "finance-only-old", NOW - timedelta(days=85))
         edge = backup("edge", "finance-only-edge", NOW - timedelta(days=84))
         latest = backup("latest", "finance-only-latest", NOW - timedelta(days=83))
@@ -184,30 +184,64 @@ class Tests(unittest.TestCase):
         def check_intent():
             self.assertEqual(json.loads(self.path.read_text())["delete_intent"]["backup_id"], "old")
         self.api.on_delete = check_intent
-        c.prune(self.api, self.state, NOW)
+        c.prune(self.api, self.state)
         self.assertEqual(self.deletes(), [{"type": "backup/delete", "backup_id": "old"}])
         self.assertEqual({b["backup_id"] for b in self.api.backups}, {"edge", "latest", "foreign"})
+
+    def test_retention_rotates_only_after_new_verified_backup(self):
+        old = backup("old", "finance-only-old", NOW - timedelta(days=15))
+        previous = backup("previous", "finance-only-previous", NOW - timedelta(days=8))
+        self.api.backups = [old, previous]
+        self.state.data["owned"] = [owned(old), owned(previous)]
+        self.assertEqual(c.run(self.api, self.state, NOW, True), "completed")
+        self.assertEqual({b["backup_id"] for b in self.api.backups}, {"previous", "new"})
+        self.assertEqual({b["backup_id"] for b in self.state.data["owned"]}, {"previous", "new"})
+
+    def test_retention_requires_both_recovery_points_and_valid_count(self):
+        old = backup("old", "finance-only-old", NOW - timedelta(days=15))
+        previous = backup("previous", "finance-only-previous", NOW - timedelta(days=8))
+        latest = backup("latest", "finance-only-latest", NOW)
+        self.state.data["owned"] = [owned(old), owned(previous), owned(latest)]
+        self.api.backups = [old, previous, latest]
+        for count in (False, 1, 0, 101, "2"):
+            with self.subTest(count=count), self.assertRaises(c.SafetyStop):
+                c.prune(self.api, self.state, count)
+        self.api.backups.remove(previous)
+        with self.assertRaises(c.SafetyStop):
+            c.prune(self.api, self.state)
+        self.assertFalse(self.deletes())
+
+    def test_configured_count_three_keeps_three_complete_backups(self):
+        records = [backup(str(i), "finance-only-" + str(i), NOW - timedelta(days=4-i))
+                   for i in range(4)]
+        self.api.backups = records.copy()
+        self.state.data["owned"] = [owned(b) for b in records]
+        c.prune(self.api, self.state, 3)
+        self.assertEqual({b["backup_id"] for b in self.api.backups}, {"1", "2", "3"})
+        self.assertEqual([p["backup_id"] for p in self.deletes()], ["0"])
 
     def test_stale_foreign_or_extra_agent_metadata_blocks_deletion(self):
         for field in ("name", "date", "addon", "extraagent", "missing"):
             old = backup("old", "finance-only-old", NOW - timedelta(days=90))
+            middle = backup("middle", "finance-only-middle", NOW - timedelta(days=1))
             latest = backup("latest", "finance-only-latest", NOW)
-            self.state.data["owned"] = [owned(old), owned(latest)]
+            self.state.data["owned"] = [owned(old), owned(middle), owned(latest)]
             if field == "name": old["name"] = "foreign"
             if field == "date": old["date"] = NOW.isoformat()
             if field == "addon": old["addons"] = [{"slug": "other"}]
             if field == "extraagent": old["agents"]["third"] = {"protected": True, "size": 5}
-            self.api.backups = [latest] if field == "missing" else [old, latest]
-            with self.subTest(field=field), self.assertRaises(c.SafetyStop): c.prune(self.api, self.state, NOW)
+            self.api.backups = [middle, latest] if field == "missing" else [old, middle, latest]
+            with self.subTest(field=field), self.assertRaises(c.SafetyStop): c.prune(self.api, self.state)
             self.assertFalse(self.deletes())
 
     def test_delete_interruption_journals_and_blocks_future_mutation(self):
         old = backup("old", "finance-only-old", NOW - timedelta(days=90))
+        middle = backup("middle", "finance-only-middle", NOW - timedelta(days=1))
         latest = backup("latest", "finance-only-latest", NOW)
-        self.api.backups = [old, latest]
-        self.state.data["owned"] = [owned(old), owned(latest)]
+        self.api.backups = [old, middle, latest]
+        self.state.data["owned"] = [owned(old), owned(middle), owned(latest)]
         self.api.fail_at = "backup/delete"
-        with self.assertRaises(ConnectionError): c.prune(self.api, self.state, NOW)
+        with self.assertRaises(ConnectionError): c.prune(self.api, self.state)
         reloaded = c.State(self.path, CFG)
         self.assertEqual(reloaded.data["delete_intent"], owned(old))
         with self.assertRaises(c.SafetyStop): reloaded.require_clear()
@@ -250,7 +284,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(c.run(self.api, self.state, NOW, True), "not_due")
         self.assertFalse(any(p["type"] == "backup/generate" for p in self.api.calls))
         self.api.backups = [b]
-        c.prune(self.api, self.state, NOW + timedelta(days=300))
+        c.prune(self.api, self.state)
         self.assertFalse(self.deletes())
 
     def test_explicit_run_now_bypasses_only_interval_and_keeps_prior_ownership(self):
@@ -269,8 +303,8 @@ class Tests(unittest.TestCase):
     def test_approved_versions_require_exact_supervisor_and_guard_agreement(self):
         class Response(io.BytesIO):
             def getcode(self): return 200
-        for installed in ("0.2.69", "0.2.70"):
-            for reported in ("0.2.69", "0.2.70", "0.2.71"):
+        for installed in ("0.2.69", "0.2.70", "0.2.71", "0.2.72", "0.2.73"):
+            for reported in ("0.2.69", "0.2.70", "0.2.71", "0.2.72", "0.2.73"):
                 self.api.finance_info["data"]["version"] = installed
                 self.api.backup_guard["addon_version"] = reported
                 count = []
@@ -279,10 +313,11 @@ class Tests(unittest.TestCase):
                     payload = self.api.finance_info if len(count) == 1 else self.api.backup_guard
                     return Response(json.dumps(payload).encode())
                 with self.subTest(installed=installed, reported=reported):
-                    if installed == reported: c.supervisor_guard(CFG, "SYNTHETIC_TOKEN", opener)
+                    if installed == reported and installed != "0.2.73":
+                        c.supervisor_guard(CFG, "SYNTHETIC_TOKEN", opener)
                     else:
                         with self.assertRaises(c.SafetyStop): c.supervisor_guard(CFG, "SYNTHETIC_TOKEN", opener)
-                self.assertEqual(len(count), 2)
+                self.assertEqual(len(count), 1 if installed == "0.2.73" else 2)
 
     def test_lock_and_invalid_config_fail_closed(self):
         with c.lock(self.path):
@@ -297,19 +332,21 @@ class Tests(unittest.TestCase):
         self.assertFalse(any(p["type"] == "backup/generate" for p in self.api.calls))
         self.state.data["pending"] = None
         old = backup("old", "finance-only-old", NOW - timedelta(days=90))
+        middle = backup("middle", "finance-only-middle", NOW - timedelta(days=1))
         latest = backup("latest", "finance-only-latest", NOW)
-        self.api.backups = [old, latest]
-        self.state.data["owned"] = [owned(old), owned(latest)]
+        self.api.backups = [old, middle, latest]
+        self.state.data["owned"] = [owned(old), owned(middle), owned(latest)]
         with patch.object(self.state, "save", side_effect=OSError("synthetic disk full")):
-            with self.assertRaises(OSError): c.prune(self.api, self.state, NOW)
+            with self.assertRaises(OSError): c.prune(self.api, self.state)
         self.assertFalse(self.deletes())
 
     def test_latest_backup_missing_blocks_all_deletion(self):
         old = backup("old", "finance-only-old", NOW - timedelta(days=90))
+        middle = backup("middle", "finance-only-middle", NOW - timedelta(days=1))
         latest = backup("latest", "finance-only-latest", NOW)
-        self.api.backups = [old]
-        self.state.data["owned"] = [owned(old), owned(latest)]
-        with self.assertRaises(c.SafetyStop): c.prune(self.api, self.state, NOW)
+        self.api.backups = [old, middle]
+        self.state.data["owned"] = [owned(old), owned(middle), owned(latest)]
+        with self.assertRaises(c.SafetyStop): c.prune(self.api, self.state)
         self.assertFalse(self.deletes())
 
     def test_unavailable_agent_and_inventory_error_block_generation(self):
@@ -415,7 +452,7 @@ class Tests(unittest.TestCase):
                 loaded = c.State(self.path, CFG)
                 with self.subTest(field=field, value=value):
                     with self.assertRaises(c.SafetyStop): c.run(self.api, loaded, NOW, True)
-                    with self.assertRaises(c.SafetyStop): c.prune(self.api, loaded, NOW)
+                    with self.assertRaises(c.SafetyStop): c.prune(self.api, loaded)
                 self.assertFalse(self.api.calls)
 
     def test_temp_created_exclusive_private_and_failed_write_preserves_old_state(self):
