@@ -313,6 +313,8 @@ class Store:
                   'liquidity': (None if any(value is None for value in by_owner.values())
                                 else sum(by_owner.values(), Decimal(0))),
                   'income': income, 'expenses': expenses, 'net_cashflow': income - expenses}
+        from .transfer_notices import period_notices
+        result['notices'] = period_notices(self, '0001-01-01', as_of)
         if affected:
             result['unavailable_reason'] = 'paypal_transaction_date_not_booking_date'
         return result

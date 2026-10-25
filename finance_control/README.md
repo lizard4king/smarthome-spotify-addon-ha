@@ -1,5 +1,7 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.71` ergänzt Budgetanteile als Brüche, eine wählbare Jahresübersicht, Hinweise zu Kartenabrechnungen und einseitigen Quellumbuchungen sowie zusätzliche Kennzahlen in Plan & Ist. Sicherung, Optionen und Tresor sind unverändert.
+
 Version `0.2.70` reduces future native add-on backups by excluding only generated package ZIPs and their owned partial files in `FinanceControl/data/exports`, plus SQLite snapshot copies in `FinanceControl/data/backups`. Existing files and local backup generation are unchanged; nothing is deleted. The active database, import originals, receipt/document files, profile and manual CSV/JSON exports stay included. Historical snapshot contents cannot in general be reconstructed from the current database: excluded older recovery points therefore remain local and are absent from the outer native restore. Real archive size, storage capacity and restore acceptance must be measured separately.
 
 Version `0.2.69` keeps verified local packages as the primary backup when no app-managed Drive target is configured. An optional Home Assistant Drive copy is configured separately. Native add-on file backups also exclude the local cockpit access-token file; native options metadata is not covered by that file exclusion, so the `access_token` option must be empty before a cloud copy. Actual schedule, OAuth, upload and restore acceptance remain separate. No bank or financial behavior changes.

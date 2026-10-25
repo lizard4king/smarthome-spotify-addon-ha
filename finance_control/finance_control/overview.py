@@ -52,32 +52,109 @@ def _document_task(store):
                  f'{count} Buchungen haben einen passenden Belegvorschlag.')
 
 
+def _refund_categories(store):
+    """Map refund bookings to the confirmed expense category of the paid invoice.
+
+    Evidence is the invoice document: a booking linked to it as ``refund`` is
+    attributed to the confirmed expense category of the booking linked as
+    ``payment``. Returns {(account_id, external_id): (category_id, limit)}; limit
+    is the refunded amount named by the booking's refund links.
+    """
+    limits, paid = {}, {}
+    for row in store.db.execute(
+            "SELECT account_id,external_id,document_id,allocated_amount "
+            "FROM classification_document_links WHERE allocation_type='refund'"):
+        key = (row['account_id'], row['external_id'])
+        limits[key] = limits.get(key, money(0)) + money(row['allocated_amount'])
+        paid[key, row['document_id']] = None
+    result = {}
+    for (key, document_id) in paid:
+        best = store.db.execute(
+            "SELECT o.category_id,p.allocated_amount FROM classification_document_links p "
+            "JOIN classification_overrides o ON o.account_id=p.account_id "
+            "AND o.external_id=p.external_id AND o.confirmed=1 "
+            "JOIN category_catalog cat ON cat.id=o.category_id AND cat.transaction_type='expense' "
+            "WHERE p.document_id=? AND p.allocation_type='payment' "
+            "ORDER BY CAST(p.allocated_amount AS REAL) DESC,o.category_id LIMIT 1",
+            (document_id,)).fetchone()
+        if best is not None and key not in result:
+            result[key] = (budget.canonical_category_id(store, best['category_id']), limits[key])
+    return result
+
+
 def _year_actuals(store, cutoff, year):
-    """Sum non-transfer cash flows in the current calendar year through cutoff.
+    """Sum non-transfer cash flows of one calendar year through cutoff.
 
     Store.status validates lifetime opening balances, so it cannot supply this
     independent year window. Transfer semantics still use the shared resolver.
+    A positive booking linked to an invoice as refund reduces the expenses of
+    the paid invoice's confirmed category in the window (never below zero)
+    instead of counting as income. Any excess, and every refund without such
+    evidence, stays income, because the original expense may lie outside the
+    window or be unknown.
     """
     start = date(year, 1, 1)
     end = min(cutoff, date(year, 12, 31))
-    income = expenses = money(0)
+    income = expenses = offset_total = money(0)
     if end >= start:
         from .transfer_corrections import effective_transfer_id
+        refund_map = _refund_categories(store)
         rows = store.db.execute(
-            'SELECT t.*,m.pair_id AS correction_pair_id,c.description FROM active_transactions t '
+            'SELECT t.*,m.pair_id AS correction_pair_id,c.description,'
+            'o.category_id AS confirmed_category FROM active_transactions t '
             'LEFT JOIN transfer_correction_members m '
             'ON m.account_id=t.account_id AND m.external_id=t.external_id '
             'LEFT JOIN transaction_context c '
             'ON c.account_id=t.account_id AND c.external_id=t.external_id '
+            'LEFT JOIN classification_overrides o '
+            'ON o.account_id=t.account_id AND o.external_id=t.external_id AND o.confirmed=1 '
             'WHERE t.date >= ? AND t.date <= ?', (start.isoformat(), end.isoformat()))
+        refunds, spent = {}, {}
         for row in rows:
             if effective_transfer_id(store, row):
                 continue
             amount = money(row['amount'])
+            link = refund_map.get((row['account_id'], row['external_id']))
+            if amount > 0 and link is not None:
+                category, limit = link
+                refunded = min(amount, limit)
+                refunds[category] = refunds.get(category, money(0)) + refunded
+                income += amount - refunded
+                continue
             income += max(amount, money(0))
             expenses += max(-amount, money(0))
+            if amount < 0 and row['confirmed_category']:
+                category = budget.canonical_category_id(store, row['confirmed_category'])
+                spent[category] = spent.get(category, money(0)) - amount
+        for category, refund in refunds.items():
+            offset = min(refund, spent.get(category, money(0)))
+            expenses -= offset
+            offset_total += offset
+            income += refund - offset
     return {'year': year, 'income': _text(income), 'expenses': _text(expenses),
-            'balance': _text(income - expenses)}
+            'balance': _text(income - expenses), 'refunds': _text(offset_total)}
+
+
+def _actuals_year(cutoff, today, year):
+    """Pick the calendar year for the year totals.
+
+    Explicit ``year`` wins. Otherwise the current year, except that a cutoff in
+    an earlier year shows that year, not an empty current one (05.01.: the
+    cutoff 31.12. still reports the closed previous year).
+    """
+    if year is None:
+        return min(today.year, cutoff.year)
+    if isinstance(year, bool) or not isinstance(year, int) or not 1900 <= year <= 9998:
+        raise ValueError('year outside the supported range')
+    return year
+
+
+def year_notices(store, cutoff, year):
+    """Transfer notices for the same window as ``_year_actuals``; sums stay untouched."""
+    from .transfer_notices import period_notices
+    start = date(year, 1, 1)
+    end = min(cutoff, date(year, 12, 31))
+    return period_notices(store, start.isoformat(), end.isoformat()) if end >= start else None
 
 
 def _estimated_total(calculation, kind):
@@ -273,7 +350,7 @@ def _primary_action(plan, tasks):
     return None
 
 
-def build(store, as_of, status, *, _today=None, reporting_history=None):
+def build(store, as_of, status, *, _today=None, reporting_history=None, year=None):
     """Return stable, read-only overview data for one cockpit state."""
     cutoff = date.fromisoformat(as_of)
     today = datetime.now().astimezone().date() if _today is None else _today
@@ -281,5 +358,7 @@ def build(store, as_of, status, *, _today=None, reporting_history=None):
     for task in (_classification_task(store, cutoff), _document_task(store)):
         if task is not None:
             tasks.append(task)
+    actuals_year = _actuals_year(cutoff, today, year)
     return {'plan': plan, 'tasks': tasks, 'primary_action': _primary_action(plan, tasks),
-            'actuals': _year_actuals(store, cutoff, today.year)}
+            'actuals': _year_actuals(store, cutoff, actuals_year),
+            'transfer_notices': year_notices(store, cutoff, actuals_year)}

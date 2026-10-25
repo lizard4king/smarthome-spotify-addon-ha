@@ -378,22 +378,56 @@ function planActualCoverageItem(parent, label, count, value, context, id) {
   card.append(details); parent.append(card);
 }
 
+function planActualTransferHints(notices) {
+  const hints = [];
+  const card = (notices && notices.card_double_count) || {};
+  if (Number(card.count || 0) > 0) {
+    hints.push({
+      text: `Mögliche Doppelzählung: ${card.count} Sammelabbuchung(en) über ${eur(card.amount || 0)} ähneln Kartenumsätzen. Die Summen sind nicht verändert; es sind Vorschläge, nichts ist bestätigt.`,
+      reasons: (card.items || []).map(item => item.reason).filter(Boolean),
+    });
+  }
+  const oneSided = (notices && notices.one_sided_source_transfers) || {};
+  if (Number(oneSided.count || 0) > 0) {
+    hints.push({
+      text: `Umbuchung ohne Gegenbuchung: ${oneSided.count} Buchung(en), Abfluss ${eur(oneSided.outflow || 0)}, Zufluss ${eur(oneSided.inflow || 0)}. Neutral gerechnet, weil die Quelle Umbuchung nennt; in den Buchungen als einseitig bestätigbar.`,
+      reasons: [],
+    });
+  }
+  return hints;
+}
+
 function planActualRenderCoverage(coverage, planAvailable = true) {
   const target = $('plan-actual-coverage'); target.replaceChildren();
+  const hints = planActualTransferHints(coverage.notices);
   const hasAction = Number(coverage.unclassified?.count || 0) > 0
     || Number(coverage.unmapped?.count || 0) > 0;
-  target.hidden = !hasAction;
-  if (!hasAction) return;
-  planActualCoverageItem(target, 'Kategorie noch offen', coverage.unclassified.count,
-    coverage.unclassified.absolute, planActualContext('unclassified'), 'plan-actual-unclassified-details');
-  planActualCoverageItem(target, planAvailable ? 'Bestätigt, aber keiner Planposition zugeordnet' : 'Bestätigte Ist-Buchungen ohne Zuordnung', coverage.unmapped.count,
-    Number(coverage.unmapped.income || 0) + Number(coverage.unmapped.expenses || 0),
-    planActualContext('unmapped'), 'plan-actual-unmapped-details');
-  const excluded = document.createElement('article');
-  const heading = document.createElement('strong'); heading.textContent = 'Nicht als Verbrauch gezählt';
-  const summary = document.createElement('span');
-  summary.textContent = `${coverage.excluded.transfer_count || 0} Umbuchungspaare (${coverage.excluded.transfer_transaction_count || 0} Buchungen) · ${coverage.excluded.card_settlement_count || 0} Kartenabrechnungen · ${coverage.excluded.cash_withdrawal_count || 0} Bargeldabhebungen · ${coverage.excluded.depot_movement_count || 0} Depotbewegungen`;
-  excluded.append(heading, summary); target.append(excluded);
+  target.hidden = !hasAction && !hints.length;
+  if (target.hidden) return;
+  if (hasAction) {
+    planActualCoverageItem(target, 'Kategorie noch offen', coverage.unclassified.count,
+      coverage.unclassified.absolute, planActualContext('unclassified'), 'plan-actual-unclassified-details');
+    planActualCoverageItem(target, planAvailable ? 'Bestätigt, aber keiner Planposition zugeordnet' : 'Bestätigte Ist-Buchungen ohne Zuordnung', coverage.unmapped.count,
+      Number(coverage.unmapped.income || 0) + Number(coverage.unmapped.expenses || 0),
+      planActualContext('unmapped'), 'plan-actual-unmapped-details');
+    const excluded = document.createElement('article');
+    const heading = document.createElement('strong'); heading.textContent = 'Nicht als Verbrauch gezählt';
+    const summary = document.createElement('span');
+    summary.textContent = `${coverage.excluded.transfer_count || 0} Umbuchungspaare (${coverage.excluded.transfer_transaction_count || 0} Buchungen) · ${coverage.excluded.card_settlement_count || 0} Kartenabrechnungen · ${coverage.excluded.cash_withdrawal_count || 0} Bargeldabhebungen · ${coverage.excluded.depot_movement_count || 0} Depotbewegungen`;
+    excluded.append(heading, summary); target.append(excluded);
+  }
+  // Quiet hint: small, muted, never blocking; reasons open on demand.
+  for (const hint of hints) {
+    const box = document.createElement(hint.reasons.length ? 'details' : 'p');
+    box.className = 'plan-actual-hint';
+    if (hint.reasons.length) {
+      const summary = document.createElement('summary'); summary.textContent = hint.text; box.append(summary);
+      const list = document.createElement('ul');
+      for (const reason of hint.reasons) { const item = document.createElement('li'); item.textContent = reason; list.append(item); }
+      box.append(list);
+    } else box.textContent = hint.text;
+    target.append(box);
+  }
 }
 
 function planActualRenderLiquidity(liquidity) {
@@ -422,7 +456,7 @@ function planActualRenderLiquidity(liquidity) {
   }
   target.append(summary);
   const flexible = document.createElement('p'); flexible.className = 'muted';
-  flexible.textContent = `Der Kontostand danach kann negativ sein und ist keine Aussage darüber, was noch ausgegeben werden darf. Unbestätigte Schätzungen: ${planActualSignedEur(liquidity.totals.estimated_income, 'income')} Einnahmen und ${planActualSignedEur(liquidity.totals.estimated_expenses, 'expense')} Ausgaben. Noch nicht ausgeschöpfte lockere Budgets: ${eur(liquidity.totals.flexible_budget_remaining)}.`;
+  flexible.textContent = `Der Kontostand danach kann negativ sein und ist keine Aussage darüber, was noch ausgegeben werden darf. Unbestätigte Schätzungen: ${planActualSignedEur(liquidity.totals.estimated_income, 'income')} Einnahmen und ${planActualSignedEur(liquidity.totals.estimated_expenses, 'expense')} Ausgaben; zöge man die unbestätigten Ausgaben ab, läge der Kontostand danach bei ${planActualSignedEur(liquidity.totals.available_after_unconfirmed_expenses)}. Noch nicht ausgeschöpfte lockere Budgets: ${eur(liquidity.totals.flexible_budget_remaining)}.`;
   target.append(flexible);
   if ((liquidity.unassigned || []).length) {
     const unassigned = document.createElement('p'); unassigned.className = 'notice';
@@ -520,7 +554,8 @@ function planActualRenderPayday(payday) {
     for (const flow of cycle.cashflows) {
       const line = document.createElement('li');
       line.textContent = `${flow.due_date} · ${flow.label}: ${planActualSignedEur(
-        flow.amount, flow.direction === 'inflow' ? 'income' : 'expense')} · ${flow.evidence}`;
+        flow.amount, flow.direction === 'inflow' ? 'income' : 'expense')} · ${flow.evidence}${
+        flow.possibly_booked ? ' · Achtung: heute schon ein Betrag in gleicher Höhe gebucht, möglicherweise doppelt abgezogen' : ''}`;
       list.append(line);
     }
     details.append(summary, list); detailCell.append(details); detailRow.append(detailCell); body.append(detailRow);
@@ -2045,7 +2080,7 @@ function planActualRender(result) {
   planActualRenderPeople(result);
   planActualRenderCockpit(result);
   planActualRenderCoverage({unmapped: result.unmapped, unclassified: result.unclassified,
-    excluded: result.excluded || {}}, planAvailable);
+    excluded: result.excluded || {}, notices: result.notices || null}, planAvailable);
   const body = $('plan-actual-rows'); body.replaceChildren();
   const appendUnmappedRow = (label, value, suffix, contextType) => {
     if (!Number(value || 0)) return;

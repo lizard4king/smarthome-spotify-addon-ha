@@ -60,12 +60,16 @@
     const {dialog} = session, tx = preview.transaction, revoke = session.mode === 'revoke';
     const title = node('h2', revoke ? 'Umbuchung aufheben' : 'Einzelne Umbuchung bestätigen'); title.id = titleId;
     const form = node('form');
+    const sourceCase = preview.basis === 'source_category_without_counterpart';
     const original = node('p', `Original: ${tx.date} · ${tx.amount} ${tx.currency} · Konto ${tx.account_label} (${tx.account_id})`);
     original.className = 'bt-original';
     form.append(original, node('p', tx.counterparty || ''), node('p', tx.description || ''),
-      node('p', revoke
+      node('p', revoke && sourceCase
+        ? 'Die Einzelmarkierung wird aufgehoben. Die Buchung bleibt wegen der Quellkategorie Umbuchung neutral gerechnet; der Hinweis auf die fehlende Gegenbuchung erscheint wieder.'
+        : revoke
         ? 'Die eigene Einzelmarkierung wird aufgehoben. Die Originalbuchung bleibt erhalten und zählt wieder als Haushaltsausgabe oder Einnahme. Importierte Umbuchungen und Umbuchungspaare bleiben geschützt.'
         : 'Bestätige nur eine belegte Bewegung zwischen eigenen Konten. Die Gegenbuchung fehlt im Buchungsbuch. Es wird keine Gegenbuchung erzeugt.'));
+    if (sourceCase && !revoke) form.append(node('p', 'Die Quelle führt diese Buchung als Umbuchung, eine Gegenbuchung fehlt. Du bestätigst sie als bewusst einseitig (zum Beispiel Konto außerhalb). Summen ändern sich nicht; der Hinweis entfällt.'));
     if (revoke) form.append(node('p', 'Bisheriger Nachweis: ' + (preview.single_leg?.reason || 'nicht ausgewiesen')));
     const label = node('label', revoke ? 'Grund der Aufhebung' : 'Begründung / Nachweis');
     const reason = node('textarea'); reason.name = 'reason'; reason.required = true; reason.maxLength = 120;

@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from .classification import _direction, _filter_date, money
+from .transfer_notices import period_notices
 from .person_attribution import account_allocations, person_label, split_cents
 
 
@@ -169,7 +170,11 @@ def category_summary(store, data=None, *, people=None):
                                   'net': format(income - outflow, '.2f')})
     formatted_totals['net'] = format(totals['income'] - totals['outflow'], '.2f')
     response = {'categories': result, 'totals': formatted_totals, 'monthly': formatted_monthly,
-                'period': {'date_from': date_from, 'date_to': date_to}}
+                'period': {'date_from': date_from, 'date_to': date_to},
+                'notices': period_notices(
+                    store, date_from or (min(row['date'] for row in rows) if rows else '0001-01-01'),
+                    date_to or (max(row['date'] for row in rows) if rows else '9999-12-31'),
+                    None if data.get('account_id') is None else {data['account_id'].strip()})}
     if include_people:
         response['person_expenses'] = _person_expenses(labels, expenses, allocations)
     return response

@@ -416,10 +416,18 @@ function budgetPersonalChoices(container, selected) {
 function budgetRefreshPersonalChoices() {
   for (const container of $('budget-setup').querySelectorAll('[data-personal-items]')) budgetPersonalChoices(container, [...container.querySelectorAll('input:checked')].map(input => input.value));
 }
+function budgetShareNumber(share) {
+  if (typeof share !== 'string') return NaN;
+  const ratio = share.split('/');
+  return ratio.length === 2 ? Number(ratio[0]) / Number(ratio[1]) : Number(share);
+}
 function budgetAddShare(list, value) {
   const {row, grid} = budgetSetupRow(list, 'Personenanteil', value);
   budgetSetupField(grid, 'party_id', 'Person', value.party_id, 'party');
-  budgetSetupField(grid, 'percent', 'Anteil am gemeinsamen Überschuss (%)', value.share === undefined ? '' : Math.round(Number(value.share) * 100), 'number');
+  const shareValue = budgetShareNumber(value.share);
+  const exact = Number.isFinite(shareValue) && Math.abs(shareValue * 100 - Math.round(shareValue * 100)) > 1e-9;
+  const percentInput = budgetSetupField(grid, 'percent', 'Anteil am gemeinsamen Überschuss (%)', value.share === undefined ? '' : (exact ? Number((shareValue * 100).toFixed(4)) : Math.round(shareValue * 100)), 'number');
+  if (exact) { percentInput.step = 'any'; row.dataset.originalShare = value.share; row.dataset.shownPercent = percentInput.value; }
   const details = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = 'Persönliche Budgetpositionen zuordnen';
   const choices = document.createElement('div'); choices.className = 'budget-personal-choices'; choices.dataset.personalItems = '';
   budgetPersonalChoices(choices, value.personal_item_ids || []); details.append(summary, choices); row.append(details);
@@ -592,14 +600,15 @@ function budgetReadSetup(items) {
   const seenParties = new Set(), seenItems = new Set(), itemIds = new Set(items.map(item => item.id));
   const split = rows('household_split').map(row => {
     const field = read(row), party = field('party_id'), percent = Number(field('percent'));
+    const keepExact = row.dataset.originalShare !== undefined && field('percent') === row.dataset.shownPercent;
     if (seenParties.has(party)) throw new Error('Jede Person darf nur einmal in der Aufteilung vorkommen.'); seenParties.add(party);
-    if (!Number.isInteger(percent) || percent < 1 || percent > 100) throw new Error('Bitte ganze Prozentanteile zwischen 1 und 100 eingeben.');
+    if (!keepExact && (!Number.isInteger(percent) || percent < 1 || percent > 100)) throw new Error('Bitte ganze Prozentanteile zwischen 1 und 100 eingeben.');
     const personal = [...row.querySelectorAll('[data-personal-items] input:checked')].map(input => input.value);
     for (const id of personal) { if (!itemIds.has(id)) throw new Error('Eine persönliche Position wurde entfernt. Bitte ihre Zuordnung lösen.'); if (seenItems.has(id)) throw new Error('Eine Budgetposition ist mehreren Personen zugeordnet. Bitte nur eine Person auswählen.'); seenItems.add(id); }
-    return {party_id:party, share:(percent / 100).toFixed(2), personal_item_ids:personal};
+    return {party_id:party, share:keepExact ? row.dataset.originalShare : (percent / 100).toFixed(2), personal_item_ids:personal};
   });
   if (split.length) {
-    if (split.reduce((sum, entry) => sum + Math.round(Number(entry.share) * 100), 0) !== 100) throw new Error('Die Personenanteile müssen zusammen genau 100 % ergeben.');
+    if (Math.abs(split.reduce((sum, entry) => sum + budgetShareNumber(entry.share), 0) * 100 - 100) > 1e-6) throw new Error('Die Personenanteile müssen zusammen genau 100 % ergeben.');
     result.household_split = split;
   }
   for (const field of ['payday_cycles', 'pending_transfers']) if (!result[field].length && !Object.hasOwn(budgetOriginalPlan, field)) delete result[field];

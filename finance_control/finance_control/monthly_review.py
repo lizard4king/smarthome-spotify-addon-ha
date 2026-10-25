@@ -10,6 +10,7 @@ from decimal import Decimal
 from .classification import source_context_complete
 from .core import money
 from .transfer_corrections import effective_transfer_id, transfer_display
+from .transfer_notices import period_notices
 
 
 def _period_bounds(period):
@@ -224,7 +225,8 @@ def _build_preview(store, period):
             'source_digest_version': 2,
             'legacy_source_digest': legacy_source_digest,
             'source_digest': source_digest,
-            'review_token': review_token, 'checklist': checklist}
+            'review_token': review_token, 'checklist': checklist,
+            'notices': period_notices(store, start.isoformat(), end.isoformat())}
 
 
 def _account_label(account):
