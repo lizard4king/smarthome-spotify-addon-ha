@@ -6,6 +6,7 @@ import json
 import re
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 
 from .cash_components import cash_receipt_key
 from .core import parse_money_input
@@ -67,6 +68,36 @@ def _amount(value):
             or amount != amount.quantize(_CENT)):
         raise ValueError("amount must be nonnegative, finite and cent-exact")
     return format(amount, ".2f")
+
+
+_SHARE_DECIMAL_RE = re.compile(r"[0-9]\.[0-9]{1,6}|[01]")
+_SHARE_RATIO_RE = re.compile(r"[1-9][0-9]{0,5}/[1-9][0-9]{0,5}")
+
+
+def parse_household_share(value):
+    """Return a household share as an exact Fraction.
+
+    Accepted: decimal text with 1 to 6 places ("0.55", "0.333333") or a ratio
+    ("1/3"). Legacy revisions only contain two-place decimals, which stay valid.
+    """
+    if not isinstance(value, str):
+        raise ValueError("household split share must be decimal or ratio text")
+    value = value.strip().replace(",", ".")
+    if _SHARE_RATIO_RE.fullmatch(value):
+        numerator, denominator = value.split("/")
+        return Fraction(int(numerator), int(denominator))
+    if _SHARE_DECIMAL_RE.fullmatch(value):
+        return Fraction(Decimal(value))
+    raise ValueError("household split share must be decimal or ratio text")
+
+
+def _household_share_text(value):
+    """Keep ratios and long decimals verbatim; normalize two-place legacy text."""
+    share = parse_household_share(value)
+    value = value.strip().replace(",", ".")
+    if "/" in value or len(value.partition(".")[2]) > 2:
+        return value
+    return format(Decimal(share.numerator) / Decimal(share.denominator), ".2f")
 
 
 def _signed_amount(value, name):
@@ -175,7 +206,7 @@ def _validate_plan(value, store=None):
             raise ValueError("household_split must contain 1 to 10 entries")
         validated_split = []
         party_ids = set()
-        total_share = Decimal("0.00")
+        total_share = Fraction(0)
         for raw in split:
             fields = set(raw) if isinstance(raw, dict) else set()
             if fields not in (
@@ -185,10 +216,10 @@ def _validate_plan(value, store=None):
             if party_id in party_ids:
                 raise ValueError("household split party_ids must be unique")
             party_ids.add(party_id)
-            share = _amount(raw["share"])
-            if Decimal(share) <= 0:
+            share = _household_share_text(raw["share"])
+            if parse_household_share(share) <= 0:
                 raise ValueError("household split shares must be positive")
-            total_share += Decimal(share)
+            total_share += parse_household_share(share)
             entry = {"party_id": party_id, "share": share}
             if "personal_item_ids" in raw:
                 item_ids = raw["personal_item_ids"]
@@ -206,8 +237,8 @@ def _validate_plan(value, store=None):
                     validated_items.append(item_id)
                 entry["personal_item_ids"] = validated_items
             validated_split.append(entry)
-        if total_share != Decimal("1.00"):
-            raise ValueError("household split shares must sum to 1.00")
+        if total_share != 1:
+            raise ValueError("household split shares must sum to exactly 1")
         plan["household_split"] = validated_split
     if "liquidity_accounts" in value:
         account_ids = value["liquidity_accounts"]

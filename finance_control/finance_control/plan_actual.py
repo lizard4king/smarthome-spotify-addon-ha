@@ -3,10 +3,12 @@
 import calendar
 import json
 import re
+from collections import Counter
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from .budget import (
+    parse_household_share,
     _item_active,
     _month,
     _revision,
@@ -25,6 +27,11 @@ from .paypal_date_basis import transaction_date_accounts
 from .reporting_history import month_quality, scope_for_month
 from .reporting_history import validate as validate_reporting_history
 from .transfer_corrections import source_declares_transfer, sql_transfer_predicate
+from .transfer_notices import (
+    card_linked_transfer_ids,
+    correction_pair_has_card_sql,
+    period_notices,
+)
 
 _PAGE_SIZE = 25
 
@@ -320,9 +327,7 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
         "WHERE substr(t.date,1,7)=? AND t.currency='EUR'", (month,))}
     correction_rows = store.db.execute(
         "SELECT m.account_id,m.external_id,m.pair_id, "
-        "EXISTS(SELECT 1 FROM transfer_correction_members cm "
-        "JOIN accounts ca ON ca.id=cm.account_id AND ca.kind='CREDIT_CARD' "
-        "WHERE cm.pair_id=m.pair_id) AS has_card "
+        f"{correction_pair_has_card_sql('m')} AS has_card "
         "FROM transfer_correction_members m "
         "JOIN transfer_correction_pairs p ON p.id=m.pair_id AND p.revoked_at IS NULL "
         "JOIN active_transactions t ON t.account_id=m.account_id AND t.external_id=m.external_id "
@@ -334,14 +339,7 @@ def _ledger_rows(store, month, explicit_allocations=None, cash_receipt_item_id=N
         "SELECT DISTINCT t.transfer_id FROM active_transactions t "
         "JOIN accounts a ON a.id=t.account_id AND a.kind='DEPOT' "
         "WHERE t.transfer_id IS NOT NULL")}
-    card_transfer_ids = set()
-    if imported_ids:
-        placeholders = ",".join("?" for _ in imported_ids)
-        card_transfer_ids = {row["transfer_id"] for row in store.db.execute(
-            "SELECT DISTINCT t.transfer_id FROM active_transactions t "
-            "JOIN accounts a ON a.id=t.account_id AND a.kind='CREDIT_CARD' "
-            f"WHERE t.transfer_id IN ({placeholders})",
-            tuple(imported_ids))}
+    card_transfer_ids = card_linked_transfer_ids(store, imported_ids)
     result = []
     transfer_ids = set()
     transfer_transaction_count = 0
@@ -882,8 +880,8 @@ def _split_by_household(amount, household_split):
     shares = []
     assigned = 0
     for index, entry in enumerate(household_split):
-        exact_cents = Decimal(cents) * money(entry["share"])
-        base_cents = int(exact_cents)
+        exact_cents = cents * parse_household_share(entry["share"])
+        base_cents = exact_cents.numerator // exact_cents.denominator
         shares.append([entry["party_id"], base_cents, exact_cents - base_cents, index])
         assigned += base_cents
     for share in sorted(shares, key=lambda value: (-value[2], value[3]))[:cents - assigned]:
@@ -1576,6 +1574,11 @@ def _liquidity_view(store, snapshot, month, comparison_rows):
             "estimated_expenses": _format(estimated_expenses),
             "available_after_commitments": _format(
                 balance + pending_transfer + expected_income - committed_expenses),
+            # Additional, deliberately named figure: the headline above stays
+            # confirmed-only; this one also deducts unconfirmed fixed costs.
+            "available_after_unconfirmed_expenses": _format(
+                balance + pending_transfer + expected_income - committed_expenses
+                - estimated_expenses),
             "flexible_budget_remaining": _format(flexible_budget),
             "commitments": commitments, "estimates": estimates, "income_items": income_items,
         })
@@ -1599,7 +1602,8 @@ def _liquidity_view(store, snapshot, month, comparison_rows):
         key: _format(sum((money(account[key]) for account in result), Decimal("0.00")))
         for key in ("current_balance", "pending_transfer", "balance_after_pending",
                     "expected_income", "committed_expenses",
-                    "estimated_income", "estimated_expenses", "available_after_commitments")
+                    "estimated_income", "estimated_expenses", "available_after_commitments",
+                    "available_after_unconfirmed_expenses")
     }
     totals["flexible_budget_remaining"] = _format(flexible_total)
     return {
@@ -2181,6 +2185,18 @@ def _payday_view(store, snapshot, month):
             continue
         upcoming = [flow.copy() for flow in cycle["cashflows"]
                     if as_of_date <= date.fromisoformat(flow["due_date"]) < next_salary]
+        # The cashflow list is maintained by hand and is not reconciled with
+        # bookings: the balance already contains every booking up to as_of,
+        # while a flow due on as_of is still deducted in full. Sums stay
+        # unchanged; a same-day booking of the same amount is only flagged.
+        same_day = Counter(
+            money(row["amount"]) for row in store.db.execute(
+                "SELECT amount FROM active_transactions WHERE date=? AND account_id=?",
+                (as_of_date.isoformat(), cycle["account_id"])))
+        for flow in upcoming:
+            if flow["due_date"] == as_of_date.isoformat():
+                signed = money(flow["amount"]) * (1 if flow["direction"] == "inflow" else -1)
+                flow["possibly_booked"] = same_day[signed] > 0
         for transfer in snapshot["plan"].get("pending_transfers", []):
             transfer_date = date.fromisoformat(transfer["value_date"])
             if not as_of_date <= transfer_date < next_salary:
@@ -2225,6 +2241,10 @@ def _payday_view(store, snapshot, month):
         "available": bool(result), "as_of": as_of_date.isoformat(), "cycles": result,
         "total_free_spendable": _format(max(net_headroom, Decimal("0.00"))),
         "total_shortfall": _format(max(-net_headroom, Decimal("0.00"))),
+        # Unnetted view: a surplus on one account does not cover a shortfall on
+        # another; the shortfall has to be transferred first.
+        "gross_free_spendable": _format(gross_free),
+        "gross_shortfall": _format(gross_shortfall),
     }
 
 
@@ -2632,6 +2652,10 @@ def compare_actual(store, data, *, people=None, reporting_history=None):
                          "count": unclassified["count"]},
         "automatic_owner_mapping_count": automatic_owner_mapping_count,
         "excluded": excluded,
+        "notices": period_notices(
+            store, month + "-01",
+            f"{month}-{calendar.monthrange(int(month[:4]), int(month[5:7]))[1]:02d}",
+            None if scope is None else set(scope["included_account_ids"])),
         "cash_activity": _cash_activity(
             store, cash_withdrawals, ledger_rows, cash_receipt_by_item, known_person_ids),
     }

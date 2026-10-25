@@ -13,7 +13,13 @@ from .core import money
 from .current_balances import latest_by_account, summarize
 from .person_attribution import person_label
 from .reporting_history import scope_for_month
-from .transfer_corrections import source_declares_transfer, sql_transfer_predicate
+from .transfer_corrections import (
+    SOURCE_BASIS,
+    single_leg_basis,
+    source_declares_transfer,
+    sql_transfer_predicate,
+)
+from .transfer_notices import source_transfer_without_counterpart
 
 
 class DashboardConfigurationError(ValueError):
@@ -167,8 +173,14 @@ def build(store, as_of, accounts=None, *, reporting_history=None,
                 "is_transfer": bool(row["is_transfer"]),
                 "source_category": row["category"] or "",
                 "single_leg_transfer": bool(row["has_single_leg"]) and not row["source_transfer_id"]
-                    and not source_declares_transfer(row),
+                    and (not source_declares_transfer(row)
+                         or single_leg_basis(store, row["account_id"], row["external_id"])
+                         == SOURCE_BASIS),
                 "category_path": category_path(category_id, category_label),
+                "counterpart_missing": bool(row["is_transfer"])
+                    and source_transfer_without_counterpart(store, {
+                        **dict(row), "category": row["category"],
+                        "transfer_id": row["source_transfer_id"] or ""}),
             }
             if (row["currency"] == "EUR" and row["account_kind"] == "CHECKING"
                     and money(row["amount"]) < 0 and not row["is_transfer"]

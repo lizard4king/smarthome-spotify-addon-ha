@@ -80,6 +80,56 @@ def effective_transfer_id(store, transaction):
     return None if row is None else f"correction:{row['pair_id']}"
 
 
+def _confirmed_counterpart(store, row):
+    """True if a pair, correction or confirmed single leg backs the transfer."""
+    key = (row['account_id'], row['external_id'])
+    if row['transfer_id']:
+        return True
+    if store.db.execute(
+            'SELECT 1 FROM transfer_single_legs WHERE account_id=? AND external_id=?', key).fetchone():
+        return True
+    return store.db.execute(
+        'SELECT 1 FROM transfer_correction_members m JOIN transfer_correction_pairs p '
+        'ON p.id=m.pair_id AND p.revoked_at IS NULL '
+        'WHERE m.account_id=? AND m.external_id=?', key).fetchone() is not None
+
+
+def _has_matching_posting(store, row):
+    """An exact opposite EUR posting on another account within seven days."""
+    return store.db.execute(
+        "SELECT 1 FROM active_transactions WHERE account_id!=? AND currency='EUR' AND amount=? "
+        'AND abs(julianday(date)-julianday(?))<=7 LIMIT 1',
+        (row['account_id'], format(-money(row['amount']), '.2f'), row['date'])).fetchone() is not None
+
+
+def source_transfer_without_counterpart(store, row):
+    """Whether a source-declared transfer has neither counter-posting nor confirmation.
+
+    ``row`` needs account_id, external_id, date, amount, category, transfer_id
+    and, for hierarchical categories, description.
+    """
+    if not str(effective_transfer_id(store, row) or '').startswith('source-category:'):
+        return False
+    return not _confirmed_counterpart(store, row) and not _has_matching_posting(store, row)
+
+
+SOURCE_BASIS = 'source_category_without_counterpart'
+
+
+def single_leg_basis(store, account_id, external_id):
+    """Basis recorded when the current single leg was confirmed (``None`` if ordinary)."""
+    row = store.db.execute(
+        'SELECT current FROM transfer_single_leg_audit WHERE account_id=? AND external_id=? '
+        "AND action='single_leg_transfer_confirmed' ORDER BY id DESC LIMIT 1",
+        (account_id, external_id)).fetchone()
+    if row is None:
+        return None
+    try:
+        return json.loads(row['current']).get('basis')
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
 def _single_leg_key(data):
     if (not isinstance(data, dict)
             or not isinstance(data.get('account_id'), str)
@@ -97,6 +147,7 @@ def preview_single_leg(store, data):
             or ('mode' in data and data['mode'] != 'revoke')):
         raise ValueError('invalid_single_leg_transfer')
     revoke = data.get('mode') == 'revoke'
+    source_basis = False
     key = _single_leg_key(data)
     row = store.db.execute(
         "SELECT t.*,coalesce(c.counterparty,'') counterparty,coalesce(c.description,'') description "
@@ -113,21 +164,36 @@ def preview_single_leg(store, data):
     if revoke:
         if single is None:
             raise ValueError('single_leg_not_set')
-        if row['transfer_id'] or source_declares_transfer(row) or any(item['revoked_at'] is None for item in corrections):
+        # A single leg on a source "Umbuchung" without counter-posting was confirmed
+        # explicitly for that case (audit basis) and may be withdrawn again; any other
+        # overlap with import or pair evidence stays untouchable.
+        source_basis = single_leg_basis(store, *key) == SOURCE_BASIS
+        if (row['transfer_id'] or (source_declares_transfer(row) and not source_basis)
+                or any(item['revoked_at'] is None for item in corrections)):
             raise ValueError('single_leg_overlapping_transfer')
     elif effective_transfer_id(store, row):
-        raise ValueError('effective_transfer_already_set')
+        # Only the case "source says transfer, no counter-posting, nothing confirmed" opens.
+        open_source = (not row['transfer_id'] and source_transfer_without_counterpart(store, row))
+        if not open_source:
+            raise ValueError('effective_transfer_already_set')
     generation = store.db.execute('SELECT max(id) FROM transfer_single_leg_audit WHERE account_id=? AND external_id=?', key).fetchone()[0]
     basis = {'transaction': dict(row), 'account': dict(account), 'corrections': corrections,
              'single_leg': dict(single) if single else None, 'audit_generation': generation,
              'mode': 'revoke' if revoke else 'confirm'}
+    source_case = not revoke and bool(effective_transfer_id(store, row))
+    if source_case:
+        basis['basis'] = SOURCE_BASIS
     fingerprint = hashlib.sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()
     transaction = {field: row[field] for field in ('account_id', 'external_id', 'date', 'amount', 'currency',
                                                    'counterparty', 'description')}
     transaction['account_label'] = account['display_name'] or account['id']
     result = {'transaction': transaction, 'fingerprint': fingerprint}
+    if source_case:
+        result['basis'] = SOURCE_BASIS
     if revoke:
         result['single_leg'] = dict(single)
+        if source_basis:
+            result['basis'] = SOURCE_BASIS
     return result
 
 
@@ -155,6 +221,8 @@ def save_single_leg(store, data):
         plan = preview_single_leg(store, dict(zip(('account_id', 'external_id'), key)))
         if 'fingerprint' in data and not secrets.compare_digest(data['fingerprint'], plan['fingerprint']):
             raise ValueError('stale_single_leg_preview')
+        if plan.get('basis'):
+            current['basis'] = plan['basis']
         store.db.execute(
             'INSERT INTO transfer_single_legs(account_id,external_id,reason,created_at,revision) '
             'VALUES (?,?,?,?,1)', (*key, current['reason'], created_at))

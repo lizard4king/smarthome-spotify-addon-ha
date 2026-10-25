@@ -915,11 +915,13 @@
     if (!transactionDate) add(body, 'p', 'fd-booking-balance-note', movement ? 'Berechnet je Buchung. Die Reihenfolge innerhalb eines Tages ist anhand der external_id angenommen, nicht von der Bank bestätigt. Die Berechnung setzt vollständige importierte Buchungen voraus und bleibt unabhängig von Buchungsfiltern.' : 'Tagesstand; keine belegte Reihenfolge innerhalb eines Tages. Die Berechnung setzt vollständige importierte Buchungen voraus.');
     window.financeBookingContracts?.mount(body,item);
     const transferActionMode = !item.is_transfer ? 'confirm'
-      : item.single_leg_transfer ? 'revoke' : null;
+      : item.single_leg_transfer ? 'revoke' : item.counterpart_missing ? 'confirm' : null;
     if (item.external_id != null && transferActionMode) {
       const transferAction = add(body, 'div', 'fd-booking-transfer-action');
+      if (item.counterpart_missing && transferActionMode === 'confirm') add(transferAction, 'p', 'fd-booking-balance-note', 'Die Quelle nennt Umbuchung, eine Gegenbuchung fehlt. Die Buchung ist neutral gerechnet.');
       const transferButton = add(transferAction, 'button', `fd-booking-transfer-${transferActionMode}`,
-        transferActionMode === 'revoke' ? 'Umbuchung aufheben' : 'Umbuchung bestätigen');
+        transferActionMode === 'revoke' ? 'Umbuchung aufheben'
+          : item.is_transfer ? 'Als einseitige Umbuchung bestätigen' : 'Umbuchung bestätigen');
       transferButton.type = 'button';
       transferButton.addEventListener('click', () => {
         if (typeof window.BookingTransfers?.open !== 'function') {

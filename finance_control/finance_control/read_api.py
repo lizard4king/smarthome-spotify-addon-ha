@@ -109,6 +109,12 @@ class FinanceReadApi:
             result = dict(base)
             result.update({'income': snapshot['liquidity']['income'],
                            'expenses': snapshot['liquidity']['expenses'],
+                           'transfer_notices': {
+                               'card_double_count_suspected': snapshot['notices']['card_double_count']['count'],
+                               'card_double_count_amount': snapshot['notices']['card_double_count']['amount'],
+                               'one_sided_source_transfers': snapshot['notices']['one_sided_source_transfers']['count'],
+                               'one_sided_source_outflow': snapshot['notices']['one_sided_source_transfers']['outflow'],
+                               'one_sided_source_inflow': snapshot['notices']['one_sided_source_transfers']['inflow']},
                            'status': ('booked_partial' if period == self.today.strftime('%Y-%m')
                                       else 'reviewed' if reviewed else 'booked_unreviewed')})
             active = budget.load(store)

@@ -276,7 +276,7 @@ class Cockpit:
             stream.write(content)
         return '/exports/' + name
 
-    def state(self, as_of):
+    def state(self, as_of, year=None):
         from .backup_package import backup_sync_status
         store = Store(self.database)
         try:
@@ -317,7 +317,8 @@ class Cockpit:
                     'accounts': accounts, 'status': status, 'scenarios': store.scenario_records(),
                     'monthly_reviews': monthly_review.records(store),
                     'overview': overview.build(store, as_of, status,
-                                               reporting_history=self.reporting_history),
+                                               reporting_history=self.reporting_history,
+                                               year=year),
                     'dashboard': dashboard_data,
                     'backup_sync': backup_status,
                     'drive_backup_configured': (backup_status['configured']
@@ -1448,9 +1449,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 return
             if url.path == '/api/state':
                 try:
-                    as_of = parse_qs(url.query).get('as_of', [default_cutoff()])[0]
+                    query = parse_qs(url.query)
+                    as_of = query.get('as_of', [default_cutoff()])[0]
                     date.fromisoformat(as_of)
-                    return self.reply(200, app.state(as_of))
+                    year = int(query['year'][0]) if 'year' in query else None
+                    return self.reply(200, app.state(as_of) if year is None
+                                      else app.state(as_of, year))
                 except (ValueError, sqlite3.Error):
                     return self.reply(400, {'error': 'Stichtag liegt vor einem Eröffnungssaldo oder ist ungültig.'})
             if url.path == '/api/administration':
