@@ -7,7 +7,7 @@ import secrets
 import sqlite3
 import tempfile
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from threading import RLock
@@ -16,6 +16,7 @@ from .drive_api import DriveApiError
 from .import_preview import outside_repository
 
 _BACKUP_STATE_LOCK = RLock()
+_AUTOMATIC_BACKUP_INTERVAL = timedelta(minutes=15)
 
 
 def _serialized_backup_state(function):
@@ -255,6 +256,153 @@ def _drive_backup_entries(drive):
     return {entry.relative_path: entry for entry in entries}
 
 
+def _retention_target_id(target, environ):
+    if target is not None:
+        return 'directory:' + str(target)
+    folder = (os.environ if environ is None else environ).get('FINANCE_CONTROL_DRIVE_FOLDER_ID')
+    return 'drive:' + str(folder) if folder else 'local-only'
+
+
+def _automatic_created(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        created = datetime.fromisoformat(value)
+        return created.astimezone(UTC) if created.tzinfo is not None else None
+    except (ValueError, OverflowError):
+        return None
+
+
+def _verified_retention_pair(database, name, state, target, drive_entries):
+    """Recheck both local members and, when configured, the acknowledged copy."""
+    exports = outside_repository(database.parent / 'exports')
+    backups = outside_repository(database.parent / 'backups')
+    source = exports / name
+    snapshot = backups / (name[:-4] + '.sqlite')
+    if (not re.fullmatch(r'[0-9a-f]{32}\.zip', name) or source.is_symlink()
+            or snapshot.is_symlink() or not source.is_file() or not snapshot.is_file()):
+        raise ValueError('retention_pair_missing')
+    verified = verify_backup_package(source, database.parent)
+    with zipfile.ZipFile(source) as archive:
+        snapshot_hash = json.loads(archive.read('manifest.json'))['files']['database.sqlite']
+    if _checksum(snapshot) != snapshot_hash:
+        raise ValueError('retention_snapshot_changed')
+    if target is not None or drive_entries is not None:
+        receipt = state.get('synced_packages', {}).get(name)
+        if (not isinstance(receipt, dict) or receipt.get('sha256') != verified['sha256']
+                or receipt.get('size') != verified['size']):
+            raise ValueError('retention_receipt_missing')
+        if target is not None:
+            remote = target / f'finance-control-backup-{name}'
+            if (remote.is_symlink() or not remote.is_file()
+                    or remote.stat().st_size != verified['size']
+                    or _checksum(remote) != verified['sha256']):
+                raise ValueError('retention_copy_changed')
+        else:
+            remote = drive_entries.get(f'04_Sicherungen/finance-control-backup-{name}')
+            if (remote is None or not receipt.get('md5_checksum')
+                    or receipt['md5_checksum'] != _md5_checksum(source)
+                    or remote.size_bytes != verified['size']
+                    or remote.md5_checksum != receipt['md5_checksum']):
+                raise ValueError('retention_copy_changed')
+    return {**verified, 'snapshot_sha256': snapshot_hash,
+            'md5_checksum': _md5_checksum(source) if drive_entries is not None else None}
+
+
+def _retire_verified_packages(database, state, target, drive, drive_entries, environ):
+    """Keep two verified automatic packages on SSD and on any configured target.
+
+    A durable retirement marker prevents a deleted remote copy being uploaded
+    again if the process stops between remote and local removal. Pending and
+    unrecognised files are never retirement candidates.
+    """
+    target_id = _retention_target_id(target, environ)
+    retiring = state.setdefault('retiring_packages', {})
+    receipts = state.setdefault('synced_packages', {})
+    verified_cache = state.setdefault('verified_packages', {})
+    automatic = state.setdefault('automatic_packages', {})
+    dated = [(_automatic_created(created), name) for name, created in automatic.items()
+             if name not in retiring]
+    if len(dated) <= 2 and not retiring:
+        return
+    if any(created is None for created, _ in dated):
+        return
+    dated.sort()
+    # A missing or corrupt newer package must not promote an older package to
+    # retirement. Validate the whole known automatic set before choosing two.
+    try:
+        for _, name in dated:
+            _verified_retention_pair(database, name, state, target, drive_entries)
+    except (OSError, ValueError, zipfile.BadZipFile, KeyError):
+        return
+    candidates = list(dict.fromkeys([*retiring, *(name for _, name in dated[:-2])]))
+
+    def require_two_keepers(retired_name):
+        current = [(_automatic_created(created), name) for name, created in automatic.items()
+                   if name not in retiring and name != retired_name]
+        current.sort()
+        if len(current) < 2 or any(created is None for created, _ in current):
+            raise ValueError('retention_keepers_missing')
+        # Freshly verify the two newest pairs and their current target copies
+        # before each remote, ZIP, or SQLite deletion.
+        current_entries = _drive_backup_entries(drive) if drive is not None else drive_entries
+        for _, keeper in current[-2:]:
+            _verified_retention_pair(database, keeper, state, target, current_entries)
+
+    for name in candidates:
+        if not re.fullmatch(r'[0-9a-f]{32}\.zip', name):
+            continue
+        exports = outside_repository(database.parent / 'exports')
+        backups = outside_repository(database.parent / 'backups')
+        source = exports / name
+        snapshot = backups / (source.stem + '.sqlite')
+        marker = retiring.get(name)
+        if marker is not None and marker.get('target') != target_id:
+            # An interrupted removal belongs to its original destination.
+            # Require manual reconciliation before using a different target.
+            raise ValueError('retention_target_changed')
+        if marker is None:
+            require_two_keepers(name)
+            verified = _verified_retention_pair(database, name, state, target, drive_entries)
+            marker = {'target': target_id, **verified}
+            retiring[name] = marker
+            _write_sync_state(database, state)
+        relative = f'04_Sicherungen/finance-control-backup-{name}'
+        if drive is not None:
+            require_two_keepers(name)
+            if relative in drive_entries:
+                drive.remove_verified_file(
+                    relative, expected_size=marker['size'],
+                    expected_md5=marker['md5_checksum'])
+                drive_entries.pop(relative)
+        elif target is not None:
+            require_two_keepers(name)
+            remote = target / f'finance-control-backup-{name}'
+            if remote.exists():
+                if (remote.is_symlink() or not remote.is_file()
+                        or remote.stat().st_size != marker['size']
+                        or _checksum(remote) != marker['sha256']):
+                    raise ValueError('retention_copy_changed')
+                remote.unlink()
+        # The marker is retained until both local members have been removed.
+        if source.exists():
+            require_two_keepers(name)
+            if source.is_symlink() or _checksum(source) != marker['sha256']:
+                raise ValueError('retention_source_changed')
+            source.unlink()
+        if snapshot.exists():
+            require_two_keepers(name)
+            if (snapshot.is_symlink()
+                    or _checksum(snapshot) != marker['snapshot_sha256']):
+                raise ValueError('retention_snapshot_changed')
+            snapshot.unlink()
+        retiring.pop(name, None)
+        receipts.pop(name, None)
+        verified_cache.pop(name, None)
+        automatic.pop(name, None)
+        _write_sync_state(database, state)
+
+
 def _upload_verified_package(source, database, drive, *, allow_existing=True,
                              verified=None, existing=None):
     """Publish one immutable package below the configured Drive API root."""
@@ -364,7 +512,9 @@ def backup_sync_status(database, target_directory=None, environ=None):
     synced = state.get('synced_packages', {})
     if not isinstance(synced, dict):
         synced = {}
-    pending = sum(path.name not in synced for path in packages)
+    retiring = state.get('retiring_packages', {})
+    pending = sum(path.name not in synced and path.name not in retiring
+                  for path in packages)
     configured = target is not None or drive is not None or error == 'invalid_configuration'
     return {'configured': configured, 'reachable': bool(state.get('last_reachable', False)),
             'pending': pending, 'local_packages': len(packages),
@@ -384,9 +534,22 @@ def sync_pending_backup_packages(database, target_directory=None, environ=None):
         state.update({'last_reachable': False, 'last_error': 'invalid_configuration'})
         _write_sync_state(database, state)
         return {**backup_sync_status(database, target_directory, environ), 'synced': 0}
+    if target is not None or drive is not None:
+        configured_id = _retention_target_id(target, environ)
+        if state.get('last_configured_backup_target') != configured_id:
+            state['last_configured_backup_target'] = configured_id
+            _write_sync_state(database, state)
     if target is None and drive is None:
         state.update({'last_reachable': False, 'last_error': None})
         _write_sync_state(database, state)
+        # A vanished Drive configuration is not consent to discard its pending
+        # outbox. Local-only rotation is for installations with no known target.
+        if not state.get('last_configured_backup_target'):
+            try:
+                _retire_verified_packages(database, state, None, None, None, environ)
+            except (OSError, ValueError, zipfile.BadZipFile, KeyError):
+                state['last_error'] = 'retention_failed'
+                _write_sync_state(database, state)
         return {**backup_sync_status(database, target_directory, environ), 'synced': 0}
     if target is not None:
         try:
@@ -408,6 +571,8 @@ def sync_pending_backup_packages(database, target_directory=None, environ=None):
         _write_sync_state(database, state)
         return {**backup_sync_status(database, target_directory, environ), 'synced': 0}
     for source in packages:
+        if source.name in state.get('retiring_packages', {}):
+            continue
         try:
             # A cached restore check is reusable only for the exact current bytes.
             cached = verified_packages.get(source.name)
@@ -475,7 +640,34 @@ def sync_pending_backup_packages(database, target_directory=None, environ=None):
     if copied or (packages and not errors):
         state['last_drive_sync'] = now
     _write_sync_state(database, state)
+    if not errors:
+        try:
+            # Include the just-uploaded package and fail closed if the fresh
+            # Drive listing is incomplete or unavailable.
+            if drive is not None:
+                drive_entries = _drive_backup_entries(drive)
+            _retire_verified_packages(database, state, target, drive, drive_entries, environ)
+        except (OSError, ValueError, DriveApiError, zipfile.BadZipFile, KeyError):
+            state['last_error'] = 'retention_failed'
+            _write_sync_state(database, state)
     return {**backup_sync_status(database, target_directory, environ), 'synced': copied}
+
+
+def _automatic_backup_due(state, now):
+    """Limit automatic snapshots to one every 15 minutes after a valid receipt."""
+    last = state.get('last_local_backup')
+    if not isinstance(last, str):
+        return True
+    try:
+        created = datetime.fromisoformat(last)
+        if created.tzinfo is None:
+            return True
+        elapsed = now - created.astimezone(UTC)
+    except (TypeError, ValueError, OverflowError):
+        return True
+    # A small backward clock jump must not manufacture a new backup. A large
+    # jump stays blocked too until wall time catches up or state is reviewed.
+    return elapsed >= _AUTOMATIC_BACKUP_INTERVAL
 
 
 @_serialized_backup_state
@@ -489,9 +681,11 @@ def maintain_backup(store, database, target_directory=None, environ=None):
     created = False
     package = None
     dirty = state.get('dirty_generation') != state.get('backed_up_generation')
-    if (dirty or state.get('database_signature') != signature
-            or state.get('reporting_history_signature') != reporting_history_signature
-            or not _local_packages(database)):
+    existing_packages = _local_packages(database)
+    needs_backup = (dirty or state.get('database_signature') != signature
+                    or state.get('reporting_history_signature') != reporting_history_signature
+                    or not existing_packages)
+    if needs_backup and (not existing_packages or _automatic_backup_due(state, datetime.now(UTC))):
         package = create_backup_package(store, database)
         verified = verify_backup_package(
             outside_repository(database.parent / package['download_url'].lstrip('/')),
@@ -505,6 +699,8 @@ def maintain_backup(store, database, target_directory=None, environ=None):
         state['last_local_backup'] = datetime.now(UTC).isoformat()
         state['last_local_package'] = package['download_url'].rsplit('/', 1)[-1]
         state.setdefault('verified_packages', {})[state['last_local_package']] = verified
+        state.setdefault('automatic_packages', {})[state['last_local_package']] = (
+            state['last_local_backup'])
         _write_sync_state(database, state)
         created = True
     result = sync_pending_backup_packages(database, target_directory, environ)

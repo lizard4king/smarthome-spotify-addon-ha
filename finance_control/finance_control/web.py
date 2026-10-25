@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import threading
 import time
+import zipfile
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -1432,6 +1433,18 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 return self.dynamic_get(url)
 
         def dynamic_get(self, url):
+            if url.path == '/api/administration/backup-retention-plan':
+                if (administration is None or self.management_user is None
+                        or self.management_user.get('role') != 'admin'):
+                    return self.reply(403, {'error': 'Administratorfreigabe erforderlich.'})
+                from .backup_retention_maintenance import (
+                    RetentionPlanError, prepare_retention_plan,
+                )
+                try:
+                    return self.reply(200, prepare_retention_plan(app.database))
+                except (RetentionPlanError, OSError, ValueError, zipfile.BadZipFile,
+                        sqlite3.Error):
+                    return self.reply(409, {'error': 'Sicherungsbestand muss geprüft werden.'})
             if re.fullmatch(r'/exports/[0-9a-f]{32}\.(csv|json|zip)', url.path):
                 path = (app.database.parent / 'exports' / url.path.rsplit('/', 1)[1]).resolve()
                 if not path.is_relative_to(app.database.parent) or not path.is_file():
@@ -1749,10 +1762,17 @@ def main():
                 normalize_profile(profile)
             except (OSError, ValueError, KeyError, TypeError):
                 parser.exit(2, 'Gültiges Profil im Datenordner nicht gefunden.\n')
+    options = _load_addon_options(args.options_file) if args.options_file else {}
+    approval = options.get('backup_retention_plan_sha256')
+    if args.options_file and not args.demo and approval:
+        from .backup_retention_maintenance import apply_approved_retention_plan
+        try:
+            apply_approved_retention_plan(database, approval)
+        except Exception:  # Plan errors must not prevent the cockpit from starting.
+            print('Finance Control: Backup-Retention benötigt manuellen Abgleich.', flush=True)
     app = Cockpit(database, demo=args.demo, profile=profile)
     if args.demo:
         seed_demo(app)
-    options = _load_addon_options(args.options_file) if args.options_file else {}
     access_token, token_source = resolve_access_token(
         args.host, options, os.environ, no_app_auth=args.no_app_auth,
         token_file=root / 'app_access_token' if root.is_dir() else None)

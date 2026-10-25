@@ -367,6 +367,20 @@ class GoogleDriveApi:
             raise DriveApiError("drive_upload_failed") from None
         return self._upload(relative, media, expected_size=size, expected_md5=checksum)
 
+    def remove_verified_file(self, relative: str, *, expected_size: int,
+                             expected_md5: str) -> None:
+        """Permanently remove an exact copy and confirm its name is absent."""
+        clean, parent_id, item = self._resolve_file(relative)
+        if item is None:
+            raise DriveApiError("drive_file_not_found")
+        if (self._size(item) != expected_size
+                or str(item.get("md5Checksum") or "").lower() != expected_md5):
+            raise DriveApiError("drive_retention_copy_changed")
+        self._execute(self.service.files().delete(fileId=item["id"]),
+                      "drive_retention_delete_failed")
+        if self._child(parent_id, PurePosixPath(clean).name) is not None:
+            raise DriveApiError("drive_retention_delete_unconfirmed")
+
     @staticmethod
     def _file_metadata(source: Path) -> tuple[int, str]:
         size = 0

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.72
+
+- Automatische Sicherungen auf zwei geprüfte Stände begrenzt und Änderungen in 15-Minuten-Abständen gebündelt. Manuelle und historische Pakete ohne Herkunftsnachweis bleiben geschützt.
+- Endgültige Drive-Rotation nach frischer Größen-/Prüfsummenprüfung; unvollständige Löschvorgänge werden dauerhaft protokolliert und bei Zielwechsel angehalten.
+- Einmalige lokale Altbestandsbereinigung ausschließlich über den exakten SHA-256-Wert eines privat geprüften Plans; zwei vollständige Sicherungspaare bleiben erhalten.
+- Native Ausschlüsse, Startskript und Tresor unverändert. Tokenfreier Guard an 0.2.72 gebunden; reale Wiederherstellung bleibt gesondert zu prüfen.
+
 ## 0.2.70
 
 - Keep future native Finance-only backups compact by excluding generated package ZIPs, their partial files and local SQLite snapshot copies from their fixed output paths. No local file is removed or backup generation changed.
