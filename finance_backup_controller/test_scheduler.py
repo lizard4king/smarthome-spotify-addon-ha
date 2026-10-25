@@ -252,6 +252,7 @@ class Tests(unittest.TestCase):
         self.assertIs(OPTIONS["enabled"], False)
         self.assertIs(OPTIONS["inspect_only"], False)
         self.assertIs(OPTIONS["apply_retention"], False)
+        self.assertEqual(OPTIONS["retained_backups"], 2)
         for forbidden in ("ports", "map", "host_network", "docker_api", "privileged", "devices"):
             self.assertNotIn(forbidden, MANIFEST)
         dockerfile = (HERE / "Dockerfile").read_text()
@@ -259,6 +260,27 @@ class Tests(unittest.TestCase):
         self.assertNotIn("pip", dockerfile)
         for image in json.loads((HERE / "build.json").read_text())["build_from"].values():
             self.assertTrue(image.startswith("ghcr.io/home-assistant/"))
+
+    def test_retention_option_is_bounded_and_passed_only_when_enabled(self):
+        legacy = {key: value for key, value in OPTIONS.items() if key != "retained_backups"}
+        self.assertEqual(scheduler.options_validate(legacy), CONFIG)
+        for value in (False, 1, 0, 101, "2"):
+            with self.subTest(value=value), self.assertRaises(controller.SafetyStop):
+                scheduler.options_validate(OPTIONS | {"retained_backups": value})
+        self.enable(retention=True)
+        calls = []
+        def invoke(args):
+            calls.append(args)
+            state = controller.State(self.state_path, CONFIG)
+            state.data["owned"].append({"backup_id": "new", "name": "finance-only-new",
+                                        "created_utc": NOW.isoformat()})
+            state.save()
+            return 0
+        self.options_path.write_text(json.dumps(OPTIONS | {"enabled": True, "apply_retention": True,
+                                                    "retained_backups": 3, "run_once_now": True}))
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(scheduler.serve(self.data, clock=lambda: NOW, invoke=invoke), 0)
+        self.assertEqual(calls[0][-3:-1], ["--retained-backups", "3"])
 
     def test_falsy_non_null_intents_block_scheduler_without_execution(self):
         self.enable()

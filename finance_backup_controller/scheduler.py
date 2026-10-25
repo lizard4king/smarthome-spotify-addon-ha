@@ -21,11 +21,14 @@ class StopRequested(BaseException):
 
 
 def options_validate(options):
-    keys = {"enabled", "inspect_only", "initialize_ui", "reconcile_pending", "run_once_now", "apply_retention", "addon_slug", "local_agent_id", "drive_agent_id"}
-    if not isinstance(options, dict) or set(options) != keys:
+    keys = {"enabled", "inspect_only", "initialize_ui", "reconcile_pending", "run_once_now", "apply_retention", "retained_backups", "addon_slug", "local_agent_id", "drive_agent_id"}
+    if not isinstance(options, dict) or set(options) not in (keys, keys - {"retained_backups"}):
         raise controller.SafetyStop("Invalid app option keys")
     if any(type(options[flag]) is not bool for flag in ("enabled", "inspect_only", "initialize_ui", "reconcile_pending", "run_once_now", "apply_retention")):
         raise controller.SafetyStop("App flags must be boolean")
+    retained_backups = options.get("retained_backups", 2)
+    if type(retained_backups) is not int or not 2 <= retained_backups <= 100:
+        raise controller.SafetyStop("Retained backup count must be from 2 to 100")
     if sum(options[flag] for flag in ("inspect_only", "initialize_ui", "reconcile_pending", "run_once_now")) > 1:
         raise controller.SafetyStop("Setup modes must not be combined")
     if options["inspect_only"] or options["initialize_ui"]:
@@ -119,7 +122,8 @@ def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspec
         config_path.write_text(json.dumps(config, sort_keys=True), encoding="utf-8")
         args = ["--config", str(config_path), "--state", str(state_path), "--run-once"]
         if options["apply_retention"]:
-            args.append("--apply-retention")
+            args.extend(["--apply-retention", "--retained-backups",
+                         str(options.get("retained_backups", 2))])
         if options["run_once_now"]:
             args.append("--run-now")
         if invoke(args) != 0:
