@@ -195,5 +195,115 @@ class RecoveryTests(unittest.TestCase):
         self.assertIsNotNone(json.loads(self.path.read_text())["pending"])
 
 
+class DeletedBackupTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "synthetic-state.json"
+        self.state = controller.State(self.path, CONFIG)
+        self.old_id = "synthetic-deleted"
+        self.kept = [backup() | {"backup_id": "synthetic-kept-1"},
+                     backup() | {"backup_id": "synthetic-kept-2",
+                                 "name": "finance-only-" + "b" * 32,
+                                 "date": (START + timedelta(days=7)).isoformat()}]
+        self.state.data["owned"] = [
+            {"backup_id": self.old_id, "name": "finance-only-" + "c" * 32,
+             "created_utc": (START - timedelta(days=7)).isoformat()},
+            *[{"backup_id": b["backup_id"], "name": b["name"], "created_utc": b["date"]}
+              for b in self.kept]]
+        self.state.save()
+        self.api = API()
+        self.api.backups = deepcopy(self.kept)
+
+    def reject(self, identifier=None):
+        disk = self.path.read_bytes()
+        memory = deepcopy(self.state.data)
+        with self.assertRaises(controller.SafetyStop) as result:
+            recovery.forget_deleted_backup(self.api, self.state,
+                                           self.old_id if identifier is None else identifier)
+        self.assertEqual(str(result.exception), recovery.FORGET_STOP)
+        self.assertEqual(self.path.read_bytes(), disk)
+        self.assertEqual(self.state.data, memory)
+        self.assertTrue(all(call["type"] in {"verify_addon", "backup/info", "backup/details"}
+                            for call in self.api.calls))
+
+    def test_success_two_snapshots_one_local_save(self):
+        with patch.object(self.state, "save", wraps=self.state.save) as save:
+            self.assertEqual(recovery.forget_deleted_backup(self.api, self.state, self.old_id),
+                             recovery.FORGET_SUCCESS)
+        save.assert_called_once()
+        self.assertEqual([c["type"] for c in self.api.calls],
+                         ["verify_addon", "backup/info", "backup/details", "backup/details",
+                          "backup/info", "backup/details", "backup/details"])
+        loaded = controller.State(self.path, CONFIG)
+        self.assertEqual([r["backup_id"] for r in loaded.data["owned"]],
+                         ["synthetic-kept-1", "synthetic-kept-2"])
+        self.assertIsNone(loaded.data["pending"])
+        self.assertIsNone(loaded.data["delete_intent"])
+
+    def test_selected_id_absent_only_and_two_remaining_required(self):
+        self.reject("synthetic-not-owned")
+        self.reject("")
+        self.reject(" synthetic-deleted")
+        self.api.backups.append(backup() | {"backup_id": self.old_id})
+        self.reject()
+        self.api.backups.pop()
+        self.state.data["owned"].pop()
+        self.state.save()
+        self.reject()
+
+    def test_selected_id_must_be_older_than_two_remaining(self):
+        self.state.data["owned"][0]["created_utc"] = (START + timedelta(days=14)).isoformat()
+        self.state.save()
+        self.reject()
+
+    def test_uncertainty_or_changed_snapshot_never_saves(self):
+        for field in ("pending", "delete_intent"):
+            self.state.data[field] = {}
+            self.state.save()
+            self.reject()
+            self.assertEqual(self.api.calls, [])
+            self.state.data[field] = None
+            self.state.save()
+        self.api.state = "create_backup"
+        self.reject()
+        self.api.state = "idle"
+        self.api.errors = {"synthetic.drive": "unavailable"}
+        self.reject()
+        self.api.errors = {}
+        self.api.detail_errors = {"synthetic.drive": "unavailable"}
+        self.reject()
+        self.api.detail_errors = {}
+        self.api.backups[0]["agents"]["synthetic.drive"]["size"] = 0
+        self.reject()
+        self.api.backups = deepcopy(self.kept)
+        self.api.inventories = 0
+        self.api.after_first_inventory = lambda: self.api.backups[0]["agents"]["synthetic.drive"].update(size=456)
+        self.reject()
+
+    def test_guard_and_save_error_redacted_without_retry(self):
+        self.api.verify_failure = True
+        self.reject()
+        self.api.verify_failure = False
+        with patch.object(controller.os, "replace", side_effect=OSError("SYNTHETIC_PRIVATE_DIAGNOSTIC")):
+            self.reject()
+        self.assertEqual(len(list(self.path.parent.iterdir())), 1)
+
+    def test_error_after_atomic_replace_is_not_retried(self):
+        original_save = self.state.save
+        calls = []
+        def save_then_fail():
+            calls.append(True)
+            original_save()
+            raise OSError("SYNTHETIC_PRIVATE_DIAGNOSTIC")
+        with patch.object(self.state, "save", side_effect=save_then_fail):
+            with self.assertRaises(controller.SafetyStop) as result:
+                recovery.forget_deleted_backup(self.api, self.state, self.old_id)
+        self.assertEqual(str(result.exception), recovery.FORGET_STOP)
+        self.assertEqual(calls, [True])
+        self.assertIn(self.old_id, {r["backup_id"] for r in self.state.data["owned"]})
+        self.assertNotIn(self.old_id, {r["backup_id"] for r in controller.State(self.path, CONFIG).data["owned"]})
+
+
 if __name__ == "__main__":
     unittest.main()

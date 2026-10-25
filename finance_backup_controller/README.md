@@ -1,10 +1,20 @@
 # Finance Backup Controller — kanonisches Prüf- und Veröffentlichungspaket
 
-Dieses eigenständige HA-App-Paket enthält genau **eine** `controller.py`. Die synthetischen Tests prüfen diese Fassung und das explizite Recovery-Modul direkt. Die älteren Root-/`addon/`-Fassungen außerhalb dieses Ordners gehören nicht zu diesem Veröffentlichungspaket. Version 0.1.2 ergänzt die Aufbewahrung von mindestens zwei eigenen vollständigen Sicherungen und die Freigabe für Finance 0.2.71 und 0.2.72. Eine synthetische Prüfung ersetzt keine praktische Transfer- oder Wiederherstellungsabnahme.
+Dieses eigenständige HA-App-Paket enthält genau **eine** `controller.py`. Die synthetischen Tests prüfen diese Fassung und das explizite Recovery-Modul direkt. Die älteren Root-/`addon/`-Fassungen außerhalb dieses Ordners gehören nicht zu diesem Veröffentlichungspaket. Version 0.1.3 ergänzt einen ausdrücklich gewählten Einmalabgleich für eine bereits extern gelöschte eigene Backup-ID. Eine synthetische Prüfung ersetzt keine praktische Transfer- oder Wiederherstellungsabnahme.
 
 Der prüfbare Ablauf ist in [flow.svg](flow.svg) und [flow.png](flow.png) dargestellt.
 
+## Version 0.1.3: Bereits gelöschte eigene ID abgleichen
+
+Nach einer separat freigegebenen externen Löschung kann eine eigene ID noch in `/data/controller-state.json` stehen. Für genau diese ID `enabled: true` und `forget_deleted_backup_id: "<eigene Backup-ID>"` setzen. Der Standardwert ist `""`; ältere Optionsdateien ohne Feld bleiben gültig. Dieser Modus ist mit `inspect_only`, `initialize_ui`, `reconcile_pending` und `run_once_now` unvereinbar und endet nach einem Versuch. `enabled: false` bleibt ohne Netzwerk- und Zustandszugriff. [Prüfdiagramm](forget_deleted.svg) ([PNG](forget_deleted.png)).
+
+Die ID muss im eigenen Zustand stehen; `pending` und `delete_intent` müssen exakt `null` sein. Mindestens zwei verbleibende eigene Sicherungen müssen jünger als die gewählte ID sein. Nach aktueller Finance-Guard-Prüfung liest der Controller zweimal einen freien Backupmanager ohne Agentfehler. Die gewählte ID muss in beiden Inventaren fehlen. Mindestens zwei andere eigene IDs müssen jeweils in Inventar und Details unverändert als Finance-only-Sicherung mit beiden verschlüsselten physischen Kopien, positiven Größen und ohne Fehler bestätigt werden. Beide Schnappschüsse müssen übereinstimmen. Erst danach entfernt genau ein atomarer lokaler Schreibvorgang die gewählte ID aus `owned`. Es gibt keinen Backup-, Lösch- oder HA-Konfigurationsbefehl und keine automatische Bereinigung anderer fehlender IDs.
+
+Bei unklarer API-Antwort oder Schreibfehler gibt es keinen zweiten Versuch und keinen State-Reset; den Stand zuerst prüfen. Ein Fehler nach dem atomaren Dateiaustausch kann den lokalen Zustand bereits geändert haben. Nach Erfolg `forget_deleted_backup_id` wieder auf `""` setzen, bevor der normale Wochenbetrieb gestartet wird. Die Auswahl einer konkreten ID ist eine Betreiberhandlung; die Software ermittelt sie nicht selbst.
+
 ## Version 0.1.2: Zwei vollständige eigene Sicherungen
+
+Der Wartungswert `backup_retention_plan_sha256` von Finance 0.2.72 ist leer oder eine streng geprüfte SHA-256-Prüfsumme einer ausdrücklich freigegebenen lokalen Altbestandsliste. Er enthält keine Zugangsdaten und ändert die nativen Datei- und Tresorausschlüsse nicht. Seine einmalige lokale Bereinigung ist vom hier beschriebenen nativen Controller getrennt.
 
 `retained_backups` ist standardmäßig `2` und lässt ganze Zahlen von 2 bis 100 zu. Eine vorhandene Optionsdatei der Version 0.1.1 ohne dieses Feld verwendet ebenfalls den Wert 2. Der Controller rotiert nur nach einer neuen, vollständig geprüften und dauerhaft gespeicherten Finance-Sicherung und nur mit `apply_retention: true`. Er prüft vor der ersten Löschung alle eigenen Sicherungen erneut auf ID, Namen, Zeit, Finance-Inhalt und zwei vorhandene, verschlüsselte physische Kopien. Die jüngsten `retained_backups` bleiben erhalten; ältere eigene IDs werden einzeln mit dauerhaftem Lösch-Intent entfernt. Fremde Sicherungen werden nicht gelöscht. Fehlende oder veränderte Metadaten stoppen vor der ersten Löschung; ein unklarer Löschaufruf blockiert jeden Folgelauf bis zur manuellen Klärung.
 

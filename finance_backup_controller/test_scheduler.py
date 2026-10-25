@@ -62,6 +62,58 @@ class Tests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "Pending backup reconciled; no backup created or deleted\n")
         self.assertEqual({p.name: p.read_bytes() for p in self.data.iterdir()}, before)
 
+    def test_deleted_id_mode_is_explicit_single_shot_and_disabled_is_offline(self):
+        identifier = "synthetic-deleted"
+        self.options_path.write_text(json.dumps(OPTIONS | {"forget_deleted_backup_id": identifier}))
+        def forbidden(*args): self.fail("Disabled mode attempted work")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(scheduler.serve(self.data, forget=forbidden, invoke=forbidden), 0)
+        self.options_path.write_text(json.dumps(OPTIONS | {"enabled": True,
+                                                           "forget_deleted_backup_id": identifier}))
+        self.state_path.write_text("preserved-synthetic-state")
+        before = {p.name: p.read_bytes() for p in self.data.iterdir()}
+        calls = []
+        def forget(config, state_path, selected):
+            calls.append((config, state_path, selected))
+            return "Deleted backup ID reconciled; no backup created or deleted"
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(scheduler.serve(self.data, forget=forget, invoke=forbidden,
+                                             sleep=forbidden, clock=forbidden), 0)
+        self.assertEqual(calls, [(CONFIG, self.state_path, identifier)])
+        self.assertEqual(output.getvalue(), "Deleted backup ID reconciled; no backup created or deleted\n")
+        self.assertEqual({p.name: p.read_bytes() for p in self.data.iterdir()}, before)
+        for mode in ("inspect_only", "initialize_ui", "reconcile_pending", "run_once_now"):
+            with self.subTest(mode=mode), self.assertRaises(controller.SafetyStop):
+                scheduler.options_validate(OPTIONS | {"forget_deleted_backup_id": identifier, mode: True})
+        legacy = {k: v for k, v in OPTIONS.items() if k not in {"retained_backups", "forget_deleted_backup_id"}}
+        self.assertEqual(scheduler.options_validate(legacy), CONFIG)
+
+    def test_deleted_id_wrapper_prerequisites_and_one_socket(self):
+        identifier = "synthetic-deleted"
+        def forbidden(*args, **kwargs): self.fail("Unsafe connection")
+        with self.assertRaises(controller.SafetyStop):
+            scheduler.forget_deleted_once(CONFIG, self.state_path, identifier,
+                                          socket_factory=forbidden, environ={})
+        controller.State(self.state_path, CONFIG).save()
+        class Socket:
+            def __init__(self):
+                self.frames = [json.dumps({"type": "auth_required"}),
+                               json.dumps({"type": "auth_ok", "ha_version": "2026.9.4"})]
+                self.sent, self.closed = [], 0
+            def settimeout(self, value): pass
+            def recv(self): return self.frames.pop(0)
+            def send(self, value): self.sent.append(json.loads(value))
+            def close(self): self.closed += 1
+        socket = Socket()
+        with patch("recovery.forget_deleted_backup", return_value="synthetic-success") as recover:
+            result = scheduler.forget_deleted_once(CONFIG, self.state_path, identifier,
+                         socket_factory=lambda url, timeout: socket,
+                         environ={"SUPERVISOR_TOKEN": "synthetic-token"})
+        self.assertEqual(result, "synthetic-success")
+        self.assertEqual([message["type"] for message in socket.sent], ["auth"])
+        self.assertEqual(socket.closed, 1)
+        self.assertEqual(recover.call_args.args[2], identifier)
+
     def test_reconciliation_disabled_conflicting_or_failed_never_retries(self):
         self.assertIs(OPTIONS["reconcile_pending"], False)
         self.options_path.write_text(json.dumps(OPTIONS | {"reconcile_pending": True}))

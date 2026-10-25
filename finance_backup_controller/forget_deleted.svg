@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="455" viewBox="0 0 1200 455">
+  <rect width="1200" height="455" fill="#ffffff"/>
+  <style>
+    .title{font:700 27px Arial,sans-serif;fill:#17324d}
+    .sub{font:16px Arial,sans-serif;fill:#354c60}
+    .head{font:700 17px Arial,sans-serif;fill:#17324d}
+    .body{font:15px Arial,sans-serif;fill:#354c60}
+    .box{fill:#eef6fa;stroke:#4c83a4;stroke-width:1.5}
+    .stop{fill:#fff4e8;stroke:#cc8838;stroke-width:1.5}
+    .arrow{stroke:#486a81;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#486a81"/></marker></defs>
+  <text x="48" y="48" class="title">Einmalabgleich einer bereits gelöschten eigenen Backup-ID</text>
+  <text x="48" y="77" class="sub">Explizite ID · nur Leseaufrufe an Home Assistant · genau eine lokale Zustandsänderung</text>
+  <rect x="48" y="110" width="335" height="111" rx="10" class="box"/>
+  <text x="68" y="142" class="head">1. Voraussetzungen</text>
+  <text x="68" y="172" class="body">ID gehört zu owned; keine offenen Intents.</text>
+  <text x="68" y="198" class="body">Aktueller Finance-Guard besteht.</text>
+  <path d="M383 165H421" class="arrow"/>
+  <rect x="423" y="110" width="335" height="111" rx="10" class="box"/>
+  <text x="443" y="142" class="head">2. Zwei frische Schnappschüsse</text>
+  <text x="443" y="172" class="body">Manager idle, keine Agentfehler.</text>
+  <text x="443" y="198" class="body">Gewählte ID in beiden Inventaren abwesend.</text>
+  <path d="M758 165H796" class="arrow"/>
+  <rect x="798" y="110" width="354" height="111" rx="10" class="box"/>
+  <text x="818" y="142" class="head">3. Verbleibende Sicherungen</text>
+  <text x="818" y="172" class="body">Mindestens zwei eigene Finance-only-IDs.</text>
+  <text x="818" y="198" class="body">Je zwei verschlüsselte Kopien, Größe &gt; 0.</text>
+  <path d="M974 221V255" class="arrow"/>
+  <rect x="798" y="257" width="354" height="111" rx="10" class="box"/>
+  <text x="818" y="289" class="head">4. Lokalen Zustand anpassen</text>
+  <text x="818" y="319" class="body">Nur gewählte ID aus owned entfernen.</text>
+  <text x="818" y="345" class="body">Atomar speichern; danach Modus leeren.</text>
+  <rect x="48" y="257" width="710" height="111" rx="10" class="stop"/>
+  <text x="68" y="289" class="head">Jede Abweichung → Stop</text>
+  <text x="68" y="319" class="body">Kein generate, delete oder HA-Konfigurationsupdate. Kein Retry und kein State-Reset.</text>
+  <text x="68" y="345" class="body">Bei Schreibfehler Zustand prüfen: der atomare Austausch könnte bereits erfolgt sein.</text>
+  <text x="48" y="423" class="sub">Grenze: Inventar und Details sind Metadaten; eine Wiederherstellungsprobe ist eine separate Abnahme.</text>
+</svg>
