@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "d5e1f3dbcf865c9addbb164cb090afee4db7221d877c623f6ae713f290460e51",
-  "addon_version": "0.2.71",
+  "addon_tree_sha256": "b513025344f5904e424a61a0284fa1490c61e44739617e71f1b7cd2c41a886d8",
+  "addon_version": "0.2.72",
   "deployment_files": {
-    "Dockerfile": "68dbd059aa4ed1cdbd4c050cdbe5c67f733f5b06377e9b9cba6a3b1113b36e43",
-    "README.md": "ba0d701097b92730ec179a35b46f34382c2a883befec798c20781b26683e74a4",
+    "Dockerfile": "7f77888e8386d3654f57466fb15a2f48f2ece11eba8df30eb89ee8c38ba81096",
+    "README.md": "21e0af181ab7f2961c0244acd4532c48b14f7e1aaf08e4458d26473cdd76bcd2",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "8ecde40071f35b4557dcc5656861110c671ed5846a4589b7b79944f4dd11b70f",
+    "config.yaml": "0bf2caaafcfdce0b4fa10de0b0a0a63fd0ea7c54a5e54726bc2b499539e686e7",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -29,8 +29,9 @@
     "analytics.py": "56995dff1b46bf57cbf9d8c5c21dd7c35fdc982edd1257758eda6d77df995e7a",
     "approval_queue.py": "695768a0a9710ef09cb3415d15db8e0419ae64da845f93fb87e725dc755d4489",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
-    "backup_guard.py": "81ffe2ec82314df227c3130d0c5e7793434cff6346e5299f7f15ff2173b6e61b",
-    "backup_package.py": "2395d83e042a2edc41c01b770bcc7584b437023d66a3e02caf10d6311314030a",
+    "backup_guard.py": "66bf10092f6b9636ccdccfefccfeb6bc30ae9a2d247962e385f81f45949167c4",
+    "backup_package.py": "af18739a1e38ecbc4b80612252914d36e38e69fe51d7915add042a5e2a86f290",
+    "backup_retention_maintenance.py": "5ec98b0352fc04de6bcba71f3753f171bafca841e5174405e35e43597ca8e0b9",
     "bank_account_policy.py": "7c5366d8a6d7dc4070c0a33fe62be3334c4202a69f14b437f0c39d9ebd6b9881",
     "bank_archive.py": "c26d45d7642e21af36f1d94576c77e30437b4f5aa14f9ec393c2d6a6da9922bf",
     "bank_archive_import.py": "db10f48c0f676f8f1d9fbe35ca620fefb032d65974541d82ea36cf527d640375",
@@ -68,7 +69,7 @@
     "current_balances.py": "c4cd8fc2ec450e610300a133c3d8fb740437445625765f7217839987a73a15be",
     "dashboard.py": "b547870c49e5de6b51cb4a2a5f554598382a10a93a1a91364fbaba3c080ea4a8",
     "document_intake.py": "60ce3dc8928990bc2c0c5ff3b1764c6f9e7e001c209698f509772a86c9cbeeda",
-    "drive_api.py": "c728c4ffaad59e866fbec1c629846d186e2f36e09daf92f1f4bb144e8288fb04",
+    "drive_api.py": "9cbd1913c80d74fce4775a0468b1b56058e662857a6c8368c56effd8d2fadbb9",
     "file_import.py": "0360f863d633aa4bd3d52ff8e70494ea384e9b44cdbd4aba777e34d8b106e062",
     "finanzguru_day_end.py": "61850129badf849071f140229459991f42fb9c1e4d7c3ea7016417cf104ebde9",
     "finanzguru_import.py": "3d68f9339b8c76127d59eff846e2864f4bfc64e3abdcddaed29899ec89b1c6b1",
@@ -506,9 +507,9 @@
     "transfer_corrections.py": "2f3cb0687cca7a4f7963e9d8324c860544237100647b3b9761be4bdb210af256",
     "transfer_notices.py": "26e8c397d7f5470fa31e8ab52a5720372b1d461aa6d010b3364d4ba7f0543ba5",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
-    "web.py": "b64c7779e88cf3cc2fdbb3c76c4aa035002bf0824906e7c270cdf7ea6103ef72"
+    "web.py": "8c3a6387fbb91e74523e31a2e76d45ffc2721fed509166cd66b3980cfc957646"
   },
   "schema_version": 1,
-  "source_commit": "651abd7fadb611df1f51466a4e996517712255b8",
-  "source_tree_sha256": "047fc4aaf29e91e3bfe94b3abce11ecdc762df367f5dd882029bd8c99fc0bb30"
+  "source_commit": "2c48d7c356e928e85d629b6066dd8e1216f02664",
+  "source_tree_sha256": "acac94a5c9aae64d385452b9b4d5dee393698deba0cf84022a1bfc7b5310e507"
 }

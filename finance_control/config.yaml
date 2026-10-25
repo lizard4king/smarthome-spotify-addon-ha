@@ -1,7 +1,7 @@
 name: Finance Control
 slug: finance_control
 description: Privates Finance-Control-Cockpit als Home-Assistant-Add-on
-version: "0.2.71"
+version: "0.2.72"
 arch:
   - amd64
   - aarch64
@@ -16,6 +16,7 @@ options:
   cloudflare_audience: ""
   administrator_email: ""
   fints_product_id: ""
+  backup_retention_plan_sha256: ""
 schema:
   access_token: password?
   require_app_token: bool
@@ -23,6 +24,7 @@ schema:
   cloudflare_audience: str?
   administrator_email: str?
   fints_product_id: str?
+  backup_retention_plan_sha256: "match(^$|^[a-f0-9]{64}$)"
 stdin: true
 backup: cold
 backup_exclude:
