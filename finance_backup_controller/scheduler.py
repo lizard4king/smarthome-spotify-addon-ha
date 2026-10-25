@@ -21,15 +21,19 @@ class StopRequested(BaseException):
 
 
 def options_validate(options):
-    keys = {"enabled", "inspect_only", "initialize_ui", "reconcile_pending", "run_once_now", "apply_retention", "retained_backups", "addon_slug", "local_agent_id", "drive_agent_id"}
-    if not isinstance(options, dict) or set(options) not in (keys, keys - {"retained_backups"}):
+    keys = {"enabled", "inspect_only", "initialize_ui", "reconcile_pending", "forget_deleted_backup_id", "run_once_now", "apply_retention", "retained_backups", "addon_slug", "local_agent_id", "drive_agent_id"}
+    optional = {"retained_backups", "forget_deleted_backup_id"}
+    if not isinstance(options, dict) or not keys - optional <= set(options) <= keys:
         raise controller.SafetyStop("Invalid app option keys")
     if any(type(options[flag]) is not bool for flag in ("enabled", "inspect_only", "initialize_ui", "reconcile_pending", "run_once_now", "apply_retention")):
         raise controller.SafetyStop("App flags must be boolean")
     retained_backups = options.get("retained_backups", 2)
     if type(retained_backups) is not int or not 2 <= retained_backups <= 100:
         raise controller.SafetyStop("Retained backup count must be from 2 to 100")
-    if sum(options[flag] for flag in ("inspect_only", "initialize_ui", "reconcile_pending", "run_once_now")) > 1:
+    forget_id = options.get("forget_deleted_backup_id", "")
+    if not isinstance(forget_id, str) or forget_id != forget_id.strip():
+        raise controller.SafetyStop("Invalid deleted backup ID option")
+    if sum(options[flag] for flag in ("inspect_only", "initialize_ui", "reconcile_pending", "run_once_now")) + bool(forget_id) > 1:
         raise controller.SafetyStop("Setup modes must not be combined")
     if options["inspect_only"] or options["initialize_ui"]:
         return None  # Configured source/destination placeholders are unused.
@@ -66,6 +70,34 @@ def reconcile_once(config, state_path, now, *, socket_factory=None, environ=None
         raise controller.SafetyStop("Pending reconciliation stopped; inspect existing state without retry") from None
 
 
+def forget_deleted_once(config, state_path, backup_id, *, socket_factory=None, environ=None):
+    """One read-only remote check followed by one local state update."""
+    from recovery import forget_deleted_backup, FORGET_STOP
+    token = (os.environ if environ is None else environ).get("SUPERVISOR_TOKEN")
+    if not isinstance(token, str) or not token or not Path(state_path).is_file():
+        raise controller.SafetyStop(FORGET_STOP)
+    socket = None
+    try:
+        with controller.lock(state_path):
+            state = controller.State(state_path, config)
+            if socket_factory is None:
+                import websocket
+                websocket.enableTrace(False)
+                socket_factory = websocket.create_connection
+            socket = socket_factory("ws://supervisor/core/websocket", timeout=30)
+            try:
+                api = controller.HA(socket)
+                api.authenticate(token)
+                token = None
+                result = forget_deleted_backup(api, state, backup_id)
+            finally:
+                if socket is not None:
+                    socket.close()
+        return result
+    except Exception:
+        raise controller.SafetyStop(FORGET_STOP) from None
+
+
 def next_delay(state, now):
     """UTC cadence from last successful backup, never from missed calendar slots."""
     state.require_clear()
@@ -80,7 +112,7 @@ def next_delay(state, now):
     return min(MAX_SLEEP, max(0, (last + WEEK - now).total_seconds()))
 
 
-def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspect=None, initialize=None, reconcile=None):
+def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspect=None, initialize=None, reconcile=None, forget=None):
     """Read options every hour at most; a failed one-shot is never retried here."""
     clock = clock or (lambda: datetime.now(timezone.utc))
     sleep = sleep or time.sleep
@@ -88,6 +120,7 @@ def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspec
     inspect = inspect or controller.inspect_configuration
     initialize = initialize or controller.initialize_native_ui
     reconcile = reconcile or reconcile_once
+    forget = forget or forget_deleted_once
     data_dir = Path(data_dir)
     options_path = data_dir / "options.json"
     state_path = data_dir / "controller-state.json"
@@ -109,6 +142,9 @@ def serve(data_dir=Path("/data"), *, clock=None, sleep=None, invoke=None, inspec
         if options["reconcile_pending"]:
             print(reconcile(config, state_path, clock()))
             return 0  # Never generate, prune or schedule after reconciliation.
+        if options.get("forget_deleted_backup_id", ""):
+            print(forget(config, state_path, options["forget_deleted_backup_id"]))
+            return 0  # Never generate, prune or schedule after this one-shot.
         state = controller.State(state_path, config)
         previous_ids = {record["backup_id"] for record in state.data["owned"]}
         delay = next_delay(state, clock())  # Also validates uncertainty and clock.
