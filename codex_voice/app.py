@@ -8,8 +8,8 @@ import select
 import secrets
 import shutil
 import signal
-import stat
 import sqlite3
+import stat
 import subprocess
 import tempfile
 import threading
@@ -21,15 +21,11 @@ from urllib.parse import urlsplit
 try:
     from .voice_bridge import make_server as make_voice_server
     from .control_client import ControlClient, validate_plan
-    from .lumi_assistant import (LumiSettings, parse_settings, memory_scope, context_prompt,
-                                 is_forget_request, spoken_answer, greeting_prompt, spoken_greeting,
-                                 GREETING_FALLBACK, GreetingCache, greeting_context)
+    from .lumi_notion_credentials import load_credentials as load_notion_credentials
 except ImportError:
     from voice_bridge import make_server as make_voice_server
     from control_client import ControlClient, validate_plan
-    from lumi_assistant import (LumiSettings, parse_settings, memory_scope, context_prompt,
-                                is_forget_request, spoken_answer, greeting_prompt, spoken_greeting,
-                                GREETING_FALLBACK, GreetingCache, greeting_context)
+    from lumi_notion_credentials import load_credentials as load_notion_credentials
 
 
 CODEX_BIN = "/usr/local/bin/codex"
@@ -41,7 +37,6 @@ HOME_DIR = Path("/tmp/codex-home")
 TMP_DIR = Path("/tmp/codex-tmp")
 LOG_DIR = Path("/tmp/codex-logs")
 OPTIONS_FILE = Path("/data/options.json")
-LUMI_DATA_DIR = Path("/data/lumi")
 LISTEN_PORT = 8099
 INGRESS_PEER = "172.30.32.2"
 MAX_BODY_BYTES = 4096
@@ -56,16 +51,6 @@ AUTH_STATUS_TTL_SECONDS = 5
 REQUEST_SOCKET_TIMEOUT_SECONDS = 10
 MAX_OPTIONS_BYTES = 16 * 1024
 MAX_AUTHORIZED_USERS = 100
-CONTROL_CONVERSATION_RULES = (
-    "Regeln für diese Antwort: Du kannst selbst keine Geräte steuern und behauptest nie, "
-    "etwas ein- oder ausgeschaltet, eingestellt oder abgespielt zu haben. Für Gerätewünsche "
-    "bittest du darum, den Auftrag direkt zu formulieren. Frühere Messwerte und Gerätezustände "
-    "im Verlauf sind veraltet; nenne sie nie als aktuellen Stand.\n"
-)
-LUMI_CONTROL_BLOCKED = (
-    "Der Lumi-Gesprächsmodus ist bei aktiver Gerätesteuerung vorerst gesperrt. "
-    "Es wurde kein Gerät verändert."
-)
 _AUTH_FILE_LOCK = threading.Lock()
 QUERY_DIAGNOSES = frozenset({
     "config-invalid", "quota-limit", "access-denied", "model-unavailable",
@@ -478,8 +463,6 @@ def load_voice_model_settings(options_file: Path = OPTIONS_FILE) -> tuple[str, s
         info = os.lstat(options_file)
         if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_OPTIONS_BYTES:
             raise ValueError("invalid voice model settings")
-        if os.name == "posix" and os.geteuid() == 0 and info.st_uid != 0:
-            raise ValueError("invalid voice model settings owner")
         with options_file.open("rb") as stream:
             raw = stream.read(MAX_OPTIONS_BYTES + 1)
         if len(raw) > MAX_OPTIONS_BYTES:
@@ -645,6 +628,18 @@ def _read_query_pipe(stream, max_bytes, overflow, on_overflow, stop_event):
             pass
 
 
+try:
+    from .lumi_assistant import (LumiSettings, parse_settings, memory_scope, context_prompt,
+        is_forget_request, spoken_answer, greeting_prompt, spoken_greeting,
+        GREETING_FALLBACK, GreetingCache, greeting_context)
+except ImportError:
+    from lumi_assistant import (LumiSettings, parse_settings, memory_scope, context_prompt,
+        is_forget_request, spoken_answer, greeting_prompt, spoken_greeting,
+        GREETING_FALLBACK, GreetingCache, greeting_context)
+
+LUMI_DATA_DIR = Path("/data/lumi")
+
+
 class CodexRuntime:
     def __init__(self, process_factory=subprocess.Popen):
         self._popen = process_factory
@@ -704,124 +699,12 @@ class CodexRuntime:
             start_new_session=True,
         )
 
-    def greet_lumi(self, *, memory: dict) -> str:
-        """Read only permitted conversation context, without a question or side effects."""
-        try:
-            settings = getattr(self, "_lumi_settings", LumiSettings())
-            if not settings.memory_enabled or getattr(self, "_control_client", None) is not None:
-                # No model call outside the enabled memory feature.
-                return GREETING_FALLBACK
-            scope, key = memory_scope(memory, settings)
-            store = getattr(self, "_lumi_context", None)
-            with self._lumi_context_lock:
-                turns = store.recent(scope, key, limit=4) if store and key else []
-                context = greeting_context(turns)
-                generation = self._lumi_forget_generation
-                cached = self._lumi_greeting_cache.get((scope, key), context)
-                if cached is not None:
-                    return cached
-            prompt = greeting_prompt(turns, scope=scope)
-            # Do not wait behind a busy query; a launch can fall back immediately.
-            answer = spoken_greeting(self.query("", _conversation_prompt=prompt, _timeout_seconds=2.0))
-            with self._lumi_context_lock:
-                current = store.recent(scope, key, limit=4) if store and key else []
-                # A late model result must not restore a deleted or changed context.
-                if (generation != self._lumi_forget_generation
-                        or context != greeting_context(current)):
-                    return GREETING_FALLBACK
-                self._lumi_greeting_cache.put((scope, key), context, answer)
-            return answer
-        except (ValueError, OSError, sqlite3.Error, RuntimeError, RuntimeErrorSafe, TimeoutError):
-            return GREETING_FALLBACK
-
-    def query_lumi_request(self, question: str, *, memory: dict, request_id: str) -> str:
-        """Bridge entry point; duplicate jobs are filtered by the bridge request digest."""
-        return self.query_lumi(question, memory=memory, request_id=request_id)
-
-    def query_lumi(self, question: str, *, memory: dict, request_id: str = "") -> str:
-        settings = getattr(self, "_lumi_settings", LumiSettings())
-        if not settings.memory_enabled:
-            # Feature off: identical to the deployed 0.1.11 voice path.
-            return self.query_voice(question)
-        scope, key = memory_scope(memory, settings)
-        store = getattr(self, "_lumi_context", None)
-        if is_forget_request(question):
-            if scope == "none" or store is None:
-                return "Für diese Anfrage ist kein Gesprächsspeicher aktiv."
-            with self._lumi_context_lock:
-                self._lumi_forget_generation += 1
-                self._lumi_greeting_cache.invalidate((scope, key))
-                store.forget(scope, key)
-                if scope == "person" and memory.get("session_key"):
-                    session_scope = ("session", memory["session_key"])
-                    self._lumi_greeting_cache.invalidate(session_scope)
-                    store.forget(*session_scope)
-            return ("Dein gespeicherter Gesprächsverlauf wurde gelöscht."
-                    if scope == "person" else "Der Kontext dieser Sitzung wurde gelöscht.")
-        client = getattr(self, "_control_client", None)
-        if client is not None:
-            # Control first: the action planner never sees conversation data.
-            plan = self._control_plan(client, question)
-            if plan["action"]["operation"] != "none":
-                # Device actions keep the deployed path and are not remembered.
-                return self._execute_plan(client, plan)
-        with self._lumi_context_lock:
-            generation = self._lumi_forget_generation
-            try:
-                turns = store.recent(scope, key, question=question, limit=8) if store and key else []
-            except (OSError, sqlite3.Error, ValueError):
-                # An unreadable store must not cost an otherwise valid answer.
-                turns = []
-        # Notion knowledge (issue 58) is not part of this port.
-        if client is not None and not turns:
-            # Nothing to remember yet: keep the planner's answer, no second model call.
-            answer = spoken_answer(plan["answer"])
-        elif client is not None:
-            # Knowledge question with history: a separate text-only query that cannot act.
-            prompt = context_prompt(turns, [], scope=scope)
-            answer = spoken_answer(self.query(
-                question, wait_for_slot=True,
-                _conversation_prompt=prompt + CONTROL_CONVERSATION_RULES
-                + "Aktuelle Frage:\n" + question.strip()))
-        else:
-            prompt = context_prompt(turns, [], scope=scope)
-            answer = spoken_answer(self.query_voice(question, _context_prompt=prompt))
-        if store and key:
-            try:
-                with self._lumi_context_lock:
-                    if generation == self._lumi_forget_generation:
-                        store.remember(scope, key, question, answer)
-                        self._lumi_greeting_cache.invalidate((scope, key))
-            except (OSError, sqlite3.Error):
-                # Optional persistence must not discard an already valid answer.
-                # Never log the question, answer or storage exception details.
-                pass
-        return answer
-
     def query_voice(self, question: str, *, _context_prompt: str | None = None) -> str:
         client = getattr(self, "_control_client", None)
         if client is None:
-            if _context_prompt is None:
-                return self.query(question, wait_for_slot=True)
-            return self.query(question, wait_for_slot=True,
-                              _conversation_prompt=_context_prompt + "Aktuelle Frage:\n" + question.strip())
-        if _context_prompt is not None:
-            # Also protect direct callers that bypass query_lumi().
-            return LUMI_CONTROL_BLOCKED
-        plan = self._control_plan(client, question)
-        if plan["action"]["operation"] == "none":
-            return plan["answer"]
-        return self._execute_plan(client, plan)
-
-    @staticmethod
-    def _execute_plan(client, plan: dict) -> str:
-        try:
-            return client.execute(plan["action"])
-        except (ValueError, OSError, TimeoutError, RecursionError):
-            raise RuntimeErrorSafe("control unavailable; no automatic retry") from None
-
-    def _control_plan(self, client, question: str) -> dict:
-        """Plan one action from the current question only; no conversation data."""
+            if _context_prompt is not None:
+                return self.query(question, wait_for_slot=True, _conversation_prompt=_context_prompt + "Aktuelle Frage:\n" + question.strip())
+            return self.query(question, wait_for_slot=True)
         try:
             context = client.context()
             operation_descriptions = {
@@ -845,7 +728,12 @@ class CodexRuntime:
                       "For current information say that you cannot verify it here. Capabilities:\n" +
                       json.dumps(context, ensure_ascii=True) + "\nUser:\n" + question.strip())
             raw = self.query(question, wait_for_slot=True, _control_prompt=prompt)
-            return validate_plan(raw, context)
+            plan = validate_plan(raw, context)
+            if plan["action"]["operation"] == "none":
+                if _context_prompt is not None:
+                    return self.query(question, wait_for_slot=True, _conversation_prompt=_context_prompt + "Aktuelle Frage:\n" + question.strip())
+                return plan["answer"]
+            return client.execute(plan["action"])
         except (ValueError, OSError, TimeoutError, RecursionError):
             raise RuntimeErrorSafe("control unavailable; no automatic retry") from None
 
@@ -1003,6 +891,7 @@ class CodexRuntime:
                     self._query_process = None
             self._remove_log_dir(log_dir)
             self._query_slot.release()
+
 
     @staticmethod
     def _join_query_readers(readers, process, stop_event=None) -> None:
@@ -1412,6 +1301,135 @@ class CodexRuntime:
             _terminate_process(query_process)
         self._remove_log_dir(log_dir)
 
+
+    def greet_lumi(self, *, memory: dict) -> str:
+        """Read only permitted conversation context, without a question or side effects."""
+        try:
+            settings = getattr(self, "_lumi_settings", LumiSettings())
+            scope, key = memory_scope(memory, settings)
+            if scope == "none":
+                return GREETING_FALLBACK
+            store = getattr(self, "_lumi_context", None)
+            with self._lumi_context_lock:
+                turns = store.recent(scope, key, limit=4) if store and key else []
+                if not turns:
+                    return GREETING_FALLBACK
+                context = greeting_context(turns)
+                generation = self._lumi_forget_generation
+                cached = self._lumi_greeting_cache.get((scope, key), context)
+                if cached is not None:
+                    return cached
+            prompt = greeting_prompt(turns, scope=scope)
+            # Do not wait behind a busy query; a launch can fall back immediately.
+            answer = spoken_greeting(self.query("", _conversation_prompt=prompt, _timeout_seconds=2.0))
+            with self._lumi_context_lock:
+                current = store.recent(scope, key, limit=4) if store and key else []
+                # A late model result must not restore a deleted or changed context.
+                if (generation != self._lumi_forget_generation
+                        or context != greeting_context(current)):
+                    return GREETING_FALLBACK
+                self._lumi_greeting_cache.put((scope, key), context, answer)
+            return answer
+        except (ValueError, OSError, sqlite3.Error, RuntimeError, RuntimeErrorSafe, TimeoutError):
+            return GREETING_FALLBACK
+
+    def query_lumi_request(self, question: str, *, memory: dict, request_id: str) -> str:
+        return self.query_lumi(question, memory=memory, request_id=request_id)
+
+    def handles_lumi_locally(self, question: str) -> bool:
+        """Explicit local commands do not require model login or planning."""
+        if is_forget_request(question):
+            return True
+        settings = getattr(self, "_lumi_settings", LumiSettings())
+        if not settings.notion_workspace_enabled:
+            return False
+        try:
+            from .lumi_notion_commands import NotionCommandService
+        except ImportError:
+            from lumi_notion_commands import NotionCommandService
+        return NotionCommandService(None, {}).handle(question, "", authorized=False) is not None
+
+    def query_lumi(self, question: str, *, memory: dict, request_id: str = "") -> str:
+        settings = getattr(self, "_lumi_settings", LumiSettings())
+        scope, key = memory_scope(memory, settings)
+        store = getattr(self, "_lumi_context", None)
+        if is_forget_request(question):
+            # A verified speaker can erase their own old data after pause/revocation,
+            # without acquiring permission to read or retain personal history again.
+            if memory["person_key"]:
+                scope, key = "person", memory["person_key"]
+            elif memory["session_key"]:
+                scope, key = "session", memory["session_key"]
+            if store is None and scope == "person":
+                try:
+                    try:
+                        from .lumi_context import ContextStore
+                    except ImportError:
+                        from lumi_context import ContextStore
+                    candidate = ContextStore(LUMI_DATA_DIR / "conversations.sqlite3")
+                    if not (LUMI_DATA_DIR / "conversations.sqlite3").exists():
+                        return "Für dieses Voice-Profil ist kein gespeicherter Gesprächsverlauf vorhanden."
+                    store = candidate
+                except (OSError, sqlite3.Error, ValueError, RuntimeError):
+                    return "Der Gesprächsspeicher ist gerade nicht erreichbar. Die Löschung ist nicht bestätigt."
+            if scope == "none" or store is None:
+                return "Für diese Anfrage ist kein Gesprächsspeicher aktiv."
+            try:
+                with self._lumi_context_lock:
+                    self._lumi_forget_generation += 1
+                    self._lumi_greeting_cache.invalidate((scope, key))
+                    store.forget(scope, key)
+                    if scope == "person" and memory.get("session_key"):
+                        session_scope = ("session", memory["session_key"])
+                        self._lumi_greeting_cache.invalidate(session_scope)
+                        store.forget(*session_scope)
+            except (OSError, sqlite3.Error, ValueError, RuntimeError):
+                return "Der Gesprächsspeicher ist gerade nicht erreichbar. Die Löschung ist nicht bestätigt."
+            return ("Dein gespeicherter Gesprächsverlauf wurde gelöscht."
+                    if scope == "person" else "Der Kontext dieser Sitzung wurde gelöscht.")
+        authorized = bool(memory["person_key"]) and memory["person_key"] in settings.notion_owner_keys
+        if settings.notion_workspace_enabled:
+            # Parse only the current utterance before a model or control planner sees it.
+            try:
+                from .lumi_notion_commands import NotionCommandService
+            except ImportError:
+                from lumi_notion_commands import NotionCommandService
+            commands = getattr(self, "_lumi_notion_commands", None)
+            if commands is None:
+                commands = NotionCommandService(None, {})
+            command_answer = commands.handle(question, request_id, authorized=(
+                authorized and settings.notion_write_enabled))
+            if command_answer is not None:
+                return command_answer
+        with self._lumi_context_lock:
+            generation = self._lumi_forget_generation
+            try:
+                turns = store.recent(scope, key, question=question, limit=8) if store and key else []
+            except (OSError, sqlite3.Error, ValueError, RuntimeError):
+                turns = []
+        # Planner receives only the current utterance. Historical data never plans actions.
+        knowledge = getattr(self, "_lumi_knowledge", None)
+        pages = []
+        if authorized and (settings.knowledge_enabled or settings.notion_workspace_enabled) and knowledge:
+            try:
+                pages = knowledge.search(question, limit=3)
+            except (OSError, sqlite3.Error, ValueError, RuntimeError):
+                pass
+        prompt = context_prompt(turns, pages, scope=scope)
+        answer = spoken_answer(self.query_voice(question, _context_prompt=prompt))
+        # Private excerpts and their answers never enter personal or shared session history.
+        if store and key and not pages:
+            try:
+                with self._lumi_context_lock:
+                    if generation == self._lumi_forget_generation:
+                        store.remember(scope, key, question, answer)
+                        self._lumi_greeting_cache.invalidate((scope, key))
+            except (OSError, sqlite3.Error, ValueError, RuntimeError):
+                pass
+        return answer
+
+
+
 def _read_available(stream, timeout: float) -> bytes:
     """Read available pipe bytes without blocking the login watcher indefinitely."""
     if os.name != "posix":
@@ -1423,37 +1441,6 @@ def _read_available(stream, timeout: float) -> bytes:
         return os.read(stream.fileno(), 4096) if readable else b""
     except (OSError, ValueError):
         return b""
-
-
-def load_lumi_settings(options_file: Path = OPTIONS_FILE) -> LumiSettings:
-    try:
-        info = os.lstat(options_file)
-        if (not stat.S_ISREG(info.st_mode) or info.st_size > MAX_OPTIONS_BYTES
-                or (os.name == "posix" and os.geteuid() == 0 and info.st_uid != 0)):
-            raise ValueError("invalid Lumi configuration")
-        with options_file.open("rb") as stream:
-            raw = stream.read(MAX_OPTIONS_BYTES + 1)
-    except FileNotFoundError:
-        return LumiSettings()
-    except OSError:
-        raise ValueError("invalid Lumi configuration") from None
-    if len(raw) > MAX_OPTIONS_BYTES:
-        raise ValueError("invalid Lumi configuration")
-    return parse_settings(raw)
-
-
-def prepare_lumi_directory() -> None:
-    # Prepare this separate persistent directory only for explicitly enabled features.
-    if any(parent.is_symlink() for parent in (LUMI_DATA_DIR, *LUMI_DATA_DIR.parents)):
-        raise RuntimeError("invalid Lumi data directory")
-    LUMI_DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if not stat.S_ISDIR(os.lstat(LUMI_DATA_DIR).st_mode):
-        raise RuntimeError("invalid Lumi data directory")
-    os.chmod(LUMI_DATA_DIR, 0o700)
-    if os.name == "posix" and os.geteuid() == 0:
-        import pwd
-        account = pwd.getpwnam("codex")
-        os.chown(LUMI_DATA_DIR, account.pw_uid, account.pw_gid)
 
 
 def prepare_private_directories() -> None:
@@ -1664,42 +1651,103 @@ class IngressHandler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
 
+def load_lumi_settings(options_file: Path = OPTIONS_FILE) -> LumiSettings:
+    try:
+        info = os.lstat(options_file)
+        if (not stat.S_ISREG(info.st_mode) or info.st_size > MAX_OPTIONS_BYTES
+                or (os.name == "posix" and os.geteuid() == 0 and info.st_uid != 0)):
+            raise ValueError("invalid Lumi configuration")
+        with options_file.open("rb") as stream:
+            raw = stream.read(MAX_OPTIONS_BYTES + 1)
+    except FileNotFoundError:
+        return LumiSettings()
+    except OSError:
+        raise ValueError("invalid Lumi configuration") from None
+    if len(raw) > MAX_OPTIONS_BYTES:
+        raise ValueError("invalid Lumi configuration")
+    return parse_settings(raw)
+
+
+def prepare_lumi_directory() -> None:
+    # Prepare this separate persistent directory only for explicitly enabled features.
+    if any(parent.is_symlink() for parent in (LUMI_DATA_DIR, *LUMI_DATA_DIR.parents)):
+        raise RuntimeError("invalid Lumi data directory")
+    LUMI_DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not stat.S_ISDIR(os.lstat(LUMI_DATA_DIR).st_mode):
+        raise RuntimeError("invalid Lumi data directory")
+    os.chmod(LUMI_DATA_DIR, 0o700)
+    if os.name == "posix" and os.geteuid() == 0:
+        import pwd
+        account = pwd.getpwnam("codex")
+        os.chown(LUMI_DATA_DIR, account.pw_uid, account.pw_gid)
+
+
 def main() -> None:
     global VOICE_MODEL_SETTINGS
+    # Protect HA password options before any configuration reader or UID drop.
+    notion_credentials = load_notion_credentials(OPTIONS_FILE)
     VOICE_MODEL_SETTINGS = load_voice_model_settings()
     prepare_private_directories()
     authorized_user_ids = load_authorized_user_ids()
     voice_secret = load_voice_bridge_secret()
     control_client = load_control_client()
-    # The optional memory feature must never prevent the deployed voice path from starting.
-    try:
-        lumi_settings = load_lumi_settings()
-        if lumi_settings.memory_enabled:
+    lumi_settings = load_lumi_settings()
+    lumi_storage_ready = False
+    if (lumi_settings.memory_enabled or lumi_settings.knowledge_enabled
+            or lumi_settings.notion_workspace_enabled):
+        try:
             prepare_lumi_directory()
-    except (ValueError, OSError, RuntimeError, KeyError):
-        print("Lumi memory disabled: invalid configuration or data directory", flush=True)
-        lumi_settings = LumiSettings()
+            lumi_storage_ready = True
+        except (OSError, RuntimeError):
+            print("Lumi memory unavailable; continuing without stored context", flush=True)
     drop_privileges()
     runtime = CodexRuntime()
     runtime._control_client = control_client
     runtime._lumi_settings = lumi_settings
-    if lumi_settings.memory_enabled:
+    if lumi_storage_ready and lumi_settings.memory_enabled:
         try:
-            from .lumi_context import ContextStore
-        except ImportError:
-            from lumi_context import ContextStore
-        try:
+            try:
+                from .lumi_context import ContextStore
+            except ImportError:
+                from lumi_context import ContextStore
             runtime._lumi_context = ContextStore(LUMI_DATA_DIR / "conversations.sqlite3")
             runtime._lumi_context.revoke_except(lumi_settings.owner_keys)
-        except (ValueError, OSError, sqlite3.Error):
-            print("Lumi memory disabled: conversation store unavailable", flush=True)
+        except (OSError, sqlite3.Error, ValueError, RuntimeError):
             runtime._lumi_context = None
-            runtime._lumi_settings = LumiSettings()
+    notion_runtime = None
+    if lumi_storage_ready and (lumi_settings.knowledge_enabled or lumi_settings.notion_workspace_enabled):
+        try:
+            try:
+                from .lumi_knowledge import KnowledgeStore
+                from .lumi_notion_runtime import prepare_runtime
+            except ImportError:
+                from lumi_knowledge import KnowledgeStore
+                from lumi_notion_runtime import prepare_runtime
+            runtime._lumi_knowledge = KnowledgeStore(LUMI_DATA_DIR / "notion.sqlite3",
+                max_pages=10000 if lumi_settings.notion_workspace_enabled else 100,
+                max_total_bytes=32 * 1024 * 1024 if lumi_settings.notion_workspace_enabled else 2 * 1024 * 1024)
+            if lumi_settings.notion_workspace_enabled:
+                notion_runtime = prepare_runtime(LUMI_DATA_DIR, lumi_settings, runtime._lumi_knowledge,
+                    read_token=notion_credentials.read_token,
+                    write_token=notion_credentials.write_token)
+                runtime._lumi_notion_commands = notion_runtime
+                notion_runtime.start()
+            else:
+                runtime._lumi_knowledge.revoke_except(lumi_settings.page_ids)
+        except (OSError, sqlite3.Error, ValueError, RuntimeError):
+            if notion_runtime is not None:
+                notion_runtime.close()
+            notion_runtime = None
+            runtime._lumi_notion_commands = None
+            runtime._lumi_knowledge = None
+            print("Lumi knowledge unavailable; continuing without Notion context", flush=True)
     server = None
     voice_server = None
     voice_thread = None
 
     def stop(signum, _frame) -> None:
+        if notion_runtime is not None:
+            notion_runtime.close()
         if voice_server is not None:
             voice_server.jobs.close()
         runtime.shutdown()
@@ -1720,6 +1768,8 @@ def main() -> None:
             voice_thread.start()
         server.serve_forever(poll_interval=0.5)
     finally:
+        if notion_runtime is not None:
+            notion_runtime.close()
         if voice_server is not None:
             voice_server.jobs.close()
         runtime.shutdown()

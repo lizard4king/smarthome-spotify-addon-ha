@@ -38,7 +38,7 @@ def settings(**changes):
 
 
 def event(intent="AskChatGPTIntent"):
-    return {"version": "1.0", "session": {"application": {"applicationId": SKILL}},
+    return {"version": "1.0", "session": {"application": {"applicationId": SKILL}, "sessionId": "synthetic-session-1"},
             "context": {"System": {"application": {"applicationId": SKILL},
                                    "device": {"deviceId": DEVICE}, "user": {"userId": USER}}},
             "request": {"type": "IntentRequest", "requestId": "relay-1",
@@ -251,7 +251,8 @@ async def test_delayed_pending_bridge_returns_pending_not_generic_failure(monkey
             answer = await check_response(await client.post(module.PATH, data=body, headers=headers),
                                           headers["X-Lumi-Nonce"], 200)
             elapsed = time.monotonic() - started
-            assert "keine automatische Sprachausgabe" in answer["response"]["outputSpeech"]["text"]
+            from music_alexa.answer_pages import PENDING_TEXT
+            assert answer["response"]["outputSpeech"]["text"] == PENDING_TEXT
             assert elapsed < module.DEADLINE_SECONDS
             assert not gateway.pending and calls[0] == "/v1/submit"
             assert len(calls) >= 3 and set(calls[1:]) == {"/v1/result"}

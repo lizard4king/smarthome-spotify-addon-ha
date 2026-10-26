@@ -63,7 +63,7 @@
   "docker_api": false,
   "full_access": false,
   "slug": "music_alexa",
-  "version": "0.1.8",
+  "version": "0.1.10",
   "options": {
     "skill_id": "",
     "app_username": "music_alexa",

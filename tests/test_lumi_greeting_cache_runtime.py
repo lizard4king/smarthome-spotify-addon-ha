@@ -15,6 +15,7 @@ def make_runtime(tmp_path):
     runtime = CodexRuntime()
     runtime._lumi_settings = LumiSettings(True, frozenset({OWNER}))
     runtime._lumi_context = ContextStore(tmp_path / "history.sqlite3")
+    runtime._lumi_context.remember("person", OWNER, "Ein vorheriges Gespräch.", "Ein bekannter Gesprächsstand.")
     return runtime
 
 
@@ -25,7 +26,7 @@ def test_same_allowed_context_reuses_greeting_without_another_model_call(tmp_pat
     assert runtime.greet_lumi(memory=MEMORY) == "Gut, dich wieder zu hören."
     assert runtime.greet_lumi(memory=MEMORY) == "Gut, dich wieder zu hören."
     assert calls == [1]
-    assert runtime._lumi_context.recent("person", OWNER) == []
+    assert len(runtime._lumi_context.recent("person", OWNER)) == 1
 
 
 def test_unknown_people_cannot_reuse_owner_or_other_session_greeting(tmp_path):
@@ -35,6 +36,8 @@ def test_unknown_people_cannot_reuse_owner_or_other_session_greeting(tmp_path):
     owner = runtime.greet_lumi(memory=MEMORY)
     first = {"person_key": "c" * 64, "session_key": SESSION}
     second = {"person_key": "c" * 64, "session_key": "d" * 64}
+    runtime._lumi_context.remember("session", SESSION, "Erste Sitzung.", "Erster Stand.")
+    runtime._lumi_context.remember("session", "d" * 64, "Andere Sitzung.", "Anderer Stand.")
     assert runtime.greet_lumi(memory=first) != owner
     assert runtime.greet_lumi(memory=second) != owner
     assert calls == [1, 1, 1]
@@ -49,7 +52,7 @@ def test_changed_conversation_invalidates_the_previous_greeting(tmp_path):
     runtime.query_lumi("Der Plan hat sich geändert.", memory=MEMORY)
     runtime.greet_lumi(memory=MEMORY)
     assert calls == [1, 1]
-    assert len(runtime._lumi_context.recent("person", OWNER)) == 1
+    assert len(runtime._lumi_context.recent("person", OWNER)) == 2
 
 
 def test_context_changed_outside_runtime_cannot_match_the_old_cache(tmp_path):
@@ -62,17 +65,17 @@ def test_context_changed_outside_runtime_cannot_match_the_old_cache(tmp_path):
     assert calls == [1, 1]
 
 
-def test_forgetting_invalidates_cached_greeting_even_if_history_was_empty(tmp_path):
+def test_forgetting_invalidates_cached_greeting_and_empty_history_stays_neutral(tmp_path):
     runtime = make_runtime(tmp_path)
     calls = []
     runtime.query = lambda *_args, **_kw: calls.append(1) or "Gut, dich wieder zu hören."
     runtime.greet_lumi(memory=MEMORY)
     runtime.query_lumi("Lösche meinen Gesprächsverlauf", memory=MEMORY)
-    runtime.greet_lumi(memory=MEMORY)
-    assert calls == [1, 1]
+    assert runtime.greet_lumi(memory=MEMORY) == GREETING_FALLBACK
+    assert calls == [1]
 
 
-def test_expired_cache_retries_model_and_control_never_reads_cached_output(tmp_path):
+def test_expired_cache_retries_model_and_control_does_not_disable_greeting(tmp_path):
     runtime = make_runtime(tmp_path)
     clock = [1000.0]
     runtime._lumi_greeting_cache = GreetingCache(clock=lambda: clock[0])
@@ -82,7 +85,7 @@ def test_expired_cache_retries_model_and_control_never_reads_cached_output(tmp_p
     clock[0] += 301
     runtime.greet_lumi(memory=MEMORY)
     runtime._control_client = object()
-    assert runtime.greet_lumi(memory=MEMORY) == GREETING_FALLBACK
+    assert runtime.greet_lumi(memory=MEMORY) == "Gut, dich wieder zu hören."
     assert calls == [1, 1]
 
 
@@ -106,8 +109,8 @@ def test_late_greeting_after_forget_is_discarded_and_cannot_restore_cache(tmp_pa
         assert future.result(timeout=3) == GREETING_FALLBACK
     calls = []
     runtime.query = lambda *_args, **_kw: calls.append(1) or "Ein neuer neutraler Gruß."
-    assert runtime.greet_lumi(memory=MEMORY) == "Ein neuer neutraler Gruß."
-    assert calls == [1]
+    assert runtime.greet_lumi(memory=MEMORY) == GREETING_FALLBACK
+    assert calls == []
 
 
 def test_answer_finishing_after_forget_does_not_recreate_deleted_history(tmp_path):

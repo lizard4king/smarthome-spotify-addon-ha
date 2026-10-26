@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import time
 
 import aiohttp
@@ -123,6 +125,9 @@ async def test_recognized_speaker_key_matches_memory_key_and_hides_raw_ids(clien
     raw = await response.text()
     document = json.loads(raw)
     expected = instance.lumi._memory_value(question_event())["person_key"]
+    independent = hmac.new(VOICE_SECRET.encode(), b"lumi-memory-person-v1\0" + json.dumps(
+        [SKILL, USER, PERSON], separators=(",", ":")).encode(), hashlib.sha256).hexdigest()
+    assert expected == independent == "83d24c62ccc5d2fcc43aaab409853ba7192f6dd76ad7370a348d2db1968388d3"
     assert [item["person_key"] for item in document["speakers"]] == [expected]
     for identifier in (PERSON, USER, DEVICE, SKILL):
         assert identifier not in raw
@@ -141,3 +146,54 @@ async def test_identity_window_is_private_authenticated_and_csrf_safe(clients):
                                headers=admin_auth())).status == 400
     closed = await private.delete("/lumi/identity", headers=admin_auth())
     assert (await closed.json()) == {"status": "closed"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["signature", "application", "person", "session"])
+async def test_rejected_relay_event_never_adds_an_identity(clients, monkeypatch, fault):
+    instance, private, public = clients
+    monkeypatch.setattr(instance.lumi, "_dispatch", lambda *a: pytest.fail("Rejected event dispatched"))
+    assert (await private.post("/lumi/identity", json={"duration_seconds": 300},
+                               headers=admin_auth())).status == 200
+    event = question_event()
+    if fault == "application":
+        event["context"]["System"]["application"]["applicationId"] = (
+            "amzn1.ask.skill.00000000-0000-0000-0000-000000000000")
+    elif fault == "person":
+        event["context"]["System"]["person"]["personId"] = 42
+    elif fault == "session":
+        event["session"]["sessionId"] = ""
+    body, headers = signed(event, "a" * 32)
+    if fault == "signature":
+        headers["X-Lumi-Signature"] = "0" * 64
+    assert (await public.post(PATH, data=body, headers=headers)).status == 400
+    state = await (await private.get("/lumi/identity", headers=admin_auth())).json()
+    assert state["speakers"] == []
+
+
+@pytest.mark.asyncio
+async def test_window_reopen_delete_and_expiry_erase_observed_results(clients, monkeypatch):
+    instance, private, public = clients
+    clock = Clock()
+    instance.lumi_identity._clock = clock
+
+    async def answer(*args):
+        return instance.lumi._speech("Lokale Testantwort.", end=False)
+    monkeypatch.setattr(instance.lumi, "_dispatch", answer)
+    for nonce in ("b", "c"):
+        assert (await private.post("/lumi/identity", json={"duration_seconds": 300},
+                                   headers=admin_auth())).status == 200
+        state = await (await private.get("/lumi/identity", headers=admin_auth())).json()
+        assert state["speakers"] == []
+        body, headers = signed(question_event(), nonce * 32)
+        assert (await public.post(PATH, data=body, headers=headers)).status == 200
+        assert len((await (await private.get("/lumi/identity", headers=admin_auth())).json())["speakers"]) == 1
+    clock.now += 301
+    state = await (await private.get("/lumi/identity", headers=admin_auth())).json()
+    assert state == {"open": False, "remaining_seconds": 0, "speakers": []}
+    await private.post("/lumi/identity", json={"duration_seconds": 300}, headers=admin_auth())
+    body, headers = signed(question_event(), "d" * 32)
+    assert (await public.post(PATH, data=body, headers=headers)).status == 200
+    assert (await private.delete("/lumi/identity", headers=admin_auth())).status == 200
+    assert (await (await private.get("/lumi/identity", headers=admin_auth())).json()) == {
+        "open": False, "remaining_seconds": 0, "speakers": []}

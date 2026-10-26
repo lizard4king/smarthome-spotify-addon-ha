@@ -16,19 +16,37 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 MAX_BODY_BYTES = 4096
 MAX_QUESTION_CHARS = 600
 MAX_ANSWER_CHARS = 6000
+ERROR_CODES = frozenset({"timeout", "unauthenticated", "busy", "unavailable"})
+
+
+def failure_code(exc):
+    """Expose fixed codes only; never copy exception messages into responses."""
+    if isinstance(exc, TimeoutError) or exc.args == ("timeout",):
+        return "timeout"
+    if exc.args == ("busy",):
+        return "busy"
+    return "unavailable"
+
+
+class _Unauthenticated(Exception):
+    pass
+
+
 MAX_HTTP_THREADS = 4
 SOCKET_TIMEOUT_SECONDS = 3
 MAX_INFLIGHT = 5
 MAX_RECORDS = 32
 MAX_PER_PRINCIPAL = 1
 JOB_TTL_SECONDS = 600
+GREETING_JOB_TTL_SECONDS = 30
+MAX_GREETING_RECORDS = 8
 MAX_REPLAY_NONCES = 256
 MAX_CLOCK_SKEW_SECONDS = 30
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8098
 
 _PRINCIPAL_RE = re.compile(r"[0-9a-f]{64}\Z")
-_MEMORY_KEY_RE = re.compile(r"[0-9a-f]{64}\Z")
+_MEMORY_KEY_RE = _PRINCIPAL_RE
 _NONCE_RE = re.compile(r"[0-9a-f]{32}\Z")
 _SIGNATURE_RE = re.compile(r"[0-9a-f]{64}\Z")
 _JOB_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
@@ -43,7 +61,7 @@ class _ProtocolError(Exception):
 
 
 def _json_bytes(value: dict) -> bytes:
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
 def _mac(key: bytes, data: bytes) -> str:
@@ -60,6 +78,7 @@ def _valid_memory(value: object) -> bool:
             for key in ("person_key", "session_key")
         )
     )
+
 
 
 class VoiceJobs:
@@ -79,7 +98,8 @@ class VoiceJobs:
 
     def _expire_locked(self, now: float) -> None:
         for job_id, record in list(self._records.items()):
-            if now - record["created"] >= JOB_TTL_SECONDS:
+            ttl = GREETING_JOB_TTL_SECONDS if record.get("_greeting") else JOB_TTL_SECONDS
+            if now - record["created"] >= ttl:
                 self._records.pop(job_id, None)
                 self._dedupe.pop((record["principal"], record["request_id"]), None)
         self._queue = deque(job_id for job_id in self._queue if job_id in self._records)
@@ -115,7 +135,13 @@ class VoiceJobs:
                 return 409, {"error": "conflict"}
             inflight = [r for r in self._records.values() if r["state"] == "pending"]
             active_count = 1 if self._active_principal is not None else 0
-            if len(inflight) + active_count >= MAX_INFLIGHT or len(self._records) >= MAX_RECORDS:
+            greeting = kind == "greeting"
+            # Optional greetings never queue behind questions or consume their record quota.
+            if greeting and (self._active_principal is not None or self._queue):
+                return 429, {"error": "busy"}
+            records = sum(bool(r.get("_greeting")) == greeting for r in self._records.values())
+            record_limit = MAX_GREETING_RECORDS if greeting else MAX_RECORDS
+            if len(inflight) + active_count >= MAX_INFLIGHT or records >= record_limit:
                 return 429, {"error": "busy"}
             if self._active_principal == principal or any(r["principal"] == principal for r in inflight):
                 return 429, {"error": "busy"}
@@ -127,6 +153,8 @@ class VoiceJobs:
                 "created": now,
                 "state": "pending",
                 "answer": None,
+                "_greeting": greeting,
+                "_safe_errors": memory is not None and not greeting,
             }
             if kind == "greeting":
                 record["kind"] = "greeting"
@@ -140,6 +168,7 @@ class VoiceJobs:
             self._condition.notify()
             return 202, {"job_id": job_id, "state": "pending"}
 
+
     def result(self, principal: str, job_id: str) -> tuple[int, dict]:
         with self._condition:
             self._expire_locked(self._clock())
@@ -149,7 +178,7 @@ class VoiceJobs:
             if record["state"] == "done":
                 return 200, {"state": "done", "answer": record["answer"]}
             if record["state"] == "failed":
-                return 200, {"state": "failed", "error": "unavailable"}
+                return 200, {"state": "failed", "error": record.get("error", "unavailable")}
             return 200, {"state": "pending"}
 
     def _run(self) -> None:
@@ -161,7 +190,8 @@ class VoiceJobs:
                     return
                 job_id = self._queue.popleft()
                 record = self._records.get(job_id)
-                if record is None or self._clock() - record["created"] >= JOB_TTL_SECONDS:
+                ttl = GREETING_JOB_TTL_SECONDS if record and record.get("_greeting") else JOB_TTL_SECONDS
+                if record is None or self._clock() - record["created"] >= ttl:
                     self._expire_locked(self._clock())
                     continue
                 record["state"] = "running"
@@ -170,8 +200,11 @@ class VoiceJobs:
                 question = record.pop("question", None)
                 memory = record.pop("memory", None)
             try:
-                if not self.runtime.authenticated():
-                    raise RuntimeError("unavailable")
+                local_handler = getattr(self.runtime, "handles_lumi_locally", None)
+                local_request = (kind is None and memory is not None and callable(local_handler)
+                                 and local_handler(question) is True)
+                if not local_request and not self.runtime.authenticated():
+                    raise _Unauthenticated()
                 if kind == "greeting":
                     greeting = getattr(self.runtime, "greet_lumi", None)
                     if not callable(greeting):
@@ -196,7 +229,8 @@ class VoiceJobs:
                 if not isinstance(answer, str) or len(answer) > MAX_ANSWER_CHARS:
                     raise RuntimeError("unavailable")
             except Exception as exc:
-                print("Voice request failed:", type(exc).__name__, getattr(exc, "diagnosis", "unavailable"), flush=True)
+                error = "unauthenticated" if isinstance(exc, _Unauthenticated) else failure_code(exc)
+                print("Voice request failed:", error, flush=True)
                 answer = None
                 state = "failed"
             else:
@@ -207,7 +241,10 @@ class VoiceJobs:
                 if current is not None and not self._closed:
                     current["state"] = state
                     current["answer"] = answer
+                    if state == "failed":
+                        current["error"] = error if current.get("_safe_errors") else "unavailable"
                     self._condition.notify_all()
+
 
     def close(self) -> None:
         with self._condition:
@@ -424,6 +461,7 @@ class _VoiceHandler(BaseHTTPRequestHandler):
         self._respond(status, result, response_nonce, self.path)
 
 
+
 def make_server(runtime, secret, host=DEFAULT_HOST, port=DEFAULT_PORT):
     """Return None when disabled; reject malformed non-empty secrets closed."""
     if secret == "":
@@ -431,4 +469,3 @@ def make_server(runtime, secret, host=DEFAULT_HOST, port=DEFAULT_PORT):
     if not isinstance(secret, str) or not _SECRET_RE.fullmatch(secret):
         raise ValueError("invalid voice bridge secret")
     return _BoundedVoiceServer((host, port), _VoiceHandler, runtime, secret)
-

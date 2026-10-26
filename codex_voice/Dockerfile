@@ -1,7 +1,7 @@
 # Reconstructed from server recipe, backup history and recovered application.
 FROM node:22-bookworm-slim@sha256:25330af3531fb5e23318554a0aa911125b6e91b1b777edf7655501d207c067a2
 
-ARG BUILD_VERSION=0.1.12
+ARG BUILD_VERSION=0.1.11
 ARG BUILD_ARCH=amd64
 
 LABEL io.hass.version="${BUILD_VERSION}" \
@@ -25,7 +25,7 @@ RUN apt-get update \
     && printf '%s\n' "$features" | grep -Eq '^apply_patch_freeform[[:space:]]+removed[[:space:]]+false$'
 
 WORKDIR /app
-COPY __init__.py app.py voice_bridge.py control_client.py action_schema.json lumi_assistant.py lumi_context.py ./
+COPY __init__.py app.py voice_bridge.py control_client.py action_schema.json lumi_assistant.py lumi_context.py lumi_knowledge.py lumi_notion_sync.py lumi_notion_write.py lumi_notion_commands.py lumi_notion_catalog.py lumi_notion_runtime.py lumi_notion_credentials.py ./
 
 RUN python3 -c 'import subprocess; from app import make_query_command; command = make_query_command(structured=True); command.insert(-1, "--help"); subprocess.run(command, check=True, stdout=subprocess.DEVNULL)'
 

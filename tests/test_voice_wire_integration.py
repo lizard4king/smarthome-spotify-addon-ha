@@ -222,4 +222,3 @@ async def test_other_device_or_person_cannot_retrieve_completed_answer(monkeypat
         assert text == "Es gibt keine fertige Antwort. Stelle deine Frage bitte noch einmal."
         assert "Privates Ergebnis" not in text
         assert runtime.calls == ["Was ist Licht?"]
-

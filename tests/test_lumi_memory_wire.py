@@ -133,7 +133,7 @@ async def test_signed_relay_and_bridge_wire_reach_query_lumi(monkeypatch):
                 INTERNAL_SECRET, "lumi-memory-person-v1", SKILL, USER, "verified-person-a"
             ),
             "session_key": expected_memory_key(
-                INTERNAL_SECRET, "lumi-memory-session-v1", SKILL, USER, DEVICE, "session-a"
+                INTERNAL_SECRET, "lumi-memory-person-session-v1", SKILL, USER, DEVICE, "session-a", "verified-person-a"
             ),
         }
     finally:
@@ -164,13 +164,14 @@ def test_person_key_is_device_independent_session_key_is_not_and_missing_person_
         other_person["request"], other_person, PRINCIPAL, "question"
     )["memory"]
     assert changed_person["person_key"] != first["person_key"]
+    assert changed_person["session_key"] != first["session_key"]
 
     unknown = event(session_id="session-a")
     unknown_memory = relay._submission_value(
         unknown["request"], unknown, PRINCIPAL, "question"
     )["memory"]
     assert unknown_memory["person_key"] == ""
-    assert unknown_memory["session_key"] == first["session_key"]
+    assert unknown_memory["session_key"] != first["session_key"]
 
 
 @pytest.mark.asyncio
@@ -212,7 +213,7 @@ async def test_unknown_person_job_principal_is_session_scoped_and_person_princip
     relay.pending[principal_a] = PendingJob("1" * 32, time.monotonic() + 60)
     relay.last_jobs[principal_a] = relay.pending[principal_a]
     response = await relay._dispatch(
-        {"type": "IntentRequest", "intent": {"name": "GetCodexAnswerIntent"}},
+        {"type": "IntentRequest", "requestId": "other-session-retrieval", "intent": {"name": "GetCodexAnswerIntent"}},
         session_b,
         principal_b,
     )

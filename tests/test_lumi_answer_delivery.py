@@ -159,11 +159,12 @@ async def test_stop_cancels_and_close_joins_workers(monkeypatch, intent):
 
 
 @pytest.mark.asyncio
-async def test_no_target_has_honest_message_without_fetch_word(monkeypatch):
+async def test_no_target_keeps_session_open_for_honest_manual_retrieval(monkeypatch):
     gateway, completed, _, spoken = setup_gateway(monkeypatch, settings())
     response = await ask(gateway)
-    assert "keine automatische Sprachausgabe" in response["response"]["outputSpeech"]["text"]
-    assert response["response"]["shouldEndSession"] is True
+    from music_alexa.answer_pages import PENDING_TEXT
+    assert response["response"]["outputSpeech"]["text"] == PENDING_TEXT
+    assert response["response"]["shouldEndSession"] is False
     assert not gateway.answer_delivery.slots and not spoken
 
 
@@ -260,10 +261,16 @@ def test_delivery_cannot_start_without_a_job(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad_mac", [False, True])
-async def test_speech_hmac_contract_and_bounded_body(monkeypatch, bad_mac):
+@pytest.mark.parametrize("page_kind", ["sentences", "2000-emoji"])
+async def test_speech_hmac_contract_and_bounded_body(monkeypatch, bad_mac, page_kind):
+    from music_alexa.answer_pages import split_answer, CONTINUE_HINT
+    page = "\U0001f600" * 2000 if page_kind == "2000-emoji" else split_answer("Satz. " * 1000)[0]
     requests = []
     async def speech(request):
         raw = await request.read()
+        assert len(raw) <= 16384
+        if page_kind == "2000-emoji":
+            assert "\U0001f600".encode("utf-8") in raw
         nonce, stamp = request.headers["X-Control-Nonce"], request.headers["X-Control-Timestamp"]
         expected = hmac.new(SECRET.encode(), f"POST\n/api/codex/speech\n{stamp}\n{nonce}\n{hashlib.sha256(raw).hexdigest()}".encode(), hashlib.sha256).hexdigest()
         assert request.headers["X-Control-Signature"] == expected
@@ -278,12 +285,15 @@ async def test_speech_hmac_contract_and_bounded_body(monkeypatch, bad_mac):
         client = delivery.SpeechClient(session, SECRET, port=server.port)
         if bad_mac:
             with pytest.raises(ValueError, match="Unauthenticated"):
-                await client.speak("a" * 32, "buero", "Satz. " * 1000)
+                await client.speak("a" * 32, "buero", page)
         else:
-            await client.speak("a" * 32, "buero", "Satz. " * 1000)
+            await client.speak("a" * 32, "buero", page)
     assert len(requests) == 1
     assert set(requests[0]) == {"request_id", "target", "text"}
-    assert len(requests[0]["text"]) <= 2000 and "zu lang" in requests[0]["text"]
+    assert requests[0]["text"] == page
+    assert len(requests[0]["text"]) <= 2000
+    if page_kind == "sentences":
+        assert requests[0]["text"].endswith(CONTINUE_HINT)
 
 
 @pytest.mark.parametrize("raw,secret", [('[]', SECRET), ('{"amzn1.ask.device.echo":"attic"}', SECRET),

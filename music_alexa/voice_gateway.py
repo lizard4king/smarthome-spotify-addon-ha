@@ -26,7 +26,6 @@ MAX_BODY = 32768
 MAX_BRIDGE_BODY = 4096
 MAX_BRIDGE_RESPONSE = 32768
 MAX_QUESTION = 600
-# Match the authenticated bridge answer limit and the Lambda relay validator.
 MAX_SPEECH = 6000
 DEADLINE_SECONDS = 6.5
 SUBMIT_POLL_SECONDS = 2.0
@@ -80,6 +79,10 @@ class BridgeFailure(Rejected):
 
 class BridgeJobMissing(BridgeFailure):
     """A correctly signed result response confirms that the job no longer exists."""
+
+
+class BridgeBusy(BridgeFailure):
+    """A correctly signed bridge response confirms temporary queue overload."""
 
 
 class VoiceGateway:
@@ -338,6 +341,7 @@ class VoiceGateway:
         return self._speech("Die Antwort wird noch erstellt. Sage: Antwort.", end=False,
                             reprompt="Sage Antwort, um die fertige Antwort abzurufen.")
 
+
     async def _get_answer(self, principal: str) -> dict:
         self._expire_pending(time.monotonic())
         if principal not in self.pending and principal not in self.last_jobs:
@@ -348,16 +352,6 @@ class VoiceGateway:
             return self._speech("Die Antwort wird noch erstellt. Sage: Antwort.", end=False,
                                 reprompt="Sage Antwort, um die fertige Antwort abzurufen.")
         return self._speech(answer, end=False, reprompt="Möchtest du noch etwas wissen?")
-
-    def _submission_value(
-        self, req: dict, payload: dict, principal: str, question: str
-    ) -> dict:
-        """Build the legacy bridge request; specialized relays may add metadata."""
-        return {
-            "principal": principal,
-            "request_id": req["requestId"],
-            "question": question,
-        }
 
     async def _poll(self, principal: str) -> str | None:
         pending = self.pending.get(principal) or self.last_jobs.get(principal)
@@ -396,6 +390,8 @@ class VoiceGateway:
         try:
             return await self._bridge_call_inner(path, value)
         except BridgeJobMissing:
+            raise
+        except BridgeBusy:
             raise
         except asyncio.CancelledError:
             raise
@@ -445,6 +441,14 @@ class VoiceGateway:
                     raise Rejected("Invalid bridge response")
                 raise BridgeJobMissing("Result job no longer exists")
             expected_status = 202 if path == "/v1/submit" else 200
+            if response.status == 429:
+                try:
+                    busy = json.loads(raw)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    raise Rejected("Invalid bridge response") from None
+                if busy != {"error": "busy"}:
+                    raise Rejected("Invalid bridge response")
+                raise BridgeBusy("Bridge busy")
             if response.status != expected_status:
                 raise Rejected("Bridge unavailable")
         try:
@@ -510,3 +514,14 @@ class VoiceGateway:
     def _json(data, *, status=200):
         return web.json_response(data, status=status, headers={"Cache-Control": "no-store"},
                                  dumps=lambda value: json.dumps(value, ensure_ascii=False))
+
+
+    def _submission_value(
+        self, req: dict, payload: dict, principal: str, question: str
+    ) -> dict:
+        """Build the legacy bridge request; specialized relays may add metadata."""
+        return {
+            "principal": principal,
+            "request_id": req["requestId"],
+            "question": question,
+        }

@@ -321,4 +321,3 @@ def test_http_rejects_oversize_get_and_duplicate_framing_headers(running_server)
     response.read()
     conn.close()
     assert runtime.calls == []
-

@@ -51,15 +51,16 @@ def _mac(secret, *parts):
 
 
 def bounded_speech(text):
+    if not isinstance(text, str):
+        raise ValueError("Invalid speech page")
     text = " ".join(text.split())
     if not text:
         raise ValueError("Empty answer")
     if len(text) <= 2000:
         return text
-    notice = "Die Antwort ist zu lang zum Vorlesen. Bitte stelle eine gezieltere Frage."
-    budget = 2000 - len(notice) - 1
-    ends = [match.end() for match in re.finditer(r"[.!?](?=\s|$)", text) if match.end() <= budget]
-    return text[:ends[-1]] + " " + notice if ends else notice
+    # The relay owns full answers and page advancement. Never silently discard
+    # the remaining answer at this final, device-facing boundary.
+    raise ValueError("Speech page exceeds limit")
 
 
 class SpeechClient:
@@ -75,7 +76,7 @@ class SpeechClient:
         if not isinstance(request_id, str) or not re.fullmatch(r"[0-9a-f]{32}", request_id) or target not in ROOMS:
             raise ValueError("Invalid speech request")
         body = json.dumps({"request_id": request_id, "target": target, "text": bounded_speech(text)},
-                          separators=(",", ":"), allow_nan=False).encode()
+                          separators=(",", ":"), allow_nan=False, ensure_ascii=False).encode()
         nonce, stamp = secrets.token_hex(16), str(int(time.time()))
         headers = {"Content-Type": "application/json", "Accept-Encoding": "identity",
                    "X-Control-Timestamp": stamp, "X-Control-Nonce": nonce,
@@ -115,6 +116,7 @@ class Delivery:
     request_id: str
     job: object = None
     task: asyncio.Task | None = None
+    accepted: bool = False
 
 
 class AnswerDelivery:
@@ -196,6 +198,7 @@ class AnswerDelivery:
                     # Commit the attempt before I/O, including uncertain outcomes.
                     self.attempted[attempt_key] = slot.job.expires
                     await SpeechClient(self.session, slot.secret, port=self.port).speak(slot.request_id, slot.target, text)
+                    slot.accepted = True
                     LOG.info("Lumi answer delivery accepted")
                 return
         except asyncio.CancelledError:

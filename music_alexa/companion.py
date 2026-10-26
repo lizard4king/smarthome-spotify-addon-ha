@@ -203,7 +203,7 @@ class Companion:
                 raise Rejected("Origin not allowed")
         except Exception:
             return web.json_response({"error": "Authentication required"}, status=401,
-                                     headers={"WWW-Authenticate": 'Basic realm="Music Alexa"'})
+                                     headers={"WWW-Authenticate": 'Basic realm="Music Alexa"', "Cache-Control": "no-store"})
         return await handler(request)
 
     def private_app(self) -> web.Application:
@@ -212,15 +212,15 @@ class Companion:
         app.router.add_get("/status", self.status)
         app.router.add_get("/devices", self.get_devices)
         app.router.add_post("/devices", self.set_devices)
+        app.router.add_get("/alexa/intents", self.intents)
+        app.router.add_post("/ma/push-url", self.push)
+        app.router.add_get("/ma/playback-status", self.get_playback_status)
         app.router.add_get("/lumi/pairing", self.get_lumi_pairing)
         app.router.add_post("/lumi/pairing", self.open_lumi_pairing)
         app.router.add_delete("/lumi/pairing", self.close_lumi_pairing)
         app.router.add_get("/lumi/identity", self.get_lumi_identity)
         app.router.add_post("/lumi/identity", self.open_lumi_identity)
         app.router.add_delete("/lumi/identity", self.close_lumi_identity)
-        app.router.add_get("/alexa/intents", self.intents)
-        app.router.add_post("/ma/push-url", self.push)
-        app.router.add_get("/ma/playback-status", self.get_playback_status)
         return app
 
     def public_app(self) -> web.Application:
@@ -239,28 +239,9 @@ class Companion:
                                   "pending_players": len(self.pending), "active_streams": self.active_streams,
                                   "live_playback_verified": False})
 
-    async def get_lumi_pairing(self, request):
-        return web.json_response(self.lumi_pairing.snapshot(), headers={"Cache-Control": "no-store"})
-
-    async def open_lumi_pairing(self, request):
-        if request.content_type != "application/json":
-            return web.json_response({"error": "Invalid pairing window"}, status=400,
-                                     headers={"Cache-Control": "no-store"})
-        try:
-            value = await request.json()
-            if not isinstance(value, dict) or set(value) != {"duration_seconds"}:
-                raise ValueError("invalid request")
-            duration = value["duration_seconds"]
-            self.lumi_pairing.open(duration)
-        except (ValueError, TypeError):
-            return web.json_response({"error": "Invalid pairing window"}, status=400,
-                                     headers={"Cache-Control": "no-store"})
-        return web.json_response({"status": "open", "remaining_seconds": duration},
-                                 headers={"Cache-Control": "no-store"})
-
-    async def close_lumi_pairing(self, request):
-        self.lumi_pairing.close()
-        return web.json_response({"status": "closed"}, headers={"Cache-Control": "no-store"})
+    async def get_devices(self, request):
+        return web.json_response({"mappings": list(self.devices.values()),
+                                  "seen": [{"device_id": key, "user_id": value} for key, value in self.seen.items()]})
 
     async def get_lumi_identity(self, request):
         return web.json_response(self.lumi_identity.snapshot(), headers={"Cache-Control": "no-store"})
@@ -283,10 +264,6 @@ class Companion:
     async def close_lumi_identity(self, request):
         self.lumi_identity.close()
         return web.json_response({"status": "closed"}, headers={"Cache-Control": "no-store"})
-
-    async def get_devices(self, request):
-        return web.json_response({"mappings": list(self.devices.values()),
-                                  "seen": [{"device_id": key, "user_id": value} for key, value in self.seen.items()]})
 
     async def set_devices(self, request):
         if request.content_type != "application/json":
@@ -690,6 +667,33 @@ class Companion:
                         record["state"] = "finished"
                         self.status_revision += 1
                         record["revision"] = self.status_revision
+
+
+    async def get_lumi_pairing(self, request):
+        return web.json_response(self.lumi_pairing.snapshot(), headers={"Cache-Control": "no-store"})
+
+
+    async def open_lumi_pairing(self, request):
+        if request.content_type != "application/json":
+            return web.json_response({"error": "Invalid pairing window"}, status=400,
+                                     headers={"Cache-Control": "no-store"})
+        try:
+            value = await request.json()
+            if not isinstance(value, dict) or set(value) != {"duration_seconds"}:
+                raise ValueError("invalid request")
+            duration = value["duration_seconds"]
+            self.lumi_pairing.open(duration)
+        except (ValueError, TypeError):
+            return web.json_response({"error": "Invalid pairing window"}, status=400,
+                                     headers={"Cache-Control": "no-store"})
+        return web.json_response({"status": "open", "remaining_seconds": duration},
+                                 headers={"Cache-Control": "no-store"})
+
+
+    async def close_lumi_pairing(self, request):
+        self.lumi_pairing.close()
+        return web.json_response({"status": "closed"}, headers={"Cache-Control": "no-store"})
+
 
 
 @web.middleware
