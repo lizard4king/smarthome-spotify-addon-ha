@@ -1,5 +1,13 @@
 'use strict';
 const $ = id => document.getElementById(id);
+let stateRequestGeneration = 0;
+let pendingStateAsOf = null;
+const initialOverviewYear = new URLSearchParams(location.search).get('year');
+let selectedOverviewYear = validOverviewYear(initialOverviewYear) ? Number(initialOverviewYear) : null;
+let committedOverviewYear = selectedOverviewYear;
+function validOverviewYear(value) {
+  return typeof value === 'string' && /^\d{4}$/.test(value) && Number(value) >= 1900 && Number(value) <= 9998;
+}
 let state;
 let cockpitDataGeneration = 0;
 let cockpitFeaturesReady = document.readyState === 'complete';
@@ -299,13 +307,29 @@ async function backupMaintain() {
   renderBackupStatus(status);
   return status;
 }
-async function refresh({bankRefresh = true} = {}) {
+async function refresh({bankRefresh = true, asOf = null} = {}) {
+  const requestGeneration = ++stateRequestGeneration;
+  const requestedYear = selectedOverviewYear;
   if (!$('cutoff').value) {
     const now = new Date();
     $('cutoff').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }
-  const query=$('cutoff').value?'?as_of='+encodeURIComponent($('cutoff').value):'';
-  state=await api('/api/state'+query); $('cutoff').value=state.as_of;renderAccountOwnerControls();
+  const query=new URLSearchParams({as_of:asOf || $('cutoff').value});
+  pendingStateAsOf=query.get('as_of');
+  if(requestedYear!==null)query.set('year',String(requestedYear));
+  let response;
+  try{response=await api('/api/state?'+query);}catch(error){if(requestGeneration!==stateRequestGeneration)return false;pendingStateAsOf=null;throw error;}
+  if(requestGeneration!==stateRequestGeneration)return false;
+  pendingStateAsOf=null;
+  state=response; committedOverviewYear=requestedYear;
+  $('cutoff').value=state.as_of;
+  $('overview-year').value=String(state.overview.actuals.year);
+  $('overview-year-status').textContent=`Jahressummen ${state.overview.actuals.year} · Kontenstand ${state.as_of}`;
+  const pageUrl=new URL(location.href);
+  if(committedOverviewYear===null)pageUrl.searchParams.delete('year');
+  else pageUrl.searchParams.set('year',String(committedOverviewYear));
+  if(pageUrl.href!==location.href)history.replaceState(null,'',pageUrl);
+  renderAccountOwnerControls();
   $('backup-package-drive').hidden=!state.drive_backup_configured;
   renderBackupStatus(state.backup_sync);
   $('mode').textContent=state.demo?'Synthetische Demo · getrennte Daten':'Dein Finanzbestand';
@@ -374,6 +398,7 @@ async function refresh({bankRefresh = true} = {}) {
   document.dispatchEvent(new Event('finance-refreshed'));
   await cockpitLoadArea(location.hash.slice(1) || 'home', {force: true, bankRefresh});
   if (bankRefresh && cockpitFeaturesReady) window.financeBankRefresh?.activate();
+  return true;
 }
 // Repaint saved ledger data without starting another bank retrieval.
 window.financeRefreshAfterImport = () => refresh({bankRefresh: false});
@@ -452,7 +477,21 @@ function chart(id, series, labels, reserve) {
   });
 }
 function renderProjection(result){$('projection').hidden=false;const rows=result.rows;$('closing').textContent=eur(rows.at(-1).liquidity);$('minimum').textContent=eur(Math.min(...rows.map(r=>Number(r.liquidity))));$('reserve-months').textContent=rows.filter(r=>r.below_reserve).length+' / 12';$('calculated-for').textContent=`Berechnet ab ${result.as_of}, Anfangsbestand ${eur(result.opening)}. Alle Tabellenwerte in EUR.`;$('forecast-rows').replaceChildren();for(const r of rows){const tr=document.createElement('tr');if(r.below_reserve)tr.className='warning';cell(tr,r.period);for(const key of ['opening','income','expenses','one_offs','cashflow','liquidity','reserve'])cell(tr,amount(r[key]),true);$('forecast-rows').append(tr);}chart('forecast-chart',[{name:'Liquidität zum Monatsende',values:rows.map(r=>r.liquidity)}],rows.map(r=>r.period),rows[0].reserve);}
-$('cutoff-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{invalidate();$('comparison').hidden=true;await refresh();message('Stichtag aktualisiert.');});});
+$('cutoff-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{invalidate();$('comparison').hidden=true;if(await refresh())message('Stichtag aktualisiert.');});});
+$('overview-year-form').addEventListener('submit',e=>{e.preventDefault();void run(async()=>{
+  const value=$('overview-year').value;
+  if(!validOverviewYear(value))throw new Error('Jahr muss zwischen 1900 und 9998 liegen.');
+  selectedOverviewYear=Number(value);
+  try{
+    if(await refresh({bankRefresh:false,asOf:pendingStateAsOf || state?.as_of}))message(`Jahressummen ${value} angezeigt.`);
+  }catch(error){
+    if(selectedOverviewYear===Number(value)){
+      selectedOverviewYear=committedOverviewYear;
+      $('overview-year').value=state?.overview?.actuals?.year || '';
+    }
+    throw error;
+  }
+});});
 $('cutoff').addEventListener('input',invalidate);
 $('account-form').elements.owner.addEventListener('change',renderAccountShareFields);
 $('account-form').addEventListener('submit',e=>{e.preventDefault();run(async()=>{const values=Object.fromEntries(new FormData(e.target));if(values.owner==='JOINT')values.shares=accountSharesFromInputs();await api('/api/accounts',values);if(values.opening_date>$('cutoff').value)$('cutoff').value=values.opening_date;invalidate();await refresh();message('Konto gespeichert.');});});

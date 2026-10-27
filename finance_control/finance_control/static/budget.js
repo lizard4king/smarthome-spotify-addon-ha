@@ -421,13 +421,25 @@ function budgetShareNumber(share) {
   const ratio = share.split('/');
   return ratio.length === 2 ? Number(ratio[0]) / Number(ratio[1]) : Number(share);
 }
+function budgetShareRatio(share) {
+  const ratio = /^([1-9]\d{0,5})\/([1-9]\d{0,5})$/.exec(share);
+  if (ratio) return [BigInt(ratio[1]), BigInt(ratio[2])];
+  const decimal = /^([01])(?:\.(\d{1,6}))?$/.exec(share);
+  if (!decimal) throw new Error('Bitte einen Anteil als ganze Prozentzahl oder Bruch wie 1/3 eingeben.');
+  if (decimal[2] === undefined) return [BigInt(decimal[1]), 1n];
+  const base = 10n ** BigInt(decimal[2].length);
+  return [BigInt(decimal[1]) * base + BigInt(decimal[2]), base];
+}
 function budgetAddShare(list, value) {
   const {row, grid} = budgetSetupRow(list, 'Personenanteil', value);
   budgetSetupField(grid, 'party_id', 'Person', value.party_id, 'party');
   const shareValue = budgetShareNumber(value.share);
   const exact = Number.isFinite(shareValue) && Math.abs(shareValue * 100 - Math.round(shareValue * 100)) > 1e-9;
-  const percentInput = budgetSetupField(grid, 'percent', 'Anteil am gemeinsamen Überschuss (%)', value.share === undefined ? '' : (exact ? Number((shareValue * 100).toFixed(4)) : Math.round(shareValue * 100)), 'number');
-  if (exact) { percentInput.step = 'any'; row.dataset.originalShare = value.share; row.dataset.shownPercent = percentInput.value; }
+  const shown = value.share === undefined ? '' : value.share.includes('/') ? value.share
+    : exact ? Number((shareValue * 100).toFixed(4)) : Math.round(shareValue * 100);
+  const percentInput = budgetSetupField(grid, 'percent', 'Anteil am gemeinsamen Überschuss (% oder Bruch)', shown);
+  percentInput.inputMode = 'text'; percentInput.placeholder = 'z. B. 50 oder 1/3';
+  if (exact || value.share?.includes('/')) { row.dataset.originalShare = value.share; row.dataset.shownPercent = percentInput.value; }
   const details = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = 'Persönliche Budgetpositionen zuordnen';
   const choices = document.createElement('div'); choices.className = 'budget-personal-choices'; choices.dataset.personalItems = '';
   budgetPersonalChoices(choices, value.personal_item_ids || []); details.append(summary, choices); row.append(details);
@@ -599,16 +611,26 @@ function budgetReadSetup(items) {
   });
   const seenParties = new Set(), seenItems = new Set(), itemIds = new Set(items.map(item => item.id));
   const split = rows('household_split').map(row => {
-    const field = read(row), party = field('party_id'), percent = Number(field('percent'));
-    const keepExact = row.dataset.originalShare !== undefined && field('percent') === row.dataset.shownPercent;
+    const field = read(row), party = field('party_id'), entered = field('percent');
+    const keepExact = row.dataset.originalShare !== undefined && entered === row.dataset.shownPercent;
     if (seenParties.has(party)) throw new Error('Jede Person darf nur einmal in der Aufteilung vorkommen.'); seenParties.add(party);
-    if (!keepExact && (!Number.isInteger(percent) || percent < 1 || percent > 100)) throw new Error('Bitte ganze Prozentanteile zwischen 1 und 100 eingeben.');
+    let share;
+    if (keepExact) share = row.dataset.originalShare;
+    else if (/^[1-9]\d{0,5}\/[1-9]\d{0,5}$/.test(entered)) share = entered;
+    else if (/^(?:100|[1-9]\d?)$/.test(entered)) share = (Number(entered) / 100).toFixed(2);
+    else throw new Error('Bitte ganze Prozentanteile zwischen 1 und 100 oder einen Bruch wie 1/3 eingeben.');
+    const [numerator, denominator] = budgetShareRatio(share);
+    if (numerator <= 0n || numerator > denominator) throw new Error('Der Anteil muss größer als 0 und höchstens 100 % sein.');
     const personal = [...row.querySelectorAll('[data-personal-items] input:checked')].map(input => input.value);
     for (const id of personal) { if (!itemIds.has(id)) throw new Error('Eine persönliche Position wurde entfernt. Bitte ihre Zuordnung lösen.'); if (seenItems.has(id)) throw new Error('Eine Budgetposition ist mehreren Personen zugeordnet. Bitte nur eine Person auswählen.'); seenItems.add(id); }
-    return {party_id:party, share:keepExact ? row.dataset.originalShare : (percent / 100).toFixed(2), personal_item_ids:personal};
+    return {party_id:party, share, personal_item_ids:personal};
   });
   if (split.length) {
-    if (Math.abs(split.reduce((sum, entry) => sum + budgetShareNumber(entry.share), 0) * 100 - 100) > 1e-6) throw new Error('Die Personenanteile müssen zusammen genau 100 % ergeben.');
+    const [sum, base] = split.reduce(([sum, base], entry) => {
+      const [numerator, denominator] = budgetShareRatio(entry.share);
+      return [sum * denominator + numerator * base, base * denominator];
+    }, [0n, 1n]);
+    if (sum !== base) throw new Error('Die Personenanteile müssen zusammen genau 100 % ergeben.');
     result.household_split = split;
   }
   for (const field of ['payday_cycles', 'pending_transfers']) if (!result[field].length && !Object.hasOwn(budgetOriginalPlan, field)) delete result[field];

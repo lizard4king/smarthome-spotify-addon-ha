@@ -16,7 +16,23 @@ _IDENTITY = {'account_id', 'external_id'}
 _DOCUMENT_FIELDS = ('id', 'kind', 'vendor', 'title', 'status')
 
 
-def _estimate_source(store, identity):
+def _local_party_key():
+    """Share only pure string normalization within one dialog or preview."""
+    normalized = {}
+
+    def party_key(value):
+        if not isinstance(value, str):
+            return _party_key(value)
+        if value not in normalized:
+            normalized[value] = _party_key(value)
+        return normalized[value]
+
+    return party_key
+
+
+def _estimate_source(store, identity, *, party_key=None):
+    if party_key is None:
+        party_key = _party_key
     row = _booking(store, identity)
     account = store.db.execute('SELECT kind,currency FROM accounts WHERE id=?', (row['account_id'],)).fetchone()
     text = ' '.join(str(row.get(k) or '') for k in ('counterparty', 'description', 'category'))
@@ -34,7 +50,7 @@ def _estimate_source(store, identity):
             'LEFT JOIN transaction_context c USING(account_id,external_id) '
             'WHERE t.account_id=? AND t.currency=? AND ABS(julianday(t.date)-julianday(?))<=7',
             (row['account_id'], row['currency'], row['date'])):
-        if (_party_key(other['counterparty'] or '') == _party_key(row['counterparty'] or '')
+        if (party_key(other['counterparty'] or '') == party_key(row['counterparty'] or '')
                 and money(other['amount']) == -money(row['amount'])
                 and _REVERSAL.search(' '.join(str(other[k] or '') for k in ('counterparty', 'description', 'category')))):
             raise ValueError('booking_not_suitable_for_estimate')
@@ -51,7 +67,8 @@ def preview(store, data):
     """Read-only, explicit amount-per-payment derivation; no cadence inference."""
     if not isinstance(data, dict) or set(data) != {'account_id', 'external_id', 'method', 'bookings'}:
         raise ValueError('invalid_amount_estimate')
-    anchor = _estimate_source(store, _identity(data))
+    party_key = _local_party_key()
+    anchor = _estimate_source(store, _identity(data), party_key=party_key)
     if data['method'] not in {'median', 'mean', 'latest'} or not isinstance(data['bookings'], list) or not 1 <= len(data['bookings']) <= 100:
         raise ValueError('invalid_amount_estimate')
     sources = {}
@@ -59,7 +76,7 @@ def preview(store, data):
         if not isinstance(key, dict) or set(key) != _IDENTITY:
             raise ValueError('invalid_amount_estimate')
         identity = _identity(key)
-        source = _estimate_source(store, identity)
+        source = _estimate_source(store, identity, party_key=party_key)
         if (source['account_id'] != anchor['account_id'] or source['currency'] != anchor['currency']
                 or (money(source['amount']) > 0) != (money(anchor['amount']) > 0)):
             raise ValueError('estimate_account_currency_direction_mismatch')
@@ -216,11 +233,12 @@ def view(store, data):
         suggestions = [r for r in suggestions if r['id'] != context['rule']['id']]
         suggestions.insert(0, context['rule'])
     candidates = []
+    party_key = _local_party_key()
     for candidate in store.db.execute('SELECT account_id,external_id FROM active_transactions '
             'WHERE account_id=? AND currency=? ORDER BY date DESC,external_id DESC LIMIT 100',
             (booking['account_id'], booking['currency'])):
         try:
-            source = _estimate_source(store, tuple(candidate))
+            source = _estimate_source(store, tuple(candidate), party_key=party_key)
         except ValueError:
             continue
         if (money(source['amount']) > 0) == (money(booking['amount']) > 0):

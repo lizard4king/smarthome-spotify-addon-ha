@@ -14,7 +14,7 @@ from statistics import median
 
 from . import budget, contracts
 from .booking_categories import _canonical_counterparty
-from .classification import _cash_withdrawal_evidence
+from .classification import _cash_withdrawal_row_evidence
 from .classification_rules import is_intermediary, rule_is_eligible
 from .core import money
 from .transfer_corrections import sql_transfer_predicate
@@ -79,18 +79,44 @@ def detect(store, *, as_of, known_schedules):
                 if not any((m['contract_id'], m['contract_label'], m['cadence_raw'], m['interval_months']) == identity for m in markers[key]):
                     markers[key].append(marker)
     rows, reversals = [], []
-    for row in store.db.execute(
-            'SELECT t.*,c.counterparty,c.description,o.category_id FROM active_transactions t '
+    ledger_rows = list(store.db.execute(
+            'SELECT t.*,t.category AS source_category,c.counterparty,c.description,o.category_id FROM active_transactions t '
             'JOIN accounts a ON a.id=t.account_id AND a.currency=t.currency '
             'LEFT JOIN transaction_context c USING(account_id,external_id) '
             'LEFT JOIN classification_overrides o USING(account_id,external_id) '
             "WHERE t.date<=? AND a.kind!='CASH' "
-            f'AND NOT COALESCE({sql_transfer_predicate(context_alias="c")},0) ORDER BY t.date,t.external_id', (as_of,)):
+            f'AND NOT COALESCE({sql_transfer_predicate(context_alias="c")},0) ORDER BY t.date,t.external_id', (as_of,)))
+    # These inputs belong to this detection only. Keep raw audit payloads lazy:
+    # excluded rows and category short-circuits must not parse them.
+    aliases = dict(store.db.execute('SELECT alias_id,canonical_id FROM category_aliases'))
+    ledger_keys = {(row['account_id'], row['external_id']) for row in ledger_rows}
+    cash_audits = defaultdict(list)
+    for audit in store.db.execute(
+            'SELECT a.account_id,a.external_id,a.action,a.previous,a.current '
+            'FROM classification_audit a JOIN active_transactions t USING(account_id,external_id) '
+            "WHERE t.date<=? AND a.action IN ('classification_saved','classification_auto_applied','classification_reset') "
+            'ORDER BY a.id DESC', (as_of,)):
+        key = (audit['account_id'], audit['external_id'])
+        if key in ledger_keys:
+            cash_audits[key].append(audit)
+
+    def cash_category(category):
+        if category is None:
+            return None
+        # Keep SQLite's binding/coercion errors for non-string legacy payloads.
+        if not isinstance(category, str):
+            return budget.canonical_category_id(store, category)
+        return aliases.get(category, category)
+
+    for row in ledger_rows:
         text = ' '.join(str(row[k] or '') for k in ('counterparty', 'description', 'category'))
         if _REVERSAL.search(text) and row['counterparty']:
             reversals.append(dict(row))
         if (not row['counterparty'] or not money(row['amount']) or contracts._EXCLUDED.search(text)
-                or _REVERSAL.search(text) or _SETTLEMENT.search(text) or _cash_withdrawal_evidence(store, row['account_id'], row['external_id'])):
+                or _REVERSAL.search(text) or _SETTLEMENT.search(text)
+                or _cash_withdrawal_row_evidence(
+                    row,
+                    cash_audits.get((row['account_id'], row['external_id']), ()), cash_category)):
             continue
         item = dict(row)
         item['party'] = _party_key(row['counterparty'])

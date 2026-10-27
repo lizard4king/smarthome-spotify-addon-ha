@@ -344,14 +344,27 @@ def _cash_withdrawal_evidence(store, account_id, external_id):
         (account_id, external_id)).fetchone()
     if row is None:
         return False
-    if canonical_category_id(store, row['category_id']) == 'AUSGABEN_BARGELD':
-        return True
-    for audit in store.db.execute(
+    def audits():
+        yield from store.db.execute(
             """SELECT action,previous,current FROM classification_audit
                WHERE account_id=? AND external_id=?
                  AND action IN ('classification_saved','classification_auto_applied',
                                 'classification_reset')
-               ORDER BY id DESC""", (account_id, external_id)):
+               ORDER BY id DESC""", (account_id, external_id))
+
+    history = audits()
+    try:
+        return _cash_withdrawal_row_evidence(
+            row, history, lambda category: canonical_category_id(store, category))
+    finally:
+        history.close()
+
+
+def _cash_withdrawal_row_evidence(row, audits, canonical):
+    """Evaluate existing cash evidence in order, without reading or writing a store."""
+    if canonical(row['category_id']) == 'AUSGABEN_BARGELD':
+        return True
+    for audit in audits:
         payloads = (audit['current'],) if audit['action'] != 'classification_reset' else (audit['previous'],)
         for payload in payloads:
             try:
@@ -359,8 +372,7 @@ def _cash_withdrawal_evidence(store, account_id, external_id):
             except (TypeError, ValueError):
                 continue
             if (classification.get('confirmed') is True
-                    and canonical_category_id(
-                        store, classification.get('category', classification.get('category_id')))
+                    and canonical(classification.get('category', classification.get('category_id')))
                     == 'AUSGABEN_BARGELD'):
                 return True
     return any(_CASH_WITHDRAWAL_MARKER.search(value or '') is not None
