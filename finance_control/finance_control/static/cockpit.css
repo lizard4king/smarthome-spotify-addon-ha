@@ -107,6 +107,14 @@ dialog{max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);overflow:auto
  main>nav[aria-label="Bereiche"] a[role="tab"]{white-space:nowrap;overflow-wrap:normal;font-size:max(14px,.85rem);min-width:44px;padding:6px 2px}
 }
 
+/* Keep whole labels and enlarged text reachable on narrow CSS viewports. */
+@media(max-width:359px){
+ :root{--fc-nav-height:calc(8rem + 16px)}
+ main>nav[aria-label="Bereiche"]{grid-template-columns:repeat(3,minmax(0,1fr));gap:2px}
+ main>nav[aria-label="Bereiche"] a[role="tab"]{min-height:4rem}
+ .fc-flow-grid{grid-template-columns:minmax(0,1fr)}
+}
+
 /* The Guru accent is local to the navigation and feed; shared forms stay light. */
 body[data-finance-view="guru"]>header{background:var(--fc-accent-soft);border-bottom:1px solid var(--fc-border)}
 body[data-finance-view="guru"] .fc-wordmark{color:var(--fc-accent)}
