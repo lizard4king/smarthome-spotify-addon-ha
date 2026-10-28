@@ -44,6 +44,7 @@ from .security.personal_vault_cleanup import PersonalVaultCleanup
 from .security.server_vault import ServerVaultError
 from .paypal_credit import PayPalCredit
 from .backup_guard import backup_guard_status
+from .runtime_build import build_status
 
 MAX_REQUEST = 2 * 1024 * 1024
 MAX_REJECTED_BODY = 64 * 1024
@@ -1113,6 +1114,9 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             if not self.require_identity():
                 return
             url = urlsplit(self.path)
+            if url.path == '/api/build-info':
+                status, payload = build_status(backup_build_manifest)
+                return self.reply(status, payload)
             if url.path in ('/paypal-return', '/klarna-return'):
                 personal_banking = paypal_banking if url.path == '/paypal-return' else klarna_banking
                 if personal_banking is None:
