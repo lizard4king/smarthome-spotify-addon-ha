@@ -28,6 +28,7 @@ def additions(store, scope, data, catalogue_rows):
             "SELECT payload FROM payment_review_decisions WHERE kind='recurring' AND decision='reject'"):
         rejected.update(_keys(json.loads(row['payload']).get('candidate', {}).get('bookings', [])))
     result = []
+    context_cache = {}  # Private to this read/decision; never retained across requests.
     for series in catalogue_rows:
         history = sorted(series.get('history', []), key=lambda row: (row['date'], row['external_id']))
         account = accounts.get(series['account_id'])
@@ -63,7 +64,7 @@ def additions(store, scope, data, catalogue_rows):
         identities = [{key: row[key] for key in ('account_id', 'external_id')} for row in recent]
         try:
             derivation = booking_contracts.preview(store, {
-                **identities[-1], 'method': 'median', 'bookings': identities})
+                **identities[-1], 'method': 'median', 'bookings': identities}, _context_cache=context_cache)
         except ValueError:
             # The shared validator rejects transfers, reversals, cash and
             # authoritative document/credit context. The catalogue stays visible.

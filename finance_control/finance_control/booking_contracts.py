@@ -63,10 +63,25 @@ def _estimate_source(store, identity, *, party_key=None):
     return public
 
 
-def preview(store, data):
+def _request_cache(store, cache):
+    """Invalidate internal read caches on another store, edit or calendar day."""
+    if cache is None:
+        return None
+    if not isinstance(cache, dict):
+        raise ValueError('invalid_internal_preview_cache')
+    stamp = (store.db.total_changes, store.db.execute('PRAGMA data_version').fetchone()[0],
+             date.today().isoformat())
+    if cache.get('_store') is not store or cache.get('_stamp') != stamp:
+        cache.clear()
+        cache.update(_store=store, _stamp=stamp)
+    return cache
+
+
+def preview(store, data, *, _context_cache=None):
     """Read-only, explicit amount-per-payment derivation; no cadence inference."""
     if not isinstance(data, dict) or set(data) != {'account_id', 'external_id', 'method', 'bookings'}:
         raise ValueError('invalid_amount_estimate')
+    cache = _request_cache(store, _context_cache)
     party_key = _local_party_key()
     anchor = _estimate_source(store, _identity(data), party_key=party_key)
     if data['method'] not in {'median', 'mean', 'latest'} or not isinstance(data['bookings'], list) or not 1 <= len(data['bookings']) <= 100:
@@ -88,12 +103,18 @@ def preview(store, data):
     protected[(anchor['account_id'], anchor['external_id'])] = anchor
     protected_rows = list(protected.values())
     from .paypal_credit_forecast import forecast_schedules
-    for schedule in forecast_schedules(store):
+    if cache is None:
+        credit_schedules = forecast_schedules(store)
+    else:
+        if 'credit_schedules' not in cache:
+            cache['credit_schedules'] = forecast_schedules(store)
+        credit_schedules = cache['credit_schedules']
+    for schedule in credit_schedules:
         if any(schedule['account_id'] == row['account_id'] and schedule['currency'] == row['currency']
                 and contracts._reference_present(schedule['reference'], row['counterparty']+' '+row['description'])
                 for row in protected_rows):
             raise ValueError('estimate_exact_payment_authoritative')
-    _reject_authoritative_context(store, protected_rows)
+    _reject_authoritative_context(store, protected_rows, cache=cache)
     amounts = [money(r['amount']) for r in rows]
     if data['method'] == 'latest':
         latest = {money(r['amount']) for r in rows if r['date'] == rows[-1]['date']}
@@ -109,10 +130,11 @@ def preview(store, data):
             'rounding': 'ROUND_HALF_UP', 'amount_estimated': True, 'bookings': rows}
 
 
-def _reject_authoritative_context(store, sources):
+def _reject_authoritative_context(store, sources, *, cache=None):
     """Reuse existing matchers; a missing explicit link is not a new contract."""
     contextual = [dict(source) for source in sources]
-    attach_context(store, contextual, date.today().isoformat())
+    views = None if cache is None else cache.setdefault('recurring_views', {})
+    attach_context(store, contextual, date.today().isoformat(), _view_cache=views)
     for source in contextual:
         context = source['contract_context']
         if (context.get('rule') or {}).get('document_id') is not None:
@@ -121,13 +143,24 @@ def _reject_authoritative_context(store, sources):
     # Use the contract matcher's provider, amount and period checks, requiring
     # its identifying reference here rather than blocking unrelated same-vendor rows.
     keys = {(r['account_id'], r['external_id']) for r in sources}
+    if cache is None:
+        # Preserve the original early rejection for one-off previews/decisions.
+        protected = any(key in keys for key in _phase_source_keys(store))
+    else:
+        if 'phase_source_keys' not in cache:
+            cache['phase_source_keys'] = set(_phase_source_keys(store))
+        protected = bool(keys & cache['phase_source_keys'])
+    if protected:
+        raise ValueError('contract_phase_amount_authoritative')
+
+
+def _phase_source_keys(store):
     for document, contract in contracts._active_contracts(store):
         suggestions, _ = contracts._matches(store, document)
-        if any((candidate['account_id'], candidate['external_id']) in keys
-                and contracts._reference_present(contract['reference'],
-                    (candidate['counterparty'] or '')+' '+(candidate['description'] or ''))
-                for candidate in suggestions):
-            raise ValueError('contract_phase_amount_authoritative')
+        for candidate in suggestions:
+            if contracts._reference_present(contract['reference'],
+                    (candidate['counterparty'] or '')+' '+(candidate['description'] or '')):
+                yield candidate['account_id'], candidate['external_id']
 
 
 def _identity(data):
@@ -150,7 +183,7 @@ def _links(store):
             for r in store.db.execute('SELECT * FROM booking_contract_links')}
 
 
-def attach_context(store, bookings, as_of):
+def attach_context(store, bookings, as_of, *, _view_cache=None):
     """Attach public, path-free context in bounded batches, never one view per row."""
     if not bookings:
         return
@@ -170,7 +203,12 @@ def attach_context(store, bookings, as_of):
     for month in sorted(months):
         last = f'{month}-{calendar.monthrange(int(month[:4]), int(month[5:]))[1]:02d}'
         cutoff = min(last, as_of)
-        result = recurring.view(store, {'as_of': cutoff, 'until': cutoff, 'account_id': ''})
+        if _view_cache is None:
+            result = recurring.view(store, {'as_of': cutoff, 'until': cutoff, 'account_id': ''})
+        else:
+            if cutoff not in _view_cache:
+                _view_cache[cutoff] = recurring.view(store, {'as_of': cutoff, 'until': cutoff, 'account_id': ''})
+            result = _view_cache[cutoff]
         document_schedules.update({r['document_id']: r for r in result['schedules'] if r['document_id']})
         for event in result['events']:
             for booking in event['matched_bookings']:
