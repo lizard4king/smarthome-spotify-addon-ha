@@ -18,6 +18,7 @@
   const forecast = {enabled:true, until:'', asOf:'', key:'', data:null,
     error:'', loading:false, request:0};
   let drilldown = null;
+  const paymentReviewMounts = new WeakMap();
   const expandedBookings = new Set();
   const scrollPositions = new Map();
   let visibleArea = null;
@@ -324,9 +325,11 @@
       card.querySelector('summary')?.setAttribute('aria-current', active ? 'true' : 'false');
     });
     const main = root?.querySelector('.fd-main');
-    if (main) populateMain(main);
     if (area === 'dashboard') paint();
-    else if (mobileQuery.matches) main?.scrollIntoView({block:'start', behavior:'smooth'});
+    else {
+      if (main) populateMain(main);
+      if (mobileQuery.matches) main?.scrollIntoView({block:'start', behavior:'smooth'});
+    }
   }
   function accountButton(account, className, count) {
     const id = accountKey(account);
@@ -1039,13 +1042,22 @@
       }
     }
   }
-  function populateMain(main) {
+  function populateMain(main, preservedReview = null) {
     main.replaceChildren();
     main.append(area === 'category-outflows' ? categories() : bookingList());
     if (area === 'dashboard' && window.financePaymentReviewMount) {
-      const review = add(main, 'section', 'fd-payment-review');
-      window.financePaymentReviewMount(review, {as_of: snapshot.as_of,
-        until: forecast.until || shiftDate(snapshot.as_of, 90), account_id: ''});
+      const scope = {as_of: snapshot.as_of,
+        until: forecast.until || shiftDate(snapshot.as_of, 90), account_id: ''};
+      const scopeKey = JSON.stringify(scope);
+      // Account selection and presentation redraws do not change this all-account
+      // scope. Keep the same mount, including its in-flight read and open evidence.
+      if (preservedReview?.dataset.paymentReviewScope === scopeKey) main.append(preservedReview);
+      else {
+        if (preservedReview) paymentReviewMounts.get(preservedReview)?.destroy?.();
+        const review = add(main, 'section', 'fd-payment-review');
+        review.dataset.paymentReviewScope = scopeKey;
+        paymentReviewMounts.set(review, window.financePaymentReviewMount(review, scope));
+      }
     }
   }
   function paint() {
@@ -1069,6 +1081,7 @@
     const oldAnchor = oldScroller && [...oldScroller.querySelectorAll('[data-timeline-key]')].find(node => node.getBoundingClientRect().bottom > oldScroller.getBoundingClientRect().top);
     pendingTimelineAnchor = oldScroller ? {scroll:oldScroller.scrollTop,key:oldAnchor?.dataset.timelineKey,top:oldAnchor ? oldAnchor.getBoundingClientRect().top - oldScroller.getBoundingClientRect().top : undefined} : null;
     const bankTools = area === 'dashboard' ? document.querySelector('#dashboard .fc-bank-tools') : null;
+    const oldReview = area === 'dashboard' ? root.querySelector('.fd-payment-review') : null;
     document.body.dataset.financeView = view;
     root.replaceChildren(); root.className = `fd-root fd-${view}`;
     const hero = add(root, 'header', 'fd-hero');
@@ -1114,7 +1127,7 @@
     }
     picker.append(accountList('fd-account-list'));
     const main = add(layout, 'div', 'fd-main');
-    populateMain(main);
+    populateMain(main, oldReview);
     for (const account of accounts().filter(item => includesAccount(accountKey(item)))) {
       const balance = account.current_balance;
       add(basis, 'p', '', `${accountName(account)} · Datenquelle: ${balance?.source || 'nicht angegeben'} · Stand: ${date(balance?.booked_on) || 'unbekannt'} · Abruf: ${balance?.retrieved_at || 'nicht angegeben'}`);
