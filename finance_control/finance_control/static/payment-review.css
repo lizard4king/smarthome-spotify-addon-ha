@@ -1,6 +1,6 @@
 .fc-payment-review { margin-block: 1.25rem; min-width: 0; }
 .fc-payment-review-list { display: grid; gap: .75rem; margin-block: .75rem; }
-.fc-payment-review-card { padding: 1rem; border: 1px solid var(--line, #cbd5df); border-radius: .65rem; background: var(--surface, #fff); min-width: 0; }
+.fc-payment-review-card { padding: 1rem; border: 1px solid var(--fc-border, #cbd5df); border-radius: .65rem; background: var(--fc-surface, #fff); min-width: 0; }
 .fc-payment-review-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
 .fc-payment-review-heading > :first-child { overflow-wrap: anywhere; }
 .fc-payment-review-amount { white-space: nowrap; }
@@ -12,4 +12,18 @@
 .fc-payment-review-status[role=alert] { color: var(--danger, #a12c23); }
 .fc-payment-review-warning { margin-block: .55rem; padding: .45rem .65rem; border-left: .25rem solid var(--fc-warning); border-radius: .35rem; color: var(--fc-warning); background: var(--fc-warning-bg); overflow-wrap: anywhere; }
 .fc-payment-review-cadence { margin-block: .45rem; color: var(--fc-muted); }
+.fc-payment-series { margin-block-start: 1.5rem; min-width: 0; }
+.fc-payment-series-search { width: 100%; box-sizing: border-box; min-height: 44px; }
+.fc-payment-series-list { display: grid; gap: .75rem; }
+.fc-payment-series-card { padding: 1rem; border: 1px solid var(--fc-border, #cbd5df); border-radius: .65rem; background: var(--fc-surface, #fff); min-width: 0; overflow-wrap: anywhere; }
+.fc-payment-series-card[hidden] { display: none; }
+.fc-payment-series-card p { margin-block: .4rem; }
+.fc-payment-series-card details { margin-block: .55rem; }
+.fc-payment-series-card summary { cursor: pointer; min-height: 44px; align-content: center; }
+.fc-payment-series-rows { list-style: none; padding: 0; margin-block: .5rem; }
+.fc-payment-series-rows li { padding-block: .55rem; border-top: 1px solid var(--fc-border, #cbd5df); }
+.fc-payment-series-row-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem .75rem; }
+.fc-payment-series-row-heading strong { white-space: nowrap; }
+.fc-payment-series-badge { color: var(--fc-muted); font-weight: 600; }
+@media (max-width: 480px) { .fc-payment-series-card { padding: .75rem; } }
 @media (max-width: 480px) { .fc-payment-review-card { padding: .75rem; } .fc-payment-review-heading { gap: .6rem; } .fc-payment-review-heading > :first-child { min-width: 0; } .fc-payment-review-actions > button { flex: 1; } }
