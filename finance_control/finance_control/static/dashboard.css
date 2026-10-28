@@ -93,7 +93,7 @@
  .fd-table-scroll{overflow-x:auto}
  .fd-booking-table{min-width:900px}
  :is(#dashboard,#category-outflows) .fd-booking-table thead th{white-space:nowrap}
- .fd-booking-detail>div{grid-template-columns:150px minmax(0,1fr)}
+ .fd-booking-detail>div{grid-template-columns:minmax(150px,max-content) minmax(0,1fr)}
 }
 
 /* Expected payments remain explicitly distinct from imported bookings in both views. */
@@ -179,7 +179,7 @@
  .fd-guru .fd-forecast-row{padding:12px 10px}
  .fd-guru .fd-booking-counterparty,.fd-guru .fd-forecast-name{grid-column:1/-1;grid-row:1}
  .fd-guru :is(.fd-booking-amount,.fd-forecast-amount){grid-column:2;grid-row:2;text-align:right!important}
- .fd-guru .fd-booking-category{grid-column:1;grid-row:2;margin-left:56px}
+ .fd-guru .fd-booking-category{grid-column:1;grid-row:2;margin-left:0}
  .fd-guru :is(.fd-booking-balance,.fd-forecast-running-balance){grid-column:1/-1;grid-row:3;text-align:right!important;font-size:.8125rem}
  .fd-guru .fd-booking-table .fd-booking-description:has(:is(.fd-booking-cash-split,.fd-booking-cash-review)){grid-column:1/-1;grid-row:4;margin-left:56px}
  .fd-guru :is(.fd-booking-action,.fd-forecast-action){grid-column:2;grid-row:5;justify-self:end}

@@ -15,6 +15,15 @@ from .recurring_detection import _party_key, _next_date, _REVERSAL, _SETTLEMENT
 from .transfer_corrections import sql_transfer_predicate
 
 SCOPE = {'as_of', 'until', 'account_id'}
+_REVIEW_WARNINGS = {
+    'missing_recurring_period': 'Eine erwartete Periode fehlt. Prüfe, ob diese Zahlung weiterhin besteht.',
+    'ambiguous_source_history': 'Die Buchungshistorie ist nicht eindeutig. Betrag und Rhythmus sind geschätzt.',
+    'insufficient_recurring_history': 'Es liegen noch zu wenige passende Buchungen für eine verlässliche Fortschreibung vor.',
+    'unsupported_cadence': 'Der Zahlungsrhythmus ist nicht eindeutig bestimmt. Ergänze die Vertragsangaben.',
+    'conflicting_contract_markers': 'Die Vertragskennzeichnungen widersprechen sich. Ergänze die Vertragsangaben.',
+    'large_amount_variation': 'Die bisherigen Beträge schwanken deutlich. Prüfe den vorgeschlagenen Betrag.',
+    'end_date_unknown': 'Ein Enddatum ist nicht bekannt. Weitere Zahlungen bleiben eine Annahme.',
+}
 
 
 def _digest(value):
@@ -41,28 +50,49 @@ def _proposals(store, scope):
     result = []
     today = date.today().isoformat()
     for candidate in data['candidates']:
-        # Conflicting/overdue/authoritative series require the detailed editor.
-        # Two clean monthly observations may be proposed, never auto-projected.
-        if candidate['status'] not in {'stable', 'proposed'}:
+        # Reviewable evidence stays actionable without bypassing authoritative
+        # contracts, blocked credit schedules or prior booking decisions.
+        if candidate['status'] not in {'stable', 'proposed', 'needs_review'}:
             continue
         if any(b['date'] > today for b in candidate['bookings']):
             continue
         if any((b['account_id'], b['external_id']) in members for b in candidate['bookings']):
             continue
         pid = 'series:' + candidate['id']
-        payload = {'candidate': candidate, 'sources': [evidence[(b['account_id'], b['external_id'])]
-                                                     for b in candidate['bookings']]}
-        token = _digest(payload)
         if decisions.get(pid, {}).get('decision') == 'reject':
             continue
+        requires_review = candidate['status'] == 'needs_review'
+        effective = None
+        can_accept = True
+        if requires_review:
+            interval, day = candidate['interval_months'], candidate['day_of_month']
+            can_accept = (type(interval) is int and 1 <= interval <= 120
+                          and type(day) is int and 1 <= day <= 31
+                          and 'conflicting_contract_markers' not in candidate['warnings'])
+            if can_accept:
+                lower = max(scope['as_of'], today)
+                if lower != date.max.isoformat():
+                    lower = (date.fromisoformat(lower) + timedelta(days=1)).isoformat()
+                    effective = next(recurring._dates(candidate['valid_from'], candidate['valid_to'],
+                                     day, interval, lower, date.max.isoformat()), None)
+                can_accept = effective is not None
+        payload = {'candidate': candidate, 'effective': effective, 'can_accept': can_accept,
+                   'sources': [evidence[(b['account_id'], b['external_id'])]
+                                                     for b in candidate['bookings']]}
+        token = _digest(payload)
         result.append({'id': pid, 'token': token, 'kind': 'recurring',
                        'label': candidate['label'], 'amount': candidate['amount'],
                        'currency': candidate['currency'],
                        'forecast_included': candidate['status'] == 'stable',
-                       'expected_date': _next_date(date.fromisoformat(candidate['bookings'][-1]['date']),
-                                                   candidate['day_of_month'], candidate['interval_months']).isoformat(),
+                       'requires_review': requires_review, 'can_accept': can_accept,
+                       'interval_months': candidate['interval_months'],
+                       'warnings': [_REVIEW_WARNINGS.get(w, 'Prüfe diese Buchungsreihe in den Vertragsdetails.')
+                                    for w in candidate['warnings']] if requires_review else [],
+                       'expected_date': effective if requires_review else _next_date(
+                           date.fromisoformat(candidate['bookings'][-1]['date']),
+                           candidate['day_of_month'], candidate['interval_months']).isoformat(),
                        'reason': f"Regelmäßige Zahlung aus {len(candidate['bookings'])} Buchungen. Betrag und Termin geschätzt.",
-                       'confidence': 'high' if candidate['status'] == 'stable' else 'medium',
+                       'confidence': 'low' if requires_review else 'high' if candidate['status'] == 'stable' else 'medium',
                        '_payload': payload})
     price_events = None
     for schedule in data['schedules']:
@@ -257,6 +287,8 @@ def decide(store, data):
         payload = proposal['_payload']
         rule_id = None
         if data['decision'] == 'accept':
+            if proposal.get('can_accept') is False:
+                raise ValueError('payment_review_requires_details')
             if proposal['kind'] == 'match':
                 booking, schedule = payload['booking'], payload['schedule']
                 rule_id = schedule['id']
@@ -292,6 +324,8 @@ def decide(store, data):
                                                 'valid_to', 'day_of_month', 'interval_months')}
                 rule.update(id=None, revision=0, document_id=None, document_revision=None,
                             reference='', confirmed=True)
+                if proposal.get('requires_review'):
+                    rule['valid_from'] = payload['effective']
                 derivation = booking_contracts.preview(store, {
                     'account_id': keys[-1][0], 'external_id': keys[-1][1], 'method': 'median',
                     'bookings': [{'account_id': aid, 'external_id': eid} for aid, eid in keys]})

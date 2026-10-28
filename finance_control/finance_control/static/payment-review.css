@@ -10,4 +10,6 @@
 .fc-payment-review-actions button { min-height: 44px; }
 .fc-payment-review-status:empty { display: none; }
 .fc-payment-review-status[role=alert] { color: var(--danger, #a12c23); }
-@media (max-width: 480px) { .fc-payment-review-heading { flex-direction: column; gap: .4rem; } .fc-payment-review-actions > button { flex: 1; } }
+.fc-payment-review-warning { margin-block: .55rem; padding: .45rem .65rem; border-left: .25rem solid var(--fc-warning); border-radius: .35rem; color: var(--fc-warning); background: var(--fc-warning-bg); overflow-wrap: anywhere; }
+.fc-payment-review-cadence { margin-block: .45rem; color: var(--fc-muted); }
+@media (max-width: 480px) { .fc-payment-review-card { padding: .75rem; } .fc-payment-review-heading { gap: .6rem; } .fc-payment-review-heading > :first-child { min-width: 0; } .fc-payment-review-actions > button { flex: 1; } }

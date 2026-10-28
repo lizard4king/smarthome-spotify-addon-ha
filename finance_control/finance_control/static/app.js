@@ -441,12 +441,18 @@ function chart(id, series, labels, reserve) {
   let lo=Math.min(0,...values),hi=Math.max(0,...values);
   if(lo===hi)hi=lo+1;
   const padding=(hi-lo)*.12;lo-=padding;hi+=padding;
-  const left=Math.min(100, Math.max(74,width*.18)), right=width-20;
-  const x=i=>left+i*(right-left)/Math.max(1,labels.length-1);
   const y=v=>bottom-(Number(v)-lo)/(hi-lo)*175;
   const axisFormat=new Intl.NumberFormat('de-DE',{notation:Math.max(Math.abs(lo),Math.abs(hi))>=10000?'compact':'standard',maximumFractionDigits:0});
-  for(let i=0;i<5;i++){
-    const v=lo+(hi-lo)*i/4;
+  const ticks=Array.from({length:5},(_,i)=>lo+(hi-lo)*i/4);
+  const probe=svgNode(svg,'text',{x:0,y:0,visibility:'hidden'});
+  const widestTick=Math.max(...ticks.map(v=>{
+    probe.textContent=axisFormat.format(v);return probe.getBBox().width;
+  }));
+  probe.remove();
+  // SVG glyph widths vary with the font and platform; keep every axis label inside.
+  const left=Math.max(Math.min(100,Math.max(74,width*.18)),Math.ceil(widestTick)+12),right=width-20;
+  const x=i=>left+i*(right-left)/Math.max(1,labels.length-1);
+  for(const v of ticks){
     svgNode(svg,'line',{x1:left,x2:right,y1:y(v),y2:y(v),stroke:'var(--fc-chart-grid)'});
     svgNode(svg,'text',{x:left-8,y:y(v)+4,'text-anchor':'end'},axisFormat.format(v));
   }
