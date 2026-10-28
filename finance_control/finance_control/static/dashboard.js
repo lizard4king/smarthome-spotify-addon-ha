@@ -21,23 +21,17 @@
   const expandedBookings = new Set();
   const scrollPositions = new Map();
   let visibleArea = null;
-  let filterDialogArea = null;
-  let filterLayout = null;
+  const disclosureStates = new Map();
   window.addEventListener('scroll', () => {
     if (visibleArea) scrollPositions.set(visibleArea, window.scrollY);
   }, {passive:true});
   document.addEventListener('cockpit-area-changed', event => {
     visibleArea = ['dashboard', 'category-outflows'].includes(event.detail.id) ? event.detail.id : null;
-    if (filterDialogArea && filterDialogArea !== event.detail.id) {
-      filterDialogArea = null;
-      document.querySelectorAll('.fd-filter-dialog[open]').forEach(dialog => dialog.close());
-    }
   });
   let area = 'dashboard';
   const expandedAccounts = new Set();
   const mobileQuery = window.matchMedia('(max-width: 700px)');
   mobileQuery.addEventListener('change', event => {
-    if (filterLayout) filterLayout();
     const picker = activeRoot()?.querySelector('.fd-account-picker');
     if (picker) {
       accountPickerState[picker.dataset.viewport] = picker.open;
@@ -266,6 +260,17 @@
     target.tabIndex = -1; target.focus({preventScroll:true});
   }
   document.addEventListener('finance-booking-contract-changed', invalidateForecast);
+  document.addEventListener('finance-payments-changed', invalidateForecast);
+  let lastProjectionRead = 0;
+  function refreshProjectionOnReturn() {
+    if (area !== 'dashboard' || document.visibilityState === 'hidden'
+        || location.hash !== '#dashboard' || document.querySelector('dialog[open]')
+        || Date.now() - lastProjectionRead < 30000) return;
+    lastProjectionRead = Date.now();
+    invalidateForecast(); ensureForecast();
+  }
+  window.addEventListener('focus', refreshProjectionOnReturn);
+  document.addEventListener('visibilitychange', refreshProjectionOnReturn);
   const currentBalanceText = account => {
     const balance = account?.current_balance;
     if (!balance || typeof balance !== 'object' || balance.amount === null || balance.amount === undefined) {
@@ -425,6 +430,17 @@
         .some(value => String(value || '').toLocaleLowerCase('de-DE').includes(term)))
       .sort(bookingDateOrder);
   }
+  // Native disclosures retain their state when a fresh snapshot replaces the DOM.
+  function disclosure(parent, className, label, key) {
+    const node = add(parent, 'details', className);
+    node.dataset.disclosure = `${area}:${key}`;
+    node.open = disclosureStates.get(node.dataset.disclosure) || false;
+    add(node, 'summary', '', label);
+    node.addEventListener('toggle', () => {
+      if (node.isConnected) disclosureStates.set(node.dataset.disclosure, node.open);
+    });
+    return node;
+  }
   function filterControls(section, update) {
     const controls = add(section, 'div', 'fd-filters');
     const label = add(controls, 'label', 'fd-search-label');
@@ -432,40 +448,14 @@
     const search = add(label, 'input', 'fd-search');
     search.type = 'search'; search.placeholder = 'Empfänger, Zweck, Betrag'; search.value = query;
     search.addEventListener('input', () => {query = search.value; drilldown = null; update();});
-    const filterArea = area;
-    const open = add(controls,'button','fd-filter-open','Filter'); open.type = 'button';
-    open.setAttribute('aria-haspopup','dialog');
+    const filter = disclosure(controls, 'fd-filter-panel', 'Filter', 'filters');
+    const summary = filter.querySelector('summary');
     const filterLabel = () => {
       const count = Object.values(filters).filter(Boolean).length;
-      open.textContent = count ? `Filter (${count})` : 'Filter';
+      summary.textContent = count ? `Filter (${count})` : 'Filter';
     };
     filterLabel();
-    const dialog = add(controls,'dialog','fd-filter-dialog');
-    dialog.setAttribute('aria-labelledby',`${filterArea}-filter-title`);
-    const heading = add(dialog,'h2','','Buchungen filtern'); heading.id = `${filterArea}-filter-title`;
-    const advanced = add(controls,'div','fd-filter-advanced');
-    const close = () => {
-      filterDialogArea = null;
-      if (dialog.open) dialog.close();
-    };
-    const activate = () => {
-      if (mobileQuery.matches) {
-        dialog.insertBefore(advanced,apply);
-        if (filterDialogArea === filterArea && dialog.isConnected && !dialog.open) {
-          dialog.showModal();
-        }
-      } else {
-        if (dialog.open) close();
-        controls.append(advanced);
-      }
-    };
-    open.addEventListener('click', () => {filterDialogArea = filterArea; activate();});
-    dialog.addEventListener('cancel', () => {filterDialogArea = null;});
-    dialog.addEventListener('close', () => {
-      if (!dialog.isConnected) return;
-      filterDialogArea = null; update();
-      if (mobileQuery.matches && !open.closest('[hidden]')) open.focus({preventScroll:true});
-    });
+    const advanced = add(filter, 'div', 'fd-filter-advanced');
     const categories = [...new Set([
       ...bookings().filter(item => includesAccount(item.account_id)).map(categoryLabel),
       ...(filters.category ? [filters.category] : []),
@@ -483,16 +473,11 @@
       select.addEventListener('change', () => {filters[key] = select.value; filterLabel(); drilldown = null; update();});
     }
     const reset = add(advanced,'button','fd-filter-reset','Filter zurücksetzen'); reset.type = 'button';
-    const apply = add(dialog,'button','fd-filter-apply','Anwenden'); apply.type = 'button';
-    apply.addEventListener('click', close);
     reset.addEventListener('click', () => {
       query = ''; search.value = ''; Object.keys(filters).forEach(key => {filters[key] = '';});
       advanced.querySelectorAll('select').forEach(select => {select.value = '';});
       drilldown = null; filterLabel(); update();
     });
-    filterLayout = () => {if (controls.isConnected) activate();};
-    // showModal requires a connected node; rendering builds the section detached.
-    requestAnimationFrame(() => {if (controls.isConnected) activate();});
   }
   // Only a checksum-valid full leading IBAN is hidden in the compact display.
   // Imported source text and the complete detail remain untouched.
@@ -619,12 +604,13 @@
       forecast.key = ''; forecast.data = null; forecast.error = '';
       ++forecast.request;
     }
-    const navigation = add(section, 'nav', 'fd-timeline-navigation'); navigation.setAttribute('aria-label', 'Buchungszeitraum');
+    const prognosis = disclosure(section, 'fd-prognosis-panel', 'Prognose', 'prognosis');
+    const navigation = add(prognosis, 'nav', 'fd-timeline-navigation'); navigation.setAttribute('aria-label', 'Buchungszeitraum');
     for (const [label,selector] of [['Vergangenheit','.fd-booking'],['Heute','.fd-today'],['Zukunft','.fd-forecast-row']]) {
       const button = add(navigation, 'button', '', label); button.type = 'button';
       button.addEventListener('click', () => jumpTimeline(section.querySelector(selector)));
     }
-    const controls = add(section, 'div', 'fd-forecast-controls');
+    const controls = add(prognosis, 'div', 'fd-forecast-controls');
     const toggleLabel = add(controls, 'label');
     const toggle = add(toggleLabel, 'input', 'fd-forecast-toggle');
     toggle.type = 'checkbox'; toggle.checked = forecast.enabled;
@@ -650,9 +636,9 @@
       ++forecast.request; forecast.key = ''; forecast.data = null; forecast.error = ''; forecast.loading = false;
       refreshForecastDisplay(); ensureForecast();
     });
-    const status = add(section, 'p', 'fd-forecast-status');
+    const status = add(prognosis, 'p', 'fd-forecast-status');
     status.setAttribute('role', 'status');
-    const overview = add(section, 'details', 'fd-forecast-overview');
+    const overview = add(prognosis, 'details', 'fd-forecast-overview');
     overview.open = forecastOverviewOpen;
     add(overview, 'summary', '', 'Saldoübersicht und Datengrundlage');
     overview.addEventListener('toggle', () => {if (overview.isConnected) forecastOverviewOpen = overview.open;});
@@ -832,12 +818,10 @@
     });
   }
   function removedHistory(parent) {
-    const outer = add(parent,'details','fd-removed-history');
-    add(outer,'summary','','Entfernte Buchungen · separater Verlauf');
+    const outer = disclosure(parent,'fd-removed-history','Entfernte Buchungen · separater Verlauf','removed');
     add(outer,'p','','Archivierte Buchungen sind nicht in Buchungssummen und Kontoständen enthalten.');
     for (const account of accounts().filter(item => includesAccount(accountKey(item)))) {
-      const details = add(outer,'details','fd-account-history');
-      add(details,'summary','',accountName(account));
+      const details = disclosure(outer,'fd-account-history',accountName(account),`removed:${accountKey(account)}`);
       const content = add(details,'div','fd-history-content');
       lazyHistory(details,content,'/api/booking-history-inactive',{account_id:accountKey(account)},(data,target) => {
         for (const item of data.bookings || []) {
@@ -976,7 +960,6 @@
     rows.replaceChildren();
     const account = current();
     if (area === 'dashboard' ? !selectedAccounts.size : !account) {add(rows,'p','fd-empty','Kein Konto ausgewählt.'); return;}
-    if (!supplied) removedHistory(rows);
     const term = query.trim();
     const list = supplied || filteredBookings();
     const expected = supplied ? [] : forecastEvents();
@@ -1019,7 +1002,9 @@
     });
     addToday();
     if (!supplied) {
-      const more = add(rows, 'button', 'fd-timeline-more', 'Weitere 30 Tage'); more.type = 'button';
+      const prognosis = rows.closest('.fd-bookings')?.querySelector('.fd-prognosis-panel') || rows;
+      prognosis.querySelector('.fd-timeline-more')?.remove();
+      const more = add(prognosis, 'button', 'fd-timeline-more', 'Weitere 30 Tage'); more.type = 'button';
       more.disabled = forecast.loading || !forecast.enabled || forecast.until >= shiftDate(snapshot.as_of,366);
       if (forecast.until >= shiftDate(snapshot.as_of,366)) more.textContent = 'Prognosegrenze erreicht · 366 Tage';
       more.addEventListener('click', () => extendTimeline());
@@ -1057,6 +1042,11 @@
   function populateMain(main) {
     main.replaceChildren();
     main.append(area === 'category-outflows' ? categories() : bookingList());
+    if (area === 'dashboard' && window.financePaymentReviewMount && selectedAccounts.size === 1) {
+      const review = add(main, 'section', 'fd-payment-review');
+      window.financePaymentReviewMount(review, {as_of: snapshot.as_of,
+        until: forecast.until || shiftDate(snapshot.as_of, 30), account_id: selectedIDs()[0]});
+    }
   }
   function paint() {
     const root = activeRoot();
@@ -1070,6 +1060,7 @@
     for (const id of selectedAccounts) if (!available.has(id)) selectedAccounts.delete(id);
     if (previouslySelected && !selectedAccounts.size) selectionInitialized = false;
     if (!selectionInitialized && selected) {selectedAccounts.add(selected); selectionInitialized = true;}
+    root.querySelectorAll('details[data-disclosure]').forEach(node => disclosureStates.set(node.dataset.disclosure, node.open));
     const oldPicker = root.querySelector('.fd-account-picker');
     if (oldPicker) accountPickerState[oldPicker.dataset.viewport] = oldPicker.open;
     const oldOverview = root.querySelector('.fd-forecast-overview');
@@ -1077,18 +1068,21 @@
     const oldScroller = root.querySelector('.fd-table-scroll');
     const oldAnchor = oldScroller && [...oldScroller.querySelectorAll('[data-timeline-key]')].find(node => node.getBoundingClientRect().bottom > oldScroller.getBoundingClientRect().top);
     pendingTimelineAnchor = oldScroller ? {scroll:oldScroller.scrollTop,key:oldAnchor?.dataset.timelineKey,top:oldAnchor ? oldAnchor.getBoundingClientRect().top - oldScroller.getBoundingClientRect().top : undefined} : null;
+    const bankTools = area === 'dashboard' ? document.querySelector('#dashboard .fc-bank-tools') : null;
     document.body.dataset.financeView = view;
     root.replaceChildren(); root.className = `fd-root fd-${view}`;
     const hero = add(root, 'header', 'fd-hero');
     const intro = add(hero, 'div');
     add(intro, 'p', 'fd-kicker', 'FINANCE CONTROL · KONTEN');
     add(intro, 'h1', '', area === 'category-outflows' ? 'Abgänge nach Kategorie' : 'Buchungen');
-    add(intro, 'p', 'fd-hero-sub', `${monthLabel()} · Stichtag ${date(snapshot.as_of)}`);
-    const basis = add(intro, 'details', 'fd-data-basis');
-    add(basis, 'summary', '', 'Datengrundlage');
+    add(intro, 'p', 'fd-hero-sub', monthLabel());
+    const options = disclosure(root, 'fd-more-options', 'Weitere Optionen', 'options');
+    options.id = `${area}-options`;
+    if (bankTools) options.append(bankTools);
+    const basis = disclosure(options, 'fd-data-basis', 'Datengrundlage', 'basis');
     add(basis, 'p', '', 'Buchungen: importierte Buchungen · Kontostände: letzter belegter Stand');
-    const controls = add(hero, 'div', 'fd-controls');
-    const cutoffForm = add(controls, 'form', 'fd-cutoff-form');
+    const controls = add(options, 'div', 'fd-controls');
+    const cutoffForm = add(options, 'form', 'fd-cutoff-form');
     const cutoffLabel = add(cutoffForm, 'label'); add(cutoffLabel, 'span', '', 'Stand am');
     const cutoff = add(cutoffLabel, 'input'); cutoff.type = 'date'; cutoff.required = true;
     cutoff.value = String(snapshot.as_of || '').slice(0, 10);
@@ -1121,6 +1115,12 @@
     picker.append(accountList('fd-account-list'));
     const main = add(layout, 'div', 'fd-main');
     populateMain(main);
+    for (const account of accounts().filter(item => includesAccount(accountKey(item)))) {
+      const balance = account.current_balance;
+      add(basis, 'p', '', `${accountName(account)} · Datenquelle: ${balance?.source || 'nicht angegeben'} · Stand: ${date(balance?.booked_on) || 'unbekannt'} · Abruf: ${balance?.retrieved_at || 'nicht angegeben'}`);
+    }
+    if (area === 'dashboard') removedHistory(options);
+    root.append(options);
     const footer = add(root, 'p', 'fd-footer');
     footer.append('Für Haushaltsplan und verfügbare Mittel: ');
     const link = add(footer, 'a', '', 'Plan & Ist'); link.href = '#plan-actual';

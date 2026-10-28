@@ -1,0 +1,13 @@
+.fc-payment-review { margin-block: 1.25rem; min-width: 0; }
+.fc-payment-review-list { display: grid; gap: .75rem; margin-block: .75rem; }
+.fc-payment-review-card { padding: 1rem; border: 1px solid var(--line, #cbd5df); border-radius: .65rem; background: var(--surface, #fff); min-width: 0; }
+.fc-payment-review-heading { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+.fc-payment-review-heading > :first-child { overflow-wrap: anywhere; }
+.fc-payment-review-amount { white-space: nowrap; }
+.fc-payment-review-card details { margin-block: .65rem; overflow-wrap: anywhere; }
+.fc-payment-review-card summary { cursor: pointer; min-height: 2rem; }
+.fc-payment-review-actions { display: flex; gap: .65rem; flex-wrap: wrap; }
+.fc-payment-review-actions button { min-height: 44px; }
+.fc-payment-review-status:empty { display: none; }
+.fc-payment-review-status[role=alert] { color: var(--danger, #a12c23); }
+@media (max-width: 480px) { .fc-payment-review-heading { flex-direction: column; gap: .4rem; } .fc-payment-review-actions > button { flex: 1; } }

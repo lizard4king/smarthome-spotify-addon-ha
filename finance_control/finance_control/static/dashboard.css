@@ -284,3 +284,21 @@
 .fd-booking-date-basis{display:block;margin-top:4px;font-size:.75rem;line-height:1.4;white-space:normal;overflow-wrap:break-word;word-break:normal}
 :is(#dashboard,#category-outflows) .fd-guru .fd-booking-table .fd-booking>.fd-booking-transaction-date{display:block;grid-column:1/-1;grid-row:4;overflow-wrap:normal}
 @media(max-width:700px){:is(#dashboard,#category-outflows) .fd-root .fd-booking-table .fd-booking>.fd-booking-transaction-date{display:block;grid-column:1/-1;grid-row:4;overflow-wrap:normal}.fd-booking-transaction-date .fd-booking-date-basis{display:inline;margin-left:8px}}
+
+/* Keep the everyday account workspace short; advanced controls use native disclosures. */
+.fd-root .fd-filters{grid-template-columns:minmax(0,1fr);gap:8px;margin:12px 0}
+.fd-filter-panel,.fd-prognosis-panel,.fd-more-options{min-width:0;border:1px solid var(--fd-border);border-radius:12px;padding:0 12px}
+.fd-root :is(.fd-filter-panel,.fd-prognosis-panel,.fd-more-options)>summary{min-height:44px;padding:11px 0;cursor:pointer;color:var(--fd-ink);font-size:.875rem}
+.fd-filter-panel .fd-filter-advanced{padding:4px 0 12px}
+.fd-prognosis-panel{margin:0 0 12px}
+.fd-more-options{margin-top:16px;background:var(--fc-surface)}
+.fd-more-options .fd-cutoff-form{margin-block:12px;flex-wrap:wrap}
+.fd-more-options .fd-data-basis p{overflow-wrap:anywhere}
+.fd-prognosis-panel .fd-timeline-navigation{padding-top:0}
+@media(max-width:700px){
+ .fd-filter-panel .fd-filter-advanced{grid-template-columns:minmax(0,1fr)}
+ .fd-filter-panel .fd-filter-reset{grid-column:1;grid-row:auto;justify-self:start}
+ .fd-more-options .fd-cutoff-form{display:flex}
+ .fd-more-options .fd-cutoff-form label{min-width:0;flex:1 1 160px}
+ .fd-more-options .fd-cutoff-form input{width:100%;min-width:0}
+}

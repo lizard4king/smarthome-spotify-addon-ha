@@ -125,13 +125,13 @@
     const actions=node('div','rc-actions'), save=node('button','','Speichern');save.type='submit';actions.append(button('Abbrechen',()=>dialog.close()),save);form.append(actions);dialog.append(form);document.body.append(dialog);
     dialog.addEventListener('close',()=>dialog.remove());
     form.addEventListener('submit',async event=>{event.preventDefault();if(!form.reportValidity())return;save.disabled=true;status.textContent='Wird gespeichert …';
-      try{await api('/api/recurring-save',{id:item?.id??null,revision:item?.revision||0,document_id:item?.document_id??null,document_revision:item?.document_revision??null,label:label.value,account_id:account.value,currency:currency.value,amount:doc?null:amount.value.replace(',','.'),valid_from:from.value,valid_to:to.value||null,day_of_month:Number(day.value),interval_months:Number(interval.value),reference:reference.value,confirmed:confirmed.checked});dialog.close();await window.financeRecurringLoad();}
+      try{await api('/api/recurring-save',{id:item?.id??null,revision:item?.revision||0,document_id:item?.document_id??null,document_revision:item?.document_revision??null,label:label.value,account_id:account.value,currency:currency.value,amount:doc?null:amount.value.replace(',','.'),valid_from:from.value,valid_to:to.value||null,day_of_month:Number(day.value),interval_months:Number(interval.value),reference:reference.value,confirmed:confirmed.checked});dialog.close();await window.financeRecurringLoad();document.dispatchEvent(new Event('finance-payments-changed'));}
       catch(error){status.textContent=`Nicht gespeichert: ${phrase(error.message)} Deine Eingaben bleiben erhalten. Bei einem Versionskonflikt abbrechen und aktualisieren.`;}finally{save.disabled=false;}
     });dialog.showModal();
   }
   function disableRule(item) {
     const dialog=node('dialog','rc-dialog'), heading=node('h2','','Regel deaktivieren?');heading.id='recurring-disable-title';dialog.setAttribute('aria-labelledby',heading.id);dialog.append(heading,node('p','',`„${item.label}“ wird künftig nicht mehr eingeplant. Bisherige Buchungen und die Historie bleiben erhalten.`));
-    const status=node('p');status.setAttribute('role','alert');const yes=button('Deaktivierung bestätigen',async()=>{yes.disabled=true;try{await api('/api/recurring-disable',{id:item.id,revision:item.revision,confirmed:true});dialog.close();await window.financeRecurringLoad();}catch(error){status.textContent=phrase(error.message);}finally{yes.disabled=false;}});
+    const status=node('p');status.setAttribute('role','alert');const yes=button('Deaktivierung bestätigen',async()=>{yes.disabled=true;try{await api('/api/recurring-disable',{id:item.id,revision:item.revision,confirmed:true});dialog.close();await window.financeRecurringLoad();document.dispatchEvent(new Event('finance-payments-changed'));}catch(error){status.textContent=phrase(error.message);}finally{yes.disabled=false;}});
     const actions=node('div','rc-actions');actions.append(button('Abbrechen',()=>dialog.close()),yes);dialog.append(status,actions);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();
   }
   const automatic = item => item.inferred || item.basis==='auto_detected' || String(item.id||'').startsWith('auto:');
@@ -156,7 +156,7 @@
   }
   function candidateCard(candidate) {
     const blocked=candidate.status==='blocked';
-    const card=node('article','fc-home-panel rc-candidate');card.dataset.candidateId=candidate.id;card.append(node('span','eyebrow',blocked?'KONTOZUORDNUNG PRÜFEN':candidate.status==='covered'?'BEREITS ABGEDECKT':'BUCHUNGSREIHE PRÜFEN'),node('h4','',candidate.label),node('p','rc-amount',money(candidate.amount,candidate.currency)),node('p','muted',accountLabel(candidate.account_id)),node('p','fc-caption',blocked?'Stand des PayPal-Ratenplans oder Zahlungskonto muss vom Eigentümer erneut bestätigt werden. Keine geschätzte Ersatzreihe.':candidate.status==='covered'?'Bereits durch einen Vertrag oder eine Regel berücksichtigt.':'Unbestätigter Vorschlag. Keine Zahlung aus dieser Reihe ist in der Prognose enthalten.'),provenance(candidate,false));for(const warning of candidate.warnings||[])card.append(node('p','notice',phrase(warning)));
+    const card=node('article','fc-home-panel rc-candidate');card.dataset.candidateId=candidate.id;card.append(node('span','eyebrow',blocked?'KONTOZUORDNUNG PRÜFEN':candidate.status==='covered'?'BEREITS ABGEDECKT':'BUCHUNGSREIHE PRÜFEN'),node('h4','',candidate.label),node('p','rc-amount',money(candidate.amount,candidate.currency)),node('p','muted',accountLabel(candidate.account_id)),node('p','fc-caption',blocked?'Stand des PayPal-Ratenplans oder Zahlungskonto muss vom Eigentümer erneut bestätigt werden. Keine geschätzte Ersatzreihe.':candidate.status==='covered'?'Bereits durch einen Vertrag oder eine Regel berücksichtigt.':'Unbestätigter Vorschlag. Stabile automatisch erkannte Reihen können bereits als geschätzte Zahlungen in der Prognose stehen.'),provenance(candidate,false));for(const warning of candidate.warnings||[])card.append(node('p','notice',phrase(warning)));
     if(blocked)card.append(link('Eigentümerverwaltung','administration'));
     else if(candidate.status!=='covered')card.append(button('Als Regel übernehmen',()=>adopt(candidate)));return card;
   }
@@ -193,7 +193,10 @@
     const forecasts=node('section','rc-forecasts');forecasts.append(node('h3','','Kontostände vorausgeschaut'));
     for(const account of view.data.accounts||[]){const card=node('article','fc-home-panel');card.append(node('h4','',account.label),node('p','fc-caption',account.recorded_balance?`Basis: ${money(account.recorded_balance.amount,account.currency)} · ${date(account.recorded_balance.booked_on)} · ${sourceLabel(account.recorded_balance.source)}`:'Kein belegter Kontostand. Fehlend bedeutet nicht Null.'));
       const metrics=node('div','rc-metrics');for(const [label,value] of [[`Am ${date(view.as_of)}`,account.as_of_balance],[`Kontostand am gewählten Datum · ${date(view.until)}`,account.projected_balance]]){const metric=node('div');metric.append(node('span','muted',label),node('strong','',money(value,account.currency)));metrics.append(metric);}card.append(metrics,chart(account));for(const warning of account.warnings||[])card.append(node('p','notice',phrase(warning)));forecasts.append(card);
-    }fragment.append(forecasts);root.replaceChildren(fragment);root.dataset.loaded='true';
+    }fragment.append(forecasts);
+    const paymentReview=node('section');fragment.append(paymentReview);
+    root.replaceChildren(fragment);root.dataset.loaded='true';
+    if(typeof window.financePaymentReviewMount==='function')window.financePaymentReviewMount(paymentReview,{as_of:view.as_of,until:view.until,account_id:view.account_id},{onChanged:()=>window.financeRecurringLoad()});
   }
   function renderEvents(list) {
     list.replaceChildren();for(const event of view.data.events||[]){if(view.status!=='all'&&event.status!==view.status)continue;const row=node('article','rc-event'), text=node('div');text.append(node('strong','',event.label),node('small','muted',`${date(event.expected_date)}${(event.date_estimated??event.estimated)?' · Termin geschätzt':''}${event.amount_estimated?' · Betrag geschätzt':''} · ${accountLabel(event.account_id)}`),node('small','fc-caption',phrase(event.basis)||''));
@@ -207,4 +210,8 @@
     catch(error){if(request===view.request)errorBox(root,error,()=>void window.financeRecurringLoad());}finally{if(request===view.request)root.setAttribute('aria-busy','false');}
   };
   document.getElementById('recurring-reload')?.addEventListener('click',()=>void window.financeRecurringLoad());
+  let lastProjectionRead=0;
+  function refreshOnReturn(){if(document.visibilityState==='hidden'||location.hash!=='#recurring'||document.querySelector('dialog[open]')||Date.now()-lastProjectionRead<30000)return;lastProjectionRead=Date.now();void window.financeRecurringLoad();}
+  window.addEventListener('focus',refreshOnReturn);
+  document.addEventListener('visibilitychange',refreshOnReturn);
 })();
