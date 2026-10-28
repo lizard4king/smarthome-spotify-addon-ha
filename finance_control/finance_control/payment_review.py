@@ -39,8 +39,23 @@ def apply_rejections(store, candidates):
             candidate['status'] = 'rejected'
 
 
-def _proposals(store, scope):
-    data = recurring.view(store, scope)
+def _review_data(store, scope, data):
+    # Broader explicit review must never promote a candidate into automatic events.
+    from .payment_series import catalogue
+    from .payment_series_proposals import additions
+    series = catalogue(store, scope, data, [])
+    extra = additions(store, scope, data, series)
+    by_booking = {(b['account_id'], b['external_id']): row for row in series for b in row['history']}
+    for candidate in extra:
+        for key in {(b['account_id'], b['external_id']) for b in candidate['bookings']}:
+            row = by_booking[key]
+            row['candidate_ids'] = sorted(set(row['candidate_ids']) | {candidate['id']})
+            row['status'] = 'needs_review'
+    return {**data, 'candidates': [*data['candidates'], *extra], '_series_catalogue': series}
+
+
+def _proposals(store, scope, *, recurring_data=None):
+    data = recurring_data if recurring_data is not None else _review_data(store, scope, recurring.view(store, scope))
     decisions = {r['proposal_id']: dict(r) for r in store.db.execute('SELECT * FROM payment_review_decisions')}
     evidence = {(r['account_id'], r['external_id']): dict(r) for r in store.db.execute(
         "SELECT t.*,c.counterparty,c.description FROM active_transaction_versions t "
@@ -259,8 +274,12 @@ def _proposals(store, scope):
 def view(store, scope):
     if not isinstance(scope, dict) or set(scope) != SCOPE:
         raise ValueError('invalid_payment_review_view')
+    from .payment_series import attach_proposals
+    data = _review_data(store, scope, recurring.view(store, scope))
+    proposals = _proposals(store, scope, recurring_data=data)
     return {**scope, 'proposals': [{k: v for k, v in p.items() if not k.startswith('_')}
-                                 for p in _proposals(store, scope)]}
+                                 for p in proposals],
+            'series': attach_proposals(data['_series_catalogue'], proposals)}
 
 
 def _link(store, identity, rule_id):

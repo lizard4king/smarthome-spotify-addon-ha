@@ -1042,10 +1042,10 @@
   function populateMain(main) {
     main.replaceChildren();
     main.append(area === 'category-outflows' ? categories() : bookingList());
-    if (area === 'dashboard' && window.financePaymentReviewMount && selectedAccounts.size === 1) {
+    if (area === 'dashboard' && window.financePaymentReviewMount) {
       const review = add(main, 'section', 'fd-payment-review');
       window.financePaymentReviewMount(review, {as_of: snapshot.as_of,
-        until: forecast.until || shiftDate(snapshot.as_of, 30), account_id: selectedIDs()[0]});
+        until: forecast.until || shiftDate(snapshot.as_of, 90), account_id: ''});
     }
   }
   function paint() {
