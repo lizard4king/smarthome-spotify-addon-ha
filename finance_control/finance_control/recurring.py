@@ -31,6 +31,19 @@ def _row(row):
             'active': bool(row['active'])}
 
 
+def _counterparty_matches(schedule, booking):
+    """Reuse the confirmed booking evidence without inventing a contract ID."""
+    party = recurring_detection._party_key(booking['counterparty'])
+    if not party:
+        return False
+    if party == recurring_detection._party_key(schedule['label']):
+        return True
+    return any(source.get('account_id') == schedule['account_id']
+               and source.get('currency') == schedule['currency']
+               and party == recurring_detection._party_key(source.get('counterparty') or '')
+               for source in (schedule.get('amount_derivation') or {}).get('bookings', []))
+
+
 def save(store, data):
     """Confirm a manual schedule or document-bound account/day setting.
 
@@ -383,7 +396,8 @@ def view(store, data):
     schedules.extend(forecast_schedules(store, as_of=cutoff))
     membership = {(r['account_id'], r['external_id']): dict(r)
                   for r in store.db.execute('SELECT * FROM booking_contract_links')}
-    detected_candidates = recurring_detection.detect(store, as_of=cutoff, known_schedules=schedules)
+    detected_candidates = recurring_detection.detect(store, as_of=cutoff, known_schedules=schedules,
+        include_proposals=True, evidence_as_of=date.today().isoformat())
     # Explicit provenance covers the original evidence even when the chosen
     # future amount/label differs. It must not spawn a second inferred plan.
     for candidate in detected_candidates:
@@ -398,6 +412,8 @@ def view(store, data):
                                            for rid in sorted(linked_rules))
     if data['account_id']:
         detected_candidates = [c for c in detected_candidates if c['account_id'] == data['account_id']]
+    from .payment_review import apply_rejections
+    apply_rejections(store, detected_candidates)
     schedules.extend({'id': c['id'], 'revision': 0, 'document_id': None, 'document_revision': None,
                       'label': c['label'], 'account_id': c['account_id'], 'currency': c['currency'],
                       'amount': c['amount'], 'valid_from': c['valid_from'], 'valid_to': c['valid_to'],
@@ -412,9 +428,36 @@ def view(store, data):
     matching_upper = (date.fromisoformat(upper)+timedelta(days=min(7, date.max.toordinal()-date.fromisoformat(upper).toordinal()))).isoformat()
     bookings = [dict(row) for row in store.db.execute(
         'SELECT t.*,COALESCE(c.counterparty,\'\') AS counterparty,COALESCE(c.description,\'\') AS description '
-        'FROM active_transactions t LEFT JOIN transaction_context c USING(account_id,external_id) WHERE t.date>=? AND t.date<=? '
+        'FROM active_transaction_versions t LEFT JOIN transaction_context c USING(account_id,external_id) WHERE t.date>=? AND t.date<=? '
         f'AND NOT COALESCE({sql_transfer_predicate(context_alias="c")},0)',
         (matching_lower, cutoff))]
+    current_bookings = {(b['account_id'], b['external_id']): b for b in bookings}
+    payment_overrides = set()
+    for row in store.db.execute("SELECT payload FROM payment_review_decisions WHERE kind='match' AND decision='accept'"):
+        decision = json.loads(row['payload'])
+        old = decision['booking']
+        current = current_bookings.get((old['account_id'], old['external_id']))
+        # An explicit pair approves one due date and the reviewed source version,
+        # not every payment in this rule or an anchor used to edit future prices.
+        if current is not None and all(current[k] == old[k] for k in (
+                'account_id', 'external_id', 'date', 'amount', 'currency', 'revision', 'counterparty', 'description')):
+            payment_overrides.add((decision['event']['id'], old['account_id'], old['external_id']))
+    reversed_evidence = {}
+    for booking in bookings:
+        text = booking['counterparty'] + ' ' + booking['description'] + ' ' + booking['category']
+        if recurring_detection._REVERSAL.search(text):
+            key = (booking['account_id'], booking['currency'],
+                   recurring_detection._party_key(booking['counterparty']), -money(booking['amount']))
+            reversed_evidence.setdefault(key, []).append(date.fromisoformat(booking['date']))
+    def counterparty_fallback(booking, schedule):
+        text = booking['counterparty'] + ' ' + booking['description'] + ' ' + booking['category']
+        if contracts._EXCLUDED.search(text) or recurring_detection._REVERSAL.search(text):
+            return False
+        key = (booking['account_id'], booking['currency'],
+               recurring_detection._party_key(booking['counterparty']), money(booking['amount']))
+        return (_counterparty_matches(schedule, booking)
+                and not any(abs((date.fromisoformat(booking['date'])-day).days) <= 7
+                            for day in reversed_evidence.get(key, [])))
     events = []
     for schedule in schedules:
         if not schedule['active'] or schedule['missing_fields']:
@@ -427,6 +470,8 @@ def view(store, data):
             'amount': schedule['amount'], 'interval_months': schedule['interval_months']}]
         explicit = {(r['account_id'], r['external_id']) for r in full_rows.get(schedule['document_id'], [])}
         inferred_bookings = {(r['account_id'], r['external_id']) for r in schedule.get('bookings', [])}
+        inferred_bookings |= {(r['account_id'], r['external_id'])
+                             for r in (schedule.get('amount_derivation') or {}).get('bookings', [])}
         explicit |= inferred_bookings
         explicit |= {key for key, link in membership.items()
                      if link['decision'] == 'confirmed' and link['rule_id'] == schedule['id']}
@@ -441,11 +486,16 @@ def view(store, data):
                                   membership[(b['account_id'], b['external_id'])]['decision'] == 'confirmed'
                                   and membership[(b['account_id'], b['external_id'])]['rule_id'] == schedule['id']))
                               and (not schedule['document_id'] or not is_rejected(b['account_id'], b['external_id'], schedule['document_id']))
-                              and (money(b['amount']) == amount or (b['account_id'], b['external_id']) in inferred_bookings)
+                              and (money(b['amount']) == amount or (b['account_id'], b['external_id']) in inferred_bookings
+                                   or (f"{schedule['id'] or 'd'+str(schedule['document_id'])}:{expected}",
+                                       b['account_id'], b['external_id']) in payment_overrides)
                               and (b['date'][:7] == expected[:7]
                                   or abs((date.fromisoformat(b['date'])-date.fromisoformat(expected)).days) <= 7)
                               and ((b['account_id'], b['external_id']) in explicit or contracts._reference_present(
-                                  schedule['reference'], b['counterparty']+' '+b['description']))]
+                                  schedule['reference'], b['counterparty']+' '+b['description'])
+                                   or (not contracts._reference_present(schedule['reference'], schedule['reference'])
+                                       and counterparty_fallback(b, schedule)
+                                       and abs((date.fromisoformat(b['date'])-date.fromisoformat(expected)).days) <= 7))]
                 linked_candidates = [b for b in partial if b['account_id'] == schedule['account_id']
                                      and ((b['account_id'], b['external_id']) not in membership or (
                                          membership[(b['account_id'], b['external_id'])]['decision'] == 'confirmed'

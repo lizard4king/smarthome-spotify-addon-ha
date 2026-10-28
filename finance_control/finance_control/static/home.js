@@ -171,6 +171,11 @@
         const item = el('div'); item.append(el('span', 'muted', account.label + ' · Prognose'), el('strong', '', account.projected_balance == null ? 'Stand unbekannt' : moneyText(account.projected_balance, account.currency))); forecasts.append(item);
       }
       root.append(forecasts, el('p', 'fc-caption', 'Teilprognose: nur erfasste regelmäßige Zahlungen. Ungeplante variable Ausgaben und fehlende Verträge sind nicht enthalten.'));
+      root.querySelector('.fc-payment-review')?.remove();
+      if (typeof window.financePaymentReviewMount === 'function') {
+        const review = el('section'); root.append(review);
+        window.financePaymentReviewMount(review, {as_of: asOf, until, account_id: ''});
+      }
     } catch (error) { if (document.getElementById('home-expected') === root) retryNotice(root, error, () => void loadExpected(root)); }
   }
   document.addEventListener('finance-view-changed', () => {

@@ -416,6 +416,9 @@ class Cockpit:
                 if action not in actions:
                     raise ValueError('unknown_budget_action')
                 return actions[action](store, data)
+            if route in {'/api/payment-review-view', '/api/payment-review-decide'}:
+                from . import payment_review
+                return (payment_review.view if route.endswith('-view') else payment_review.decide)(store, data)
             if route.startswith('/api/booking-contract-'):
                 from . import booking_contracts
                 actions = {'view': booking_contracts.view, 'preview': booking_contracts.preview,
@@ -1146,6 +1149,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/home-paypal.js': ('home-paypal.js', 'text/javascript; charset=utf-8'),
                       '/recurring.js': ('recurring.js', 'text/javascript; charset=utf-8'),
                       '/recurring.css': ('recurring.css', 'text/css; charset=utf-8'),
+                      '/payment-review.js': ('payment-review.js', 'text/javascript; charset=utf-8'),
+                      '/payment-review.css': ('payment-review.css', 'text/css; charset=utf-8'),
                       '/administration.js': ('administration.js', 'text/javascript; charset=utf-8'),
                       '/administration.css': ('administration.css', 'text/css; charset=utf-8'),
                       '/server-banking.js': ('server-banking.js', 'text/javascript; charset=utf-8'),
@@ -1552,6 +1557,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     if code not in statuses:
                         code = 'invalid_single_leg_transfer'
                     return self.reply(statuses[code], {'error': code})
+                if urlsplit(self.path).path.startswith('/api/payment-review-'):
+                    if isinstance(error, ValueError) and str(error) in {
+                            'stale_payment_review', 'stale_recurring_revision', 'stale_document_revision',
+                            'stale_amount_estimate', 'duplicate_recurring_schedule'}:
+                        return self.reply(409, {'error': 'Vorschlag wurde inzwischen geändert. Bitte neu laden.'})
+                    return self.reply(400, {'error': 'Vorschlag kann so nicht übernommen werden. Bitte neu laden oder die Zahlungsangaben unter Verträge prüfen.'})
                 if urlsplit(self.path).path.startswith('/api/booking-contract-'):
                     if isinstance(error, ValueError) and str(error) in {
                             'stale_booking_contract_revision', 'stale_recurring_revision',

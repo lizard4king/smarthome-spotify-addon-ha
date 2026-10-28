@@ -51,23 +51,25 @@ def _next_date(last, day, interval):
     return date(year, month+1, min(day, calendar.monthrange(year, month+1)[1]))
 
 
-def detect(store, *, as_of, known_schedules):
+def detect(store, *, as_of, known_schedules, include_proposals=False, evidence_as_of=None):
     """Return candidates and their last three actual booking references.
 
     Explicit fixed/income budget allocations have priority over category mappings,
     which require one unique counterparty group. Unmarked rows need three monthly
-    observations within 20% of their absolute median. A missing due period beyond
+    observations within 20% of their absolute median for automatic projection;
+    two observations produce an explicit-confirmation proposal only. A missing due period beyond
     the seven-day date tolerance suspends further prediction. Covered/disabled
     rules and explicit document links suppress duplicate inferred events.
     """
-    cutoff = date.fromisoformat(as_of)
+    evidence_cutoff = min(as_of, evidence_as_of) if evidence_as_of is not None else as_of
+    cutoff = date.fromisoformat(evidence_cutoff)
     snapshot = budget.load(store)
     plan = snapshot.get('plan') or {}
     items = {i['id']: i for i in plan.get('items', [])}
     markers = defaultdict(list)
     if store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='finanzguru_row_metadata'").fetchone():
         for row in store.db.execute('SELECT m.* FROM finanzguru_row_metadata m JOIN active_transactions t USING(account_id,external_id) '
-                'WHERE m.booked_on=t.date AND m.currency=t.currency AND t.date<=?', (as_of,)):
+            'WHERE m.booked_on=t.date AND m.currency=t.currency AND t.date<=?', (evidence_cutoff,)):
             label_kind = _contract_marker_label(row['contract_label'])
             # An explicit negative label vetoes even a populated ID. Keep the
             # source row intact, but do not grant it marker-backed confidence.
@@ -85,7 +87,7 @@ def detect(store, *, as_of, known_schedules):
             'LEFT JOIN transaction_context c USING(account_id,external_id) '
             'LEFT JOIN classification_overrides o USING(account_id,external_id) '
             "WHERE t.date<=? AND a.kind!='CASH' "
-            f'AND NOT COALESCE({sql_transfer_predicate(context_alias="c")},0) ORDER BY t.date,t.external_id', (as_of,)))
+            f'AND NOT COALESCE({sql_transfer_predicate(context_alias="c")},0) ORDER BY t.date,t.external_id', (evidence_cutoff,)))
     # These inputs belong to this detection only. Keep raw audit payloads lazy:
     # excluded rows and category short-circuits must not parse them.
     aliases = dict(store.db.execute('SELECT alias_id,canonical_id FROM category_aliases'))
@@ -95,7 +97,7 @@ def detect(store, *, as_of, known_schedules):
             'SELECT a.account_id,a.external_id,a.action,a.previous,a.current '
             'FROM classification_audit a JOIN active_transactions t USING(account_id,external_id) '
             "WHERE t.date<=? AND a.action IN ('classification_saved','classification_auto_applied','classification_reset') "
-            'ORDER BY a.id DESC', (as_of,)):
+            'ORDER BY a.id DESC', (evidence_cutoff,)):
         key = (audit['account_id'], audit['external_id'])
         if key in ledger_keys:
             cash_audits[key].append(audit)
@@ -192,7 +194,7 @@ def detect(store, *, as_of, known_schedules):
     for identity, evidence in sorted(groups.items(), key=lambda pair: str(pair[0])):
         aid, currency, positive, party, iid = identity
         marker = evidence[-1].get('marker')
-        if len(evidence) < (1 if marker else 3):
+        if len(evidence) < (1 if marker else 2 if include_proposals else 3):
             continue
         recent = evidence[-3:]
         dates = [date.fromisoformat(r['date']) for r in recent]
@@ -289,10 +291,16 @@ def detect(store, *, as_of, known_schedules):
                 warnings.append('conflicting_contract_markers')
                 source_review = True
         overdue = interval is not None and _next_date(dates[-1], day, interval) < cutoff-timedelta(days=min(7, cutoff.toordinal()-1))
+        # Two old observations, with the latest due period absent/reversed or
+        # explicitly excluded, do not establish a new actionable series.
+        if not marker and len(recent) == 2 and overdue:
+            continue
         if overdue:
             warnings.append('missing_recurring_period')
         blocked_credit = any(ref.get('requires_confirmation') for ref in covered)
         status = 'blocked' if blocked_credit else 'covered' if covered else 'needs_review' if overdue or source_review else 'stable'
+        if status == 'stable' and not marker and len(recent) == 2:
+            status = 'proposed'
         stable_id = 'auto:' + hashlib.sha256('|'.join(str(v) for v in identity).encode()).hexdigest()[:20]
         candidates.append({'id': stable_id, 'label': item['label'] if item else effective_marker_label or recent[-1]['counterparty'],
                            'account_id': aid, 'currency': currency, 'amount': format(amount, '.2f'),
@@ -303,7 +311,7 @@ def detect(store, *, as_of, known_schedules):
                            'status': status, 'warnings': warnings, 'estimated': True, 'covered_by': covered,
                            'derivation': {'amount_method': 'median', 'sample_count': len(recent),
                                           'rounding': 'ROUND_HALF_UP', 'date_method': 'month_end' if month_end else 'median_day',
-                                          'as_of': as_of}})
+                                          'as_of': evidence_cutoff}})
     preferred = {}
     for candidate in candidates:
         if candidate['source'] != 'booking_history':

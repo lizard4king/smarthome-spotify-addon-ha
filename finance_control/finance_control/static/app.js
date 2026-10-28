@@ -521,7 +521,11 @@ document.addEventListener('finance-bank-refreshed', () => {
 });
 
 document.addEventListener('finance-booking-contract-changed', () => {
-  void run(refresh);
+  void run(() => refresh({bankRefresh: false}));
+});
+
+document.addEventListener('finance-payments-changed', () => {
+  void run(() => refresh({bankRefresh: false}));
 });
 
 document.addEventListener('finance-dashboard-edit', event => {

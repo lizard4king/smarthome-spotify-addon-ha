@@ -99,7 +99,9 @@
     const reveal = () => {
       const details = document.querySelector('#dashboard .fc-bank-tools');
       if (!details) return false;
-      details.open = true;
+      for (let parent = details; parent; parent = parent.parentElement) {
+        if (parent.tagName === 'DETAILS') parent.open = true;
+      }
       const target = details.querySelector('.fbr-panel button, .fbr-panel summary, button');
       target?.focus({preventScroll:true});
       details.scrollIntoView?.({block:'center', behavior:'smooth'});
