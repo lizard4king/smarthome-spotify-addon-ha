@@ -57,7 +57,7 @@
       target.classList.add('fc-payment-review');
       target.setAttribute('aria-busy', String(loading || saving));
       target.replaceChildren(node('h3', '', 'Zahlungen prüfen'));
-      target.append(node('p', 'fc-caption', 'Bestätigen übernimmt den Vorschlag. Ablehnen merkt Deine Entscheidung.'));
+      target.append(node('p', 'fc-caption', 'Vorschläge prüfen und entscheiden.'));
       const status = node('p', 'fc-payment-review-status', loading ? 'Vorschläge werden geladen …' : notice);
       status.setAttribute('role', problem ? 'alert' : 'status'); status.setAttribute('aria-live', 'polite'); target.append(status);
       const reloadButton = button('Vorschläge neu laden', () => void reload()); reloadButton.disabled = loading || saving; target.append(reloadButton);
@@ -68,20 +68,36 @@
         const card = node('article', 'fc-payment-review-card'); card.dataset.proposalId = item.id;
         const heading = node('div', 'fc-payment-review-heading');
         heading.append(node('strong', '', item.label), node('strong', 'fc-payment-review-amount', money(item))); card.append(heading);
-        card.append(node('p', 'fc-caption', `${date(item.expected_date)} · ${item.kind === 'match' ? 'Buchung zuordnen' : item.kind === 'amount' ? 'Prognosebetrag anpassen' : 'Regelmäßige Zahlung bestätigen'}`));
+        if (!item.requires_review) card.append(node('p', 'fc-caption', `${date(item.expected_date)} · ${item.kind === 'match' ? 'Buchung zuordnen' : item.kind === 'amount' ? 'Prognosebetrag anpassen' : 'Regelmäßige Zahlung bestätigen'}`));
+        if (item.requires_review) {
+          const warning = node('div', 'fc-payment-review-warning');
+          warning.append(node('span', '', item.can_accept === false ? 'Vertragsangaben fehlen.' : 'Historie unklar – bitte prüfen.'));
+          card.append(warning);
+          const cadence = item.interval_months === 1 ? 'Monatlich' : Number.isInteger(item.interval_months) && item.interval_months > 1 && item.interval_months <= 120 ? `Alle ${item.interval_months} Monate` : 'Rhythmus offen';
+          card.append(node('p', 'fc-payment-review-cadence', item.can_accept === false
+            ? `${cadence} · Vertragsdetails ergänzen.`
+            : `${cadence} · künftig ab ${date(item.expected_date)}`));
+        }
         if (item.forecast_included) card.append(node('p', 'fc-caption',
-          'Bereits als Schätzung eingeplant. Ablehnen entfernt diese Reihe aus der Prognose.'));
+          'Geschätzt eingeplant · Ablehnen entfernt die Reihe.'));
         if (item.kind === 'amount') card.append(node('p', 'fc-payment-review-booking',
           `Bisher ${money({...item, amount:item.previous_amount})} · neuer Betrag ab ${date(item.expected_date)}`));
         if (item.booking) card.append(node('p', 'fc-payment-review-booking',
           `Gebucht: ${money({...item, ...item.booking})} · ${date(item.booking.date)} · ${item.booking.counterparty || 'Gegenpartei offen'}`));
         const details = node('details'); details.append(node('summary', '', 'Begründung & Belege'));
+        if (item.requires_review) {
+          for (const text of item.warnings || []) details.append(node('p', '', text));
+          details.append(node('p', '', item.can_accept === false
+            ? 'Für eine Bestätigung fehlen eindeutige Vertragsangaben. Bitte in den Vertragsdetails ergänzen.'
+            : `Mit der Bestätigung übernimmst Du die Regel ab der nächsten künftigen Fälligkeit am ${date(item.expected_date)} für die Prognose. Vergangene Buchungen und frühere fehlende Perioden bleiben unverändert.`));
+        }
         if (item.reason) details.append(node('p', '', item.reason));
         if (item.confidence != null) details.append(node('p', 'fc-caption', `Einschätzung: ${{high:'Gut passend',medium:'Bitte prüfen',low:'Unsicher'}[item.confidence] || 'Bitte prüfen'}`));
         if (item.booking) details.append(node('p', '', `Buchung: ${date(item.booking.date)} · ${money({...item, ...item.booking})} · ${item.booking.counterparty || 'Gegenpartei offen'}`));
         card.append(details);
         const actions = node('div', 'fc-payment-review-actions');
-        for (const [decision, label] of [['accept', 'Bestätigen'], ['reject', 'Ablehnen']]) {
+        for (const [decision, label] of [['accept', item.requires_review ? 'Fortsetzung bestätigen' : 'Bestätigen'], ['reject', 'Ablehnen']]) {
+          if (decision === 'accept' && item.can_accept === false) continue;
           const action = button(label, () => void decide(item, decision)); action.disabled = saving || loading || locked; actions.append(action);
         }
         card.append(actions); list.append(card);

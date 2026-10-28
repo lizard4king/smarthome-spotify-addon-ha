@@ -163,7 +163,7 @@
     "onboarding.py": "df057661401a42c5b483ec5356b63724a51d2457d1e828fde39468b007332614",
     "overview.py": "a695aa1eb753e4c8d4bf6bb978450c34bc48215abc52c4092b3b8c62c3219cab",
     "payment_policy.py": "fe3b93f660b67abe1c0d3765669bb13e6a56555268e392d2d8ee96cfd0461328",
-    "payment_review.py": "80db7b0cec4b077a2430b37ddc20b61432e9cac297b195f45d0e8e555e778351",
+    "payment_review.py": "8c25c099bbefb4296bc4d1183698543140c540929c57a178428922d290130a00",
     "payment_status.py": "674c5f11b448087bf073e6204b58b009f57fbddfdb1d3670e2487a2729ecabaf",
     "payment_status_sync.py": "72d3c22909c57e5540ddd6cb440ece90188a17a53fece5e7102547bdc00b58af",
     "paypal_balance_view.py": "2e1240752a98c07dc4aea162e0f791054ad351d8e313a64869d55dda69e0ee2f",
@@ -213,7 +213,7 @@
     "static/administration.css": "2a6e58917864374a09f7d76d2fe3ba61580fad427fe06b3051db1136377dfb0e",
     "static/administration.js": "3fd66a2f50374e9b1fd6391f59719c3cb53151da2d5d626ea55a2a2269c242f4",
     "static/analytics.js": "fbd02eae4352937cb163b234a6908acb178d0930224149dc3ab5cc726d666d43",
-    "static/app.js": "70a38e420b1b7e3c0be0ebfa05f9f195a175ac39050cc91e6596f7c12b615a38",
+    "static/app.js": "25b91f4ddaf3530d31b43cb17ad8447a70cd803e328bcc116bf78f6d935b0c8a",
     "static/approvals.js": "76f46875bb8b27b4d4363de7eda8d5f3fedc20544522cfebd932e767203a0275",
     "static/bank-ing.svg": "172e4562c1e35378afc6d43748b7d25188810e6744e43d01ad7da4cdac7be586",
     "static/bank-paypal.png": "b94a7952974e87a72f0b7a46ee3b3ea0f05801ac05bd7b166d9c173fac58ec56",
@@ -472,7 +472,7 @@
     "static/contracts.js": "b016315125424aa5b33d218ccc59b907bb000ac45c9f410979dbc3548d657f58",
     "static/counterparties.css": "bf604b9afa8d966a861c81b850798dac29961c4a76f1443b9441fdc4f681e760",
     "static/counterparties.js": "c99215bd0b142522792e521e8b848ba9489b476ace31751124ad784f2f72ab94",
-    "static/dashboard.css": "e0f8e0d8ce3a9cf32d4df672b9c59c329edd2c17a3a5a1c8c2aea0f4b292f48a",
+    "static/dashboard.css": "d5e7da337398cba13bb75d151ee9004b106c0c0fff21a65153d2e30ba7ba7de0",
     "static/dashboard.js": "fbe35d9c0de045eb199ea6607a8b40e6b101c5d09b84cfd4febcb7f60b3faef0",
     "static/finanzguru.js": "473063d10b4faa2dae98d6927d58969ea23bbc0056bf4c23cc9b7b63aab5a0e5",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
@@ -484,8 +484,8 @@
     "static/login.css": "f47f5a7a58de38c180b1ee1002fa6eac97593b893d0bdcbe235186ced7f93851",
     "static/lucide-LICENSE.txt": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
     "static/monthly.js": "8fe6ac129de29b220f72fa97b3064b71e969ec3175ad8f0565a1aa66dd3a2621",
-    "static/payment-review.css": "b8ecfe5d70febd8782904f27ef3fa66b4ad782586f06a4e4623e8490ebe06011",
-    "static/payment-review.js": "74f756907b00c3ef3db79e24d082815d4f6588437626e4bedafe20bf73069b5b",
+    "static/payment-review.css": "b54cd6c0b266642f79e01df9df14f663a7f74d6582e61f6c1e92e9668159663d",
+    "static/payment-review.js": "c62cf2d7a0ef8f3a2d7619db26e74b2208f889d41175bce11afefe6f088b2738",
     "static/paypal-banking.css": "25c397cd2572fa8c44e1f126a0697c2008ae84e3e6069811031e2b0071e433fb",
     "static/paypal-banking.js": "4e5f65f7924dd26303390079dd4fa5664f17466df06c32249b1170682fae607c",
     "static/paypal-credit.css": "cb5f914568dbc5b569974c55ae9d7bb99634d660b0d7a144693fa70e981c3b9e",
@@ -514,6 +514,6 @@
     "web.py": "844021b41be523936d6635ba944aec6e0dd231fa87447a28ad1e971f744d14c4"
   },
   "schema_version": 1,
-  "source_commit": "edc6db43fc389aa278838fc7a35544db43d22ae5",
-  "source_tree_sha256": "2967fe13ea704b3c7b1680cd1d71a4f717d1e8b25c55253a0b4733fd4bc90454"
+  "source_commit": "5000ef0dab7ee83f84cd7c585347ca626b6bfb74",
+  "source_tree_sha256": "ecbc727b9458da33977a593a4be01c97f08a8ee0e2c0c3beec6d19dc5c7b7e07"
 }
