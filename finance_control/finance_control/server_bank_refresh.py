@@ -1,4 +1,4 @@
-"""Opt-in, owner-bound refresh of previously imported bank periods.
+"""Shared-household refresh of previously imported bank periods.
 
 Only an explicit manual import can create a binding. Refresh runs in one
 process-wide worker, never on construction or on a read-only status request.
@@ -30,7 +30,7 @@ _MAX_WAIT_SECONDS = 350
 _POLL_SECONDS = 0.2
 _GLOBAL_WORKER_LOCK = threading.Lock()
 _ACTIVE_LOCK = threading.Lock()
-_ACTIVE_CONTEXT = None  # (database, owner, frozenset((connection_id, revision)))
+_ACTIVE_CONTEXT = None  # (database, initiator, frozenset((connection_id, revision)))
 _SAFE_CODES = frozenset({
     'authorization_required', 'auth_rejected', 'bank_read_unavailable', 'bank_read_timeout',
     'bank_read_busy', 'bank_product_unavailable', 'bank_failure',
@@ -43,7 +43,8 @@ _SAFE_CODES = frozenset({
     'LEDGER_CONTROL_CHANGED', 'LEGACY_MONTH_OVERLAP', 'LEGACY_TEXT_MISMATCH',
     'LEGACY_TEXT_REVIEW_LIMIT', 'legacy_text_confirmation_required',
     'LEGACY_PREFIX_AMBIGUOUS', 'SOURCE_BINDING_REQUIRED',
-    'PREVIOUS_MONTH_CHANGED',
+    'PREVIOUS_MONTH_CHANGED', 'card_operation_unsupported',
+    'card_import_review_required', 'card_balance_unavailable',
     'CONTROL_MONTH_OPENING_DATE_MISMATCH', 'CONTROL_MONTH_BALANCE_MISMATCH',
     'CONTROL_MONTH_ROWS_MISMATCH', 'SOURCE_BINDING_CONFLICT',
 })
@@ -97,6 +98,7 @@ class ServerBankRefresh:
     """Persistent refresh selections; all bank access remains in the jobs API."""
 
     def __init__(self, jobs, administration, database, clock=None):
+        self.cards = None
         self.jobs = jobs
         self.administration = administration
         self.database = Path(database).expanduser().resolve()
@@ -118,7 +120,7 @@ class ServerBankRefresh:
         with self.administration._connection() as db:
             owner = self._owner(actor, db)
             rows = db.execute(
-                "SELECT c.id,c.label,c.bank_id,c.revision AS connection_revision,"
+                "SELECT c.id,c.label,c.bank_id,c.user_id AS connection_owner,c.revision AS connection_revision,"
                 "b.owner_id AS binding_owner,b.revision AS binding_revision,"
                 "b.account_id,a.display_name AS account_name,b.account_fingerprint,"
                 "b.tan_method,b.tan_medium,"
@@ -127,16 +129,41 @@ class ServerBankRefresh:
                 "FROM app_bank_connections c LEFT JOIN server_bank_refresh_bindings b "
                 "ON b.connection_id=c.id "
                 "LEFT JOIN accounts a ON a.id=b.account_id "
-                "WHERE c.user_id=? AND c.status!='REVOKED' ORDER BY c.rowid,b.account_id",
-                (owner,)).fetchall()
-        return owner, [dict(row) for row in rows]
+                "JOIN app_users u ON u.id=c.user_id "
+                "WHERE u.active=1 AND c.status!='REVOKED' ORDER BY c.rowid,b.account_id").fetchall()
+        result = [dict(row) for row in rows]
+        if self.cards is not None:
+            result.extend(self.cards.rows(actor))
+        return owner, result
+
+    def _bank_actor(self, initiator, row):
+        """Delegate only a previously owner-approved binding; never caller targets."""
+        with self.administration._connection() as db:
+            self.administration._actor(db, initiator)
+            owner = db.execute(
+                "SELECT u.* FROM app_users u JOIN app_bank_connections c ON c.user_id=u.id "
+                "JOIN server_bank_refresh_bindings b ON b.connection_id=c.id AND b.owner_id=u.id "
+                "WHERE u.active=1 AND u.subject IS NOT NULL AND c.status!='REVOKED' "
+                "AND c.id=? AND c.revision=? AND b.revision=c.revision "
+                "AND b.account_id=? AND b.account_fingerprint=? AND b.owner_id=? "
+                "AND b.bank_id=c.bank_id AND b.tan_method IS ? AND b.tan_medium IS ?",
+                (row['id'], row['connection_revision'], row['account_id'],
+                 row['account_fingerprint'], row['binding_owner'], row['tan_method'],
+                 row['tan_medium'])).fetchone()
+        if owner is None:
+            raise AdministrationError('stale_revision', 409)
+        return dict(owner)
 
     def _valid_binding(self, actor, owner, row):
-        if (row['binding_owner'] != owner or row['binding_revision'] != row['connection_revision']
+        if row.get('card_id') is not None:
+            return self.cards is not None and self.cards.valid(actor, row)
+        if (row['binding_owner'] != row['connection_owner']
+                or row['binding_revision'] != row['connection_revision']
                 or row['bank_id'] not in ('ING', 'POSTBANK', 'NASPA')):
             return False
         try:
-            return self.jobs._check(actor, row['id'], row['connection_revision']) == owner
+            bank_actor = self._bank_actor(actor, row)
+            return self.jobs._check(bank_actor, row['id'], row['connection_revision']) == row['binding_owner']
         except AdministrationError:
             return False
 
@@ -144,7 +171,6 @@ class ServerBankRefresh:
         with _ACTIVE_LOCK:
             context = _ACTIVE_CONTEXT
             return (context is not None and context[0] == self.database
-                    and context[1] == owner
                     and (row['id'], row['connection_revision'], row['account_id']) in context[2])
 
     def _acquire_active(self, owner, candidates):
@@ -168,12 +194,20 @@ class ServerBankRefresh:
         if row['last_status'] == 'running' and not active:
             # The worker may have committed between the list query and this view.
             with self.administration._connection() as db:
-                fresh = db.execute(
-                    'SELECT last_status,last_code,last_inserted,last_success_at,last_attempt_at,'
-                    'last_diagnostic '
-                    'FROM server_bank_refresh_bindings '
-                    'WHERE connection_id=? AND account_id=? AND owner_id=?',
-                    (row['id'], row['account_id'], owner)).fetchone()
+                if row.get('card_id'):
+                    fresh = db.execute(
+                        'SELECT last_status,last_code,last_inserted,last_success_at,last_attempt_at,'
+                        'NULL AS last_diagnostic FROM server_cards '
+                        'WHERE card_id=? AND connection_id=? AND account_id=? AND owner_id=? '
+                        'AND connection_revision=?',
+                        (row['card_id'], row['id'], row['account_id'], row['binding_owner'],
+                         row['binding_revision'])).fetchone()
+                else:
+                    fresh = db.execute(
+                        'SELECT last_status,last_code,last_inserted,last_success_at,last_attempt_at,'
+                        'last_diagnostic FROM server_bank_refresh_bindings '
+                        'WHERE connection_id=? AND account_id=? AND owner_id=?',
+                        (row['id'], row['account_id'], row['binding_owner'])).fetchone()
             if fresh is not None:
                 row.update(dict(fresh))
         item = {'id': row['id'], 'binding_id': (f"{row['id']}:{row['account_id']}"
@@ -181,9 +215,13 @@ class ServerBankRefresh:
                 'account_id': row['account_id'],
                 'account_name': row['account_name'],
                 'label': row['label'], 'bank_id': row['bank_id'],
-                'status': 'setup_required', 'last_success_at': row['last_success_at']}
+                'status': 'setup_required', 'last_success_at': row['last_success_at'],
+                'configured': False}
+        if row.get('card_id'):
+            item['binding_id'] = row['id'] + ':' + row['account_id'] + ':card:' + row['card_id']
         if not self._valid_binding(actor, owner, row):
             return item
+        item['configured'] = True
         if active or self._active(owner, row):
             item['status'] = 'running'
             return item
@@ -198,7 +236,9 @@ class ServerBankRefresh:
                 elapsed = 0
             if elapsed < _COOLDOWN_SECONDS:
                 item['status'] = 'cooldown'
-                if row['last_code']:
+                if row.get('card_id') and row['last_code'] == 'card_balance_unavailable':
+                    item['warning'] = 'card_balance_unavailable'
+                elif row['last_code']:
                     item['code'] = _code(row['last_code'])
                     if row['last_status'] == 'error':
                         diagnostic = _stored_diagnostic(item['code'], row['last_diagnostic'])
@@ -211,6 +251,8 @@ class ServerBankRefresh:
         status = row['last_status']
         if status in ('updated', 'setup_required', 'error'):
             item['status'] = status
+        elif row.get('card_id') and status is None:
+            item['status'] = 'ready'
         else:
             item['status'] = 'error'
             item['code'] = 'bank_import_unavailable'
@@ -225,6 +267,8 @@ class ServerBankRefresh:
                 and (status == 'updated' or status in ('error', 'setup_required')
                      and row['last_inserted'] > 0)):
             item['inserted'] = row['last_inserted']
+        if row.get('card_id') and row['last_code'] == 'card_balance_unavailable':
+            item['warning'] = 'card_balance_unavailable'
         return item
 
     def _plan(self, account_id, bank_id, today):
@@ -344,7 +388,10 @@ class ServerBankRefresh:
         return {'remembered': True}
 
     def _record(self, row, *, status, now, code=None, inserted=None, attempt=False,
-                diagnostic=None):
+                diagnostic=None, initiated_by=None):
+        if row.get('card_id'):
+            return self.cards.record(row, status=status, now=now, code=code, inserted=inserted,
+                                     attempt=attempt, initiated_by=initiated_by)
         safe = _diagnostic(code, diagnostic) if status == 'error' else None
         encoded = (json.dumps(safe, separators=(',', ':'), sort_keys=True)
                    if safe is not None else None)
@@ -352,9 +399,9 @@ class ServerBankRefresh:
             if attempt:
                 db.execute(
                     'UPDATE server_bank_refresh_bindings SET last_attempt_at=?,last_status=?, '
-                    'last_code=NULL,last_diagnostic=NULL,last_inserted=NULL '
+                    'last_code=NULL,last_diagnostic=NULL,last_inserted=NULL,last_triggered_by=? '
                     'WHERE connection_id=? AND account_id=? AND owner_id=? AND revision=?',
-                    (now.isoformat(), 'running', row['id'], row['account_id'], row['binding_owner'],
+                    (now.isoformat(), 'running', initiated_by, row['id'], row['account_id'], row['binding_owner'],
                      row['binding_revision']))
             else:
                 db.execute(
@@ -368,7 +415,8 @@ class ServerBankRefresh:
         inserted = 0
         try:
             for month_start, as_of in planned:
-                if self.jobs._check(actor, row['id'], row['connection_revision']) != owner:
+                bank_actor = self._bank_actor(actor, row)
+                if self.jobs._check(bank_actor, row['id'], row['connection_revision']) != row['binding_owner']:
                     raise _RefreshError('stale_revision')
                 request = {
                     'id': row['id'], 'revision': row['connection_revision'],
@@ -378,16 +426,17 @@ class ServerBankRefresh:
                     'account_id': row['account_id'], 'month_start': month_start,
                     'as_of': as_of,
                 }
-                started = self.jobs.start(actor, request)
+                started = self.jobs.start(bank_actor, request)
                 if type(started) is not dict or type(started.get('job_id')) is not str:
                     raise _RefreshError('invalid_bank_result')
                 deadline = time.monotonic() + _MAX_WAIT_SECONDS
                 while True:
                     if time.monotonic() >= deadline:
                         raise _RefreshError('bank_read_timeout')
-                    if self.jobs._check(actor, row['id'], row['connection_revision']) != owner:
+                    bank_actor = self._bank_actor(actor, row)
+                    if self.jobs._check(bank_actor, row['id'], row['connection_revision']) != row['binding_owner']:
                         raise _RefreshError('stale_revision')
-                    state = self.jobs.state(actor, {'job_id': started['job_id']})
+                    state = self.jobs.state(bank_actor, {'job_id': started['job_id']})
                     if type(state) is not dict:
                         raise _RefreshError('invalid_bank_result')
                     if state.get('status') == 'running':
@@ -414,7 +463,8 @@ class ServerBankRefresh:
                             or result.get('month_start') != month_start
                             or not month_start <= covered_until <= as_of):
                         raise _RefreshError('invalid_bank_result')
-                    committed = self.jobs.commit(actor, {'job_id': started['job_id'],
+                    bank_actor = self._bank_actor(actor, row)
+                    committed = self.jobs.commit(bank_actor, {'job_id': started['job_id'],
                                                          'review_token': token, 'confirmed': True})
                     if (type(committed) is not dict or committed.get('status') != 'imported'
                             or type(committed.get('inserted')) is not int
@@ -428,7 +478,8 @@ class ServerBankRefresh:
                 # never treat it as a completed month or skip into the next one.
                 if covered_until < as_of:
                     break
-            if self.jobs._check(actor, row['id'], row['connection_revision']) != owner:
+            bank_actor = self._bank_actor(actor, row)
+            if self.jobs._check(bank_actor, row['id'], row['connection_revision']) != row['binding_owner']:
                 raise _RefreshError('stale_revision')
             self._record(row, status='updated', now=self._now(), inserted=inserted)
         except AdministrationError as error:
@@ -443,7 +494,10 @@ class ServerBankRefresh:
     def _worker(self, actor, owner, candidates):
         try:
             for row, planned in candidates:
-                self._run_binding(actor, owner, row, planned)
+                if row.get('card_id'):
+                    self.cards.run(actor, row, planned, self._now)
+                else:
+                    self._run_binding(actor, owner, row, planned)
         finally:
             self._clear_active()
             _GLOBAL_WORKER_LOCK.release()
@@ -463,8 +517,9 @@ class ServerBankRefresh:
             if not self._valid_binding(actor, owner, row) or view['status'] == 'cooldown':
                 continue
             try:
-                planned = self._plan(row['account_id'], row['bank_id'],
-                                     self._now().astimezone(ZoneInfo('Europe/Berlin')).date())
+                today = self._now().astimezone(ZoneInfo('Europe/Berlin')).date()
+                planned = (self.cards.plan(row, today) if row.get('card_id') else
+                           self._plan(row['account_id'], row['bank_id'], today))
             except _RefreshError as error:
                 view.update(status='error', code=_code(error.code))
                 view.pop('diagnostic', None)
@@ -486,7 +541,7 @@ class ServerBankRefresh:
                 raise AdministrationError('bank_read_busy', 409)
         try:
             for row, _ in candidates:
-                self._record(row, status='running', now=self._now(), attempt=True)
+                self._record(row, status='running', now=self._now(), attempt=True, initiated_by=owner)
             worker = threading.Thread(target=self._worker,
                                       args=(dict(actor), owner, candidates), daemon=True)
             worker.start()

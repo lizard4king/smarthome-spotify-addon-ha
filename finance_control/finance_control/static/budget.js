@@ -375,8 +375,14 @@ function budgetSetupList(section, name, label, add, values, maximum) {
   });
   return list;
 }
+const budgetCashflowSettlements = new WeakMap();
 function budgetAddCashflow(list, value) {
-  const {grid} = budgetSetupRow(list, 'Erwartete Zahlung', value);
+  const {row, grid} = budgetSetupRow(list, 'Erwartete Zahlung', value);
+  const preserved = {};
+  for (const key of ['settlements', 'settlement_scope']) {
+    if (Object.hasOwn(value, key)) preserved[key] = structuredClone(value[key]);
+  }
+  budgetCashflowSettlements.set(row, preserved);
   budgetSetupField(grid, 'label', 'Bezeichnung', value.label, 'text', 160);
   budgetSetupField(grid, 'direction', 'Richtung', value.direction || 'outflow', 'direction');
   budgetSetupField(grid, 'amount', 'Betrag EUR', value.amount, 'money');
@@ -391,7 +397,7 @@ function budgetAddPayday(list, value) {
   budgetSetupField(grid, 'next_salary_date', 'Nächster Gehaltseingang', value.next_salary_date, 'date');
   budgetSetupField(grid, 'next_salary_basis', 'Grundlage des nächsten Termins', value.next_salary_basis);
   budgetSetupField(grid, 'target_balance', 'Gewünschter Kontostand vor dem Gehalt (EUR)', value.target_balance, 'signed');
-  const help = document.createElement('p'); help.className = 'muted'; help.textContent = 'Erwartete Zahlungen einzeln erfassen. Betrag immer positiv; die Richtung legt Eingang oder Ausgang fest. Bereits gebuchte Zahlungen entfernen.'; row.append(help);
+  const help = document.createElement('p'); help.className = 'muted'; help.textContent = 'Erwartete Zahlungen einzeln erfassen. Betrag immer positiv; die Richtung legt Eingang oder Ausgang fest. Bereits gebuchte Zahlungen in Plan & Ist ausdrücklich zuordnen.'; row.append(help);
   budgetSetupList(row, 'cashflows', 'Erwartete Zahlung hinzufügen', budgetAddCashflow, value.cashflows, 100);
 }
 function budgetAddTransfer(list, value) {
@@ -601,7 +607,7 @@ function budgetReadSetup(items) {
     const field = read(row), accountId = account(field('account_id'));
     if (seenAccounts.has(accountId)) throw new Error('Pro Girokonto ist nur ein Gehaltszeitraum möglich.'); seenAccounts.add(accountId);
     if (field('next_salary_date') <= field('last_salary_date')) throw new Error('Der nächste Gehaltseingang muss nach dem letzten liegen.');
-    const cashflows = [...row.querySelector('[data-setup-list="cashflows"]').children].map(flow => { const f = read(flow); return {label:f('label'), direction:f('direction'), amount:money(f('amount')), due_date:f('due_date'), evidence:f('evidence')}; });
+    const cashflows = [...row.querySelector('[data-setup-list="cashflows"]').children].map(flow => { const f = read(flow); return {...structuredClone(budgetCashflowSettlements.get(flow) || {}), label:f('label'), direction:f('direction'), amount:money(f('amount')), due_date:f('due_date'), evidence:f('evidence')}; });
     return {account_id:accountId, owner_label:field('owner_label'), last_salary_date:field('last_salary_date'), next_salary_date:field('next_salary_date'), next_salary_basis:field('next_salary_basis'), target_balance:money(field('target_balance')), cashflows};
   });
   result.pending_transfers = rows('pending_transfers').map(row => {

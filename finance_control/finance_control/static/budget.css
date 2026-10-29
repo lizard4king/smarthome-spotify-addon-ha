@@ -261,3 +261,34 @@
 /* Keep compact module controls usable without shrinking the existing layout. */
 :is(#budget-planner,#plan-actual,#payment-policy) :is(button,summary,a.button){min-width:44px;min-height:44px;}
 @media(max-width:650px){:is(#budget-planner,#plan-actual,#payment-policy) :is(input:not([type=checkbox]):not([type=radio]),select,textarea){font-size:1rem;min-height:44px;}}
+
+/* Account netting stays compact; the complete figures are available on demand. */
+.plan-actual-netting{min-width:0;max-width:100%;margin:12px 0;color:var(--fc-text)}
+.plan-actual-free-card>.plan-actual-netting{grid-column:1/-1;margin:0}
+.plan-actual-netting .plan-actual-netting-note{margin:0;font-size:.875rem}
+.plan-actual-netting-details summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:.875rem;text-decoration:underline;text-underline-offset:.15em}
+.plan-actual-netting-details summary::before{content:"\25b8";margin-right:.4em}
+.plan-actual-netting-details[open] summary::before{content:"\25be"}
+.plan-actual-netting-values{margin:4px 0 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;font-size:.875rem}
+.plan-actual-netting-values dt{min-width:0;overflow-wrap:anywhere}
+.plan-actual-netting-values dd{margin:0;max-width:100%;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.plan-actual-netting-details>p{margin:8px 0 0;font-size:.875rem}
+@media(max-width:600px){.plan-actual-netting-values{grid-template-columns:minmax(0,1fr);gap:2px}.plan-actual-netting-values dd{margin-bottom:8px}}
+
+/* Explicit booking assignment stays inside native closed due-item details. */
+.plan-actual-settlement{margin:8px 0;max-width:100%;overflow-wrap:anywhere}
+.plan-actual-settlement summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:.875rem}
+.plan-actual-settlement-row{padding:10px 0;border-top:1px solid var(--fc-border);display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,150px);gap:12px}
+.plan-actual-settlement-row label{display:flex;align-items:center;gap:8px;min-height:44px;min-width:0}
+.plan-actual-settlement-row label:last-child{flex-direction:column;align-items:stretch;font-size:.875rem}
+.plan-actual-settlement input[type=checkbox]{min-width:24px;min-height:24px;margin:10px}
+.plan-actual-settlement input[type=number],.plan-actual-settlement button{min-height:44px;max-width:100%}
+.plan-actual-settlement button{margin:8px 8px 0 0;white-space:normal}
+@media(max-width:600px){.plan-actual-settlement-row{grid-template-columns:minmax(0,1fr)}.plan-actual-settlement button{width:100%;margin-right:0}}
+
+/* Open legacy detail views must also fit very narrow phones. */
+@media(max-width:650px){.plan-actual-payday-totals,.plan-actual-liquidity-summary{grid-template-columns:minmax(0,1fr)}.plan-actual-payday-total,.plan-actual-liquidity-summary article{min-width:0}.plan-actual-payday-total strong,.plan-actual-liquidity-summary :is(span,strong){overflow-wrap:anywhere}}
+
+/* Grid items must shrink to the phone width when calculation details open. */
+.plan-actual-account-grid article{min-width:0;overflow-wrap:anywhere}.plan-actual-account-grid dl{grid-template-columns:minmax(0,1fr) auto}
+@media(max-width:650px){.plan-actual-account-grid{grid-template-columns:minmax(0,1fr)}}

@@ -165,13 +165,21 @@ def _validated_output(payload, request):
                     raise ValueError('key')
                 seen.add(key)
             return result
-        if set(result) != {'status', 'card_masked', 'balance', 'transactions',
-                           'last_billing_date', 'expected_billing_date'} or result['status'] != 'ok':
+        fields = {'status', 'card_masked', 'balance', 'transactions',
+                  'last_billing_date', 'expected_billing_date'}
+        if (set(result) not in (fields, fields | {'balance_error'})
+                or result['status'] != 'ok'):
             raise ValueError('result')
         if (type(result['card_masked']) is not str or
                 re.fullmatch(r'•••• [0-9]{4}', result['card_masked']) is None):
             raise ValueError('mask')
-        _balance(result['balance'])
+        if result['balance'] is None:
+            if result.get('balance_error') != 'card_operation_unsupported':
+                raise ValueError('missing balance reason')
+        else:
+            if 'balance_error' in result:
+                raise ValueError('unexpected balance error')
+            _balance(result['balance'])
         _date(result['last_billing_date'], True)
         _date(result['expected_billing_date'], True)
         rows = result['transactions']

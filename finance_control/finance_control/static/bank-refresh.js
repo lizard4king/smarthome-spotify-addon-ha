@@ -3,6 +3,7 @@
 (() => {
   const hostId = 'dashboard-bank-refresh-host';
   const stateText = value => ({
+    ready: 'Bereit zum Abruf',
     running: 'Abruf läuft',
     updated: 'Aktualisiert',
     cooldown: 'Vor kurzem abgefragt',
@@ -48,6 +49,9 @@
     return ` ${stage} ${details[diagnostic.bank_error_code]}`;
   };
   const errorText = (code, diagnostic) => ({
+    card_import_review_required: 'Vorhandene Kartenbuchungen sind nicht eindeutig zuzuordnen. Es wurde nichts doppelt übernommen. Prüfe die bestehende Zuordnung.',
+    card_operation_unsupported: 'Die Bank unterstützt diesen Kartenabruf derzeit nicht.',
+    card_balance_unavailable: 'Umsätze wurden aktualisiert; die Bank liefert derzeit keinen separaten Kartenstand.',
     authorization_required: 'Die Bankfreigabe ist erforderlich. Öffne die Banking-App und versuche es danach erneut.',
     auth_rejected: 'Die ING/Bank hat die Anmeldung abgelehnt. Prüfe den gespeicherten Zugang.',
     bank_read_busy: 'Für diese Bankverbindung läuft bereits ein Abruf.',
@@ -147,7 +151,7 @@
     heading.textContent = 'Bankabruf';
     const description = document.createElement('p');
     description.className = 'fbr-muted';
-    description.textContent = 'Buchungen und Kontostände aus Deinen eingerichteten Bankverbindungen aktualisieren.';
+    description.textContent = 'Buchungen und Kontostände aus den eingerichteten Bankverbindungen des Haushalts aktualisieren.';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'fbr-button';
@@ -179,6 +183,24 @@
           diagnostic: error?.diagnostic};
       }
     };
+    const addSharedView = row => {
+      const item = document.createElement('li');
+      item.className = 'fbr-row';
+      item.dataset.connectionId = row.id;
+      const top = document.createElement('div'); top.className = 'fbr-row-top';
+      const label = document.createElement('strong');
+      label.textContent = typeof row.label === 'string' && row.label.trim()
+        ? row.label.trim() : nameFor(row.bank_id);
+      const state = document.createElement('span');
+      const date = document.createElement('span'); date.className = 'fbr-muted';
+      const feedback = document.createElement('div'); feedback.className = 'fbr-feedback';
+      top.append(label, state); item.append(top, date, feedback);
+      message(item, 'Einrichtung und Änderungen verwaltet der Eigentümer.');
+      let list = setup.querySelector('.fbr-list');
+      if (!list) { list = document.createElement('ul'); list.className = 'fbr-list'; setup.append(list); }
+      list.append(item);
+      const view = {state, date, feedback}; views.set(row.id, view); return view;
+    };
     const renderConnections = rows => {
       status.replaceChildren();
       const grouped = new Map();
@@ -188,9 +210,8 @@
         grouped.get(row.id).push(row);
       }
       for (const [id, accounts] of grouped) {
-        const view = views.get(id);
-        if (!view) continue;
-        const priority = ['running', 'error', 'setup_required', 'cooldown', 'updated'];
+        const view = views.get(id) || addSharedView(accounts[0]);
+        const priority = ['running', 'error', 'setup_required', 'cooldown', 'ready', 'updated'];
         const rank = value => priority.includes(value) ? priority.indexOf(value) : priority.length;
         const row = accounts.reduce((first, next) =>
           rank(next.status) < rank(first.status) ? next : first);
@@ -199,7 +220,7 @@
         const dates = accounts.map(account => account.last_success_at)
           .filter(value => typeof value === 'string' && Number.isFinite(Date.parse(value))).sort();
         view.date.textContent = formatDate(dates.at(-1));
-        view.summary.textContent = row.status === 'setup_required'
+        if (view.summary) view.summary.textContent = row.status === 'setup_required'
           ? 'Bankabruf einrichten' : 'Verbindung bearbeiten';
         view.feedback.replaceChildren();
         for (const account of accounts) {
@@ -229,6 +250,7 @@
               : `${account.inserted} Buchungen bereits übernommen; weiterer Abruf fehlgeschlagen.`;
             feedback.append(count);
           }
+          if (account.warning === 'card_balance_unavailable') message(feedback, errorText(account.warning));
           view.feedback.append(feedback);
         }
       }
@@ -241,48 +263,50 @@
           : updated ? 'Konten aktualisiert.'
               : cooldown ? 'Vor kurzem abgefragt.'
                 : setupRequired ? 'Bankabruf einrichten.' : 'Bankabruf abgeschlossen.';
-      compactStatus(summary, false, errors.length > 0);
+      const refreshAvailable = rows.some(row => row?.configured === true);
+      button.disabled = running || !refreshAvailable;
+      compactStatus(summary, running || !refreshAvailable, errors.length > 0);
     };
 
+    let initialState = null;
     const loadSetup = async () => {
-      const administration = await request('/api/administration');
+      // Shared configured status authorizes ordinary refresh; own setup metadata
+      // merely supplies an owner-only editor and must not gate household refresh.
+      const shared = await request('/api/administration/bank-refresh-state', {});
       if (!live()) return false;
       setup.replaceChildren();
-      if (!administration.ok) {
-        message(setup, 'Bankeinrichtungen konnten nicht geladen werden. Es wurde kein Abruf gestartet.', true);
+      if (!shared.ok || !['complete', 'running'].includes(shared.data?.status)
+          || !Array.isArray(shared.data.connections)) {
+        message(setup, 'Der gemeinsame Aktualisierungsstatus konnte nicht geladen werden. Es wurde kein Abruf gestartet.', true);
         button.disabled = true;
         return null;
       }
-      if (administration.data?.enabled !== true) {
-        message(setup, 'Die Bankverwaltung ist für diesen Zugang nicht freigeschaltet.');
-        button.disabled = true;
-        return false;
-      }
-      const credentials = await request('/api/administration/bank-credentials-state', {});
+      initialState = shared.data;
+      const administration = await request('/api/administration');
       if (!live()) return false;
-      if (!credentials.ok) {
-        message(setup, 'Bankeinrichtungen konnten nicht geladen werden. Es wurde kein Abruf gestartet.', true);
-        button.disabled = true;
-        return null;
+      const ownSetupAvailable = administration.ok && administration.data?.enabled === true;
+      if (!ownSetupAvailable) {
+        message(setup, 'Eigene Bankeinrichtungen konnten nicht geladen werden. Der gemeinsame Aktualisierungsstatus wird getrennt geprüft.', true);
       }
-      if (credentials.data?.supported !== true) {
-        message(setup, 'Dieser Server unterstützt den sicheren Bankzugang nicht.');
-        button.disabled = true;
-        return false;
-      }
-
-      const connections = Array.isArray(administration.data.connections)
+      const ownConnections = ownSetupAvailable && Array.isArray(administration.data.connections)
         ? administration.data.connections.filter(validRecord) : [];
-      const credentialRows = Array.isArray(credentials.data.connections) ? credentials.data.connections : [];
+      const credentials = ownConnections.length
+        ? await request('/api/administration/bank-credentials-state', {})
+        : {ok:true, data:{supported:true, connections:[]}};
+      if (!live()) return false;
+      const ownCredentialsAvailable = credentials.ok && credentials.data?.supported === true;
+      if (!ownCredentialsAvailable) {
+        message(setup, 'Eigene Bankzugänge konnten nicht geladen werden. Der gemeinsame Aktualisierungsstatus wird getrennt geprüft.', true);
+      }
+      const connections = ownConnections;
+      const credentialRows = credentials.ok && credentials.data?.supported === true
+        && Array.isArray(credentials.data.connections) ? credentials.data.connections : [];
       const credentialsById = new Map(credentialRows
         .filter(row => row && typeof row.id === 'string')
         .map(row => [row.id, row]));
-      const refreshEligible = connections.filter(row => ['POSTBANK', 'ING', 'NASPA'].includes(row.bank_id)
-        && credentialsById.get(row.id)?.server_credentials_present === true);
-      if (!connections.length) {
-        message(setup, 'Es sind keine eigenen Bankverbindungen vorhanden. Registriere eine Verbindung und hinterlege den Zugang in der Verwaltung.');
-        button.disabled = true;
-        return false;
+      const refreshEligible = shared.data.connections.some(row => row?.configured === true);
+      if (!connections.length && !shared.data.connections.length) {
+        message(setup, 'Es sind noch keine Bankverbindungen für den Haushalt eingerichtet.');
       }
 
       const missingCredentials = connections.filter(row => row.bank_id !== 'ING'
@@ -340,7 +364,9 @@
         details.addEventListener('toggle', () => {
           if (!details.open || bound || !live()) return;
           bound = true;
-          if (credentialsById.get(row.id)?.server_credentials_present === true
+          if (!ownCredentialsAvailable) {
+            message(content, 'Der Status der eigenen Zugangsdaten ist nicht verfügbar. Bitte später erneut öffnen.', true);
+          } else if (credentialsById.get(row.id)?.server_credentials_present === true
               && window.postbankTransactions) {
             const record = {id: row.id, revision: row.revision, bankId: row.bank_id};
             let cards = null;
@@ -363,11 +389,12 @@
           }
         });
       }
-      button.disabled = refreshEligible.length === 0;
-      if (!refreshEligible.length) {
-        message(setup, 'Es ist kein eigener Bankzugang für den automatischen Abruf eingerichtet.');
+      renderConnections(shared.data.connections);
+      button.disabled = !refreshEligible;
+      if (!refreshEligible) {
+        message(setup, 'Es ist noch kein gemeinsamer Bankabruf vollständig eingerichtet. Der Eigentümer muss die Kontozuordnung bestätigen.');
       }
-      return refreshEligible.length > 0;
+      return refreshEligible || shared.data.status === 'running';
     };
 
     async function poll() {
@@ -440,11 +467,7 @@
       return;
     }
     manualRefresh = start;
-    const state = await request('/api/administration/bank-refresh-state', {});
-    if (!live()) return;
-    if (state.ok && state.data?.status === 'complete' && Array.isArray(state.data.connections)) {
-      renderConnections(state.data.connections);
-    } else if (state.ok && state.data?.status === 'running') {
+    if (initialState.status === 'running') {
       setBusy(true);
       automaticStarted = true;
       void poll();
