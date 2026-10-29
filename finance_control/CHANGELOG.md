@@ -1,3 +1,7 @@
+# 0.2.76
+
+Die neue Oberfläche ist die Standardansicht unter /. Das vollständige bisherige Cockpit bleibt unter /cockpit und über Mehr erreichbar. Alte Lesezeichen werden weitergeleitet; Anmeldung und Finanzlogik bleiben unverändert.
+
 # 0.2.75
 
 Analyseansicht verarbeitet die bestehenden strukturierten Backend-Hinweise zu Kartenabbuchungen und einseitigen Umbuchungen. Ungültige Hinweisstrukturen werden als Ladefehler angezeigt. Finanzielle Berechnungen bleiben unverändert.

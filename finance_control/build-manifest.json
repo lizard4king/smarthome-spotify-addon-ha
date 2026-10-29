@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "3625323b06f06a3136155889b473be362d42142c77e0fc875d5b14c4e17c5319",
-  "addon_version": "0.2.75",
+  "addon_tree_sha256": "bcae9fd9e82fe35aaa5952234231c981dbb5b8ccab0ac94b218f1571f7dc2184",
+  "addon_version": "0.2.76",
   "deployment_files": {
-    "Dockerfile": "ada41826420c65cdd57bff440f18e4e7448cd557444217fcc429d1609bd74dad",
-    "README.md": "d9db872ee45878bdaf3f99c6de092be7ee271a02b35fa8cbd8c8fadfec47ba6a",
+    "Dockerfile": "f3d56372e0984afe87af741a88aef02918186dbc9fa271dc47fef5e3d200519f",
+    "README.md": "65691cdae77f4dad9786f8426bc58e76f58098992f0ff7c3e486ce02b2d8ff7c",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "bb443417627512400cf0fddbeeae20a0d780daa0b277331daac691ac40877d16",
+    "config.yaml": "cd4015fa35d613d3b8ae6978b6cc6f4fa64f62d352d16684e6d4315b29119a28",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -29,7 +29,7 @@
     "analytics.py": "35c9e9e48cfbddaec3cf16485501e801ea157038f270d0bc4d32198879420cb4",
     "approval_queue.py": "695768a0a9710ef09cb3415d15db8e0419ae64da845f93fb87e725dc755d4489",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
-    "backup_guard.py": "e69dd7be34731bb8eab1c81a6a560884914eec885ffcf65e58335e1bcafc3ec7",
+    "backup_guard.py": "4b97c6e728e803bbd27067253fca49b08a059e3755379acd28c27ea9c9a10017",
     "backup_package.py": "af18739a1e38ecbc4b80612252914d36e38e69fe51d7915add042a5e2a86f290",
     "backup_retention_maintenance.py": "5ec98b0352fc04de6bcba71f3753f171bafca841e5174405e35e43597ca8e0b9",
     "bank_account_policy.py": "7c5366d8a6d7dc4070c0a33fe62be3334c4202a69f14b437f0c39d9ebd6b9881",
@@ -486,10 +486,10 @@
     "static/frontend-api.js": "a7a3f635946c9cc942cbceaad42a4301bf44c9f3a9ce0825e53af187fbf2c5d8",
     "static/frontend-preview.css": "6d3e4b425058aa420619ce085e96576bf7b3da667944b7ae174ab1c03d2ca098",
     "static/frontend-preview.html": "a8c3a923dfcf65ac32061082c707f729a2bfc948ba48d5ad1aabebf639741b0d",
-    "static/frontend-preview.js": "4963be75f1264724aa9eb7a787f11481f6f19edd75e9b5fc6e70aa0267aa4254",
+    "static/frontend-preview.js": "d7e1df027fae18703f1065206287f3a5335bf713076e307090835c0887f0cf1d",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
     "static/home.js": "8cff2938258cd058d9c758ff704e691640eb51cf7caf2114c07c73c9d63aca5f",
-    "static/index.html": "e26da6b3d7c413b5a971222f6931a60e8a4e5693d05989842bbc599797f57464",
+    "static/index.html": "d5fc157966288239f1a07b10a40d7536aec80a37a8443c50cba812ff55bff148",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/klarna-banking.css": "4dd7ac0bb39d69c89fb644349639253f2cbd8d7ffec4e68a0a3c0552693a7dae",
     "static/klarna-banking.js": "b36af5b19a1b9c63b20be09807c5024445b23bac7db115f13b8697bfd0676cf9",
@@ -523,9 +523,9 @@
     "transfer_corrections.py": "2f3cb0687cca7a4f7963e9d8324c860544237100647b3b9761be4bdb210af256",
     "transfer_notices.py": "26e8c397d7f5470fa31e8ab52a5720372b1d461aa6d010b3364d4ba7f0543ba5",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
-    "web.py": "1af5bf5e72af6c3c57f62e98e1e62d3792f653a066ef7e9e0c02e07fc2738250"
+    "web.py": "c9d0f91408ca91e7d94b5fc2ce076a575b155980023fd53719723dc89e6ecb47"
   },
   "schema_version": 1,
-  "source_commit": "0d1ddc53982845d27b68c3cd10ade10d6f1ac18c",
-  "source_tree_sha256": "a02dd3b98670f4d514198583d0aa9e8d23959df01adb7f51bf1978f0255fdfa7"
+  "source_commit": "e737659305950577ef25e5331c7e4491721a215e",
+  "source_tree_sha256": "fcf289abcd204df279258ffcc92969cc6854f01290147799367fa6700472bf31"
 }
