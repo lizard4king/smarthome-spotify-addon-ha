@@ -1137,14 +1137,16 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 except AdministrationError as error:
                     return self.management_error(error)
                 self.send_response(303)
-                self.send_header('Location', '/#administration')
+                self.send_header('Location', '/cockpit#administration')
                 self.send_header('Cache-Control', 'no-store')
                 self.send_header('Referrer-Policy', 'no-referrer')
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Content-Length', '0')
                 self.end_headers()
                 return
-            assets = {'/': ('index.html', 'text/html; charset=utf-8'),
+            assets = {'/': ('frontend-preview.html', 'text/html; charset=utf-8'),
+                      '/cockpit': ('index.html', 'text/html; charset=utf-8'),
+                      '/cockpit/': ('index.html', 'text/html; charset=utf-8'),
                       '/frontend': ('frontend-preview.html', 'text/html; charset=utf-8'),
                       '/frontend-api.js': ('frontend-api.js', 'text/javascript; charset=utf-8'),
                       '/frontend-preview': ('frontend-preview.html', 'text/html; charset=utf-8'),
@@ -1447,7 +1449,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             if url.path in assets:
                 name, mime = assets[url.path]
                 content = files('finance_control').joinpath('static', name).read_bytes()
-                if url.path == '/' and access_token is not None:
+                if name in ('index.html', 'frontend-preview.html') and access_token is not None:
                     content = content.replace(b'</header>', LOGOUT_FORM.encode() + b'</header>', 1)
                 return self.reply(200, content, mime)
             with dispatch_lock:
