@@ -28,11 +28,12 @@ _CHILD_TABLES = (
     'classification_model_reviews', 'transfer_single_legs',
     'payment_mail_events', 'bonsy_cash_allocations',
     'classification_model_rejections', 'booking_contract_links', 'rejected_document_links',
+    'card_booking_links',
 )
-# Contract decisions are planning provenance; only explicit reconciliation may
-# remove or retarget them. They must never follow generic child cleanup.
+# Contract decisions and direct-card links are provenance; only explicit reconciliation
+# may remove or retarget them. They must never follow generic child cleanup.
 _DELETE_CHILDREN = tuple(name for name in _CHILD_TABLES
-                         if name not in {'payment_mail_events', 'booking_contract_links'})
+                         if name not in {'payment_mail_events', 'booking_contract_links', 'card_booking_links'})
 
 
 def _json(value):
@@ -632,12 +633,14 @@ def _plan(store, staged, choices, root):
                                'description': old_context.get('description', ''),
                                'status': 'removed', 'transfer': bool(old['transfer_id'])})
     counts['removed'] = len(removed)
-    contract_dependencies = []
+    contract_dependencies, card_dependencies = [], []
     from .transfer_corrections import source_declares_transfer
     for key in sorted(set(desired) | set(removed)):
-        if not store.db.execute(
-                'SELECT 1 FROM booking_contract_links WHERE account_id=? AND external_id=?',
-                key).fetchone():
+        contract_link = store.db.execute(
+            'SELECT 1 FROM booking_contract_links WHERE account_id=? AND external_id=?', key).fetchone()
+        card_link = store.db.execute(
+            'SELECT 1 FROM card_booking_links WHERE account_id=? AND external_id=?', key).fetchone()
+        if contract_link is None and card_link is None:
             continue
         old, new = existing.get(key), desired.get(key)
         context = context_by_key.get(key) or {}
@@ -648,7 +651,13 @@ def _plan(store, staged, choices, root):
             or source_declares_transfer({
                 'category': old['category'], 'description': context.get('description', '')
             }) != source_declares_transfer(new)))
-        if economic:
+        if card_link and (old is None or new is None or (
+                any(old[name] != new[name] for name in ('date', 'amount', 'currency', 'transfer_id'))
+                or any(context.get(name, '') != new[name] for name in ('counterparty', 'description')))):
+            blockers.append('card_bank_source_dependency')
+            card_dependencies.append({'account_id': key[0], 'external_id': key[1],
+                                      'change_kind': 'removed' if new is None else 'updated'})
+        if economic and contract_link:
             blockers.append('booking_contract_dependency')
             contract_dependencies.append({'account_id': key[0], 'external_id': key[1],
                                           'change_kind': 'removed' if new is None else 'updated'})
@@ -789,7 +798,7 @@ def _plan(store, staged, choices, root):
         counts[name] += 0
     report = {'counts': dict(counts), 'blockers': sorted(set(blockers)), 'rows': detail,
               'transfer_dependencies': transfer_dependencies,
-              'contract_dependencies': contract_dependencies,
+              'contract_dependencies': contract_dependencies, 'card_dependencies': card_dependencies,
               'preserved_transfer_name_changes': sum(proof.get('kind') != 'manual' for proof in name_changes.values()),
               'reviewed_transfer_name_changes': sum(proof.get('kind') == 'manual' for proof in name_changes.values()),
               'transfer_name_change_reviews': name_reviews,
@@ -814,6 +823,8 @@ def preview_snapshot(store, root, batch, choices):
 
 def _clear_dependents(store, key, *, remove):
     state = _dependent_state(store, key)
+    if state['card_booking_links']:
+        raise ValueError('card_bank_source_dependency')
     if state['booking_contract_links']:
         # This helper runs only for removals or economic changes. Neither is
         # evidence that a manually reviewed contract decision is still valid.

@@ -166,7 +166,9 @@ def validate_profile(value):
     split_ids = {entry["party_id"] for entry in checked_budget.get("household_split", [])}
     if split_ids - person_ids:
         raise ValueError("budget household split references an unknown person")
-    if checked_budget.get("actual_allocations"):
+    if (checked_budget.get("actual_allocations") or any(
+            flow.get("settlements") for cycle in checked_budget.get("payday_cycles", [])
+            for flow in cycle["cashflows"])):
         raise ValueError("initial budget cannot reference transactions")
 
     goals = value["goals"]

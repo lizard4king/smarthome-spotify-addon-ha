@@ -86,6 +86,21 @@ def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False
     parameters = (*wanted, as_of) if as_of is not None else tuple(wanted)
     candidates = []
 
+    # Card controls are qualified only while their confirmed card target and owner remain active.
+    for row in store.db.execute(
+            'SELECT e.id,e.account_id,e.amount,e.currency,e.booked_on,e.retrieved_at '
+            'FROM card_balance_observations e JOIN card_sources s ON s.source_key=e.source_key '
+            'AND s.account_id=e.account_id JOIN server_cards k ON k.card_id=s.card_id '
+            'AND k.account_id=s.account_id AND k.owner_id=s.owner_id AND k.connection_id=s.connection_id '
+            'AND k.connection_revision=s.connection_revision '
+            'JOIN app_bank_connections c ON c.id=s.connection_id AND c.user_id=s.owner_id '
+            "AND c.status!='REVOKED' AND c.revision=s.connection_revision AND c.bank_id='POSTBANK' "
+            'JOIN app_users u ON u.id=s.owner_id AND u.active=1 '
+            "JOIN accounts a ON a.id=e.account_id AND a.kind='CREDIT_CARD' AND a.currency=e.currency "
+            f'WHERE e.account_id IN ({placeholders})'
+            + (' AND e.booked_on<=?' if as_of is not None else ''), parameters):
+        candidates.append(_candidate(row['account_id'], row['currency'], row['amount'], row['booked_on'],
+                                     row['retrieved_at'], 'bank', f"card_observation:{row['id']}"))
     # Explicit bank balances are accepted only while their original binding
     # still points at the same account.
     for table, reference in [('bank_balance_observations', "'bank_observation:' || b.id"),

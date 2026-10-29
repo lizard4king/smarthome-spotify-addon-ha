@@ -5,6 +5,7 @@ let planActualCatalog = null;
 let planActualInitialized = false;
 let planActualBusy = false;
 let planActualRequest = 0;
+let planActualSettlementEpoch = 0;
 let planActualMappingBusy = false;
 let planActualDailyView = 'TOTAL';
 let planActualTrendRange = 'month';
@@ -435,14 +436,14 @@ function planActualRenderLiquidity(liquidity) {
   target.hidden = !liquidity || !liquidity.available;
   if (target.hidden) return;
   const heading = document.createElement('h3');
-  heading.textContent = `Verfügbar auf ${liquidity.accounts.length} Girokonten`;
+  heading.textContent = `Monatliche Kontenprognose · ${liquidity.accounts.length} Girokonten`;
   const note = document.createElement('p'); note.className = 'muted';
-  note.textContent = `Kontostand zum ${liquidity.as_of} plus vorgemerkte interne Umbuchungen und sichere Eingänge minus noch fest erwartete Ausgaben. Lockere Budgets werden separat gezeigt.`;
+  note.textContent = `Kontostand zum ${liquidity.as_of} plus vorgemerkte interne Umbuchungen und sichere Eingänge minus feste und geschätzte Ausgaben im betrachteten Monat. Einnahmenschätzungen sind nicht eingerechnet. Dies ist kein Zeitraum bis zum Gehalt.`;
   target.append(heading, note);
   const summary = document.createElement('div'); summary.className = 'plan-actual-liquidity-summary';
   for (const [label, key] of [
     ['Aktuell auf Girokonten', 'current_balance'], ['Sicher noch eingehend', 'expected_income'],
-    ['Fest noch ausgehend', 'committed_expenses'], ['Kontostand danach', 'available_after_commitments'],
+    ['Fest noch ausgehend', 'committed_expenses'], ['Kontostand danach · vorsichtig', 'available_after_unconfirmed_expenses'],
   ]) {
     const article = document.createElement('article');
     const span = document.createElement('span'); span.textContent = label;
@@ -450,22 +451,28 @@ function planActualRenderLiquidity(liquidity) {
       : key === 'committed_expenses' ? 'expense' : null;
     const strong = document.createElement('strong');
     strong.textContent = planActualSignedEur(liquidity.totals[key], direction);
-    if ((key === 'current_balance' || key === 'available_after_commitments')
+    if ((key === 'current_balance' || key === 'available_after_unconfirmed_expenses')
         && Number(liquidity.totals[key]) < 0) strong.className = 'negative';
     article.append(span, strong); summary.append(article);
   }
   target.append(summary);
   const flexible = document.createElement('p'); flexible.className = 'muted';
-  flexible.textContent = `Der Kontostand danach kann negativ sein und ist keine Aussage darüber, was noch ausgegeben werden darf. Unbestätigte Schätzungen: ${planActualSignedEur(liquidity.totals.estimated_income, 'income')} Einnahmen und ${planActualSignedEur(liquidity.totals.estimated_expenses, 'expense')} Ausgaben; zöge man die unbestätigten Ausgaben ab, läge der Kontostand danach bei ${planActualSignedEur(liquidity.totals.available_after_unconfirmed_expenses)}. Noch nicht ausgeschöpfte lockere Budgets: ${eur(liquidity.totals.flexible_budget_remaining)}.`;
+  flexible.textContent = `Ausgabenschätzungen von ${eur(liquidity.totals.estimated_expenses)} sind vorsorglich abgezogen; Einnahmenschätzungen von ${eur(liquidity.totals.estimated_income)} nicht eingerechnet. Kein Ausgabelimit. Noch offene lockere Budgets: ${eur(liquidity.totals.flexible_budget_remaining)}.`;
   target.append(flexible);
   if ((liquidity.unassigned || []).length) {
     const unassigned = document.createElement('p'); unassigned.className = 'notice';
     unassigned.textContent = `Nicht in dieser Kontenprognose enthalten: ${liquidity.unassigned.map(item => `${item.label} ${eur(item.amount)}`).join(', ')}. Diese Beträge bleiben im Monatsrahmen sichtbar.`;
     target.append(unassigned);
   }
+  const calculation = document.createElement('details');
+  const calculationSummary = document.createElement('summary');
+  calculationSummary.textContent = 'Berechnung und Konten anzeigen';
+  const confirmed = document.createElement('p');
+  confirmed.textContent = `Nur nach festen Ausgaben: ${planActualSignedEur(liquidity.totals.available_after_commitments)}. Ausgabenschätzungen sind in diesem Detailwert noch nicht abgezogen.`;
+  calculation.append(calculationSummary, confirmed);
   const scroll = document.createElement('div'); scroll.className = 'table-wrap';
   const table = document.createElement('table');
-  table.innerHTML = '<thead><tr><th>Girokonto</th><th class="numeric">Gebucht</th><th class="numeric">Vorgemerkt</th><th class="numeric">Nach Vormerkung</th><th class="numeric">Sichere Eingänge</th><th class="numeric">Feste Ausgaben</th><th class="numeric">Kontostand danach</th></tr></thead>';
+  table.innerHTML = '<thead><tr><th>Girokonto</th><th class="numeric">Gebucht</th><th class="numeric">Vorgemerkt</th><th class="numeric">Nach Vormerkung</th><th class="numeric">Sichere Eingänge</th><th class="numeric">Feste Ausgaben</th><th class="numeric">Kontostand danach &middot; vorsichtig</th></tr></thead>';
   const body = document.createElement('tbody');
   for (const account of liquidity.accounts || []) {
     const row = document.createElement('tr');
@@ -476,8 +483,8 @@ function planActualRenderLiquidity(liquidity) {
     cell(row, planActualSignedEur(account.balance_after_pending), true);
     cell(row, planActualSignedEur(account.expected_income, 'income'), true);
     cell(row, planActualSignedEur(account.committed_expenses, 'expense'), true);
-    const available = cell(row, planActualSignedEur(account.available_after_commitments), true);
-    if (Number(account.available_after_commitments) < 0) available.classList.add('negative');
+    const available = cell(row, planActualSignedEur(account.available_after_unconfirmed_expenses), true);
+    if (Number(account.available_after_unconfirmed_expenses) < 0) available.classList.add('negative');
     body.append(row);
     const detailRow = document.createElement('tr'); detailRow.className = 'plan-actual-detail-row';
     const detailCell = document.createElement('td'); detailCell.colSpan = 7;
@@ -489,7 +496,7 @@ function planActualRenderLiquidity(liquidity) {
       ...(account.income_items || []).map(item => ({...item, direction: 'Eingang'})),
       ...(account.commitments || []).map(item => ({...item, direction: 'Ausgabe'})),
       ...(account.estimates || []).map(item => ({...item,
-        direction: item.kind === 'income' ? 'Einnahmenschätzung, nicht eingerechnet' : 'Ausgabenschätzung, nicht abgezogen'})),
+        direction: item.kind === 'income' ? 'Einnahmenschätzung, nicht eingerechnet' : 'Ausgabenschätzung, vorsorglich abgezogen'})),
     ];
     for (const item of entries) {
       const line = document.createElement('li');
@@ -505,7 +512,39 @@ function planActualRenderLiquidity(liquidity) {
     details.append(detailsSummary, list); detailCell.append(details);
     detailRow.append(detailCell); body.append(detailRow);
   }
-  table.append(body); scroll.append(table); target.append(scroll);
+  table.append(body); scroll.append(table); calculation.append(scroll); target.append(calculation);
+}
+
+function planActualNettingAmount(value) {
+  const validNumber = typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  const validText = typeof value === 'string' && /^[0-9]+(?:\.[0-9]+)?$/.test(value.trim())
+    && Number.isFinite(Number(value));
+  return validNumber || validText ? eur(value) : 'Nicht verfügbar';
+}
+
+function planActualNettingExplanation(payday) {
+  if (!payday?.available) return null;
+  const explanation = document.createElement('div'); explanation.className = 'plan-actual-netting';
+  const note = document.createElement('p'); note.className = 'muted plan-actual-netting-note';
+  note.textContent = 'Überschüsse und Fehlbeträge werden verrechnet.';
+  const details = document.createElement('details'); details.className = 'plan-actual-netting-details';
+  const summary = document.createElement('summary'); summary.textContent = 'Kontenverrechnung anzeigen';
+  const values = document.createElement('dl'); values.className = 'plan-actual-netting-values';
+  for (const [field, label] of [
+    ['gross_free_spendable', 'Spielräume vor Verrechnung'],
+    ['gross_shortfall', 'Fehlbeträge vor Verrechnung'],
+    ['total_free_spendable', 'Nach Verrechnung frei'],
+    ['total_shortfall', 'Verbleibender Fehlbetrag'],
+  ]) {
+    const name = document.createElement('dt'); name.textContent = label;
+    const amount = document.createElement('dd'); amount.dataset.nettingField = field;
+    amount.textContent = planActualNettingAmount(payday[field]);
+    values.append(name, amount);
+  }
+  const boundary = document.createElement('p'); boundary.className = 'muted';
+  boundary.textContent = 'Fehlbeträge zuerst ausgleichen. Keine automatische Umbuchung.';
+  details.append(summary, values, boundary); explanation.append(note, details);
+  return explanation;
 }
 
 function planActualRenderPayday(payday) {
@@ -527,6 +566,8 @@ function planActualRenderPayday(payday) {
   addSummary('Davon Budgets im Monatsrahmen', eur(payday.flexible_budget_remaining));
   addSummary('Davon nicht verplant', planActualAvailable(payday.unallocated_after_budgets));
   target.append(heading, note, summaryCards);
+  const netting = planActualNettingExplanation(payday);
+  if (netting) target.append(netting);
   const scroll = document.createElement('div'); scroll.className = 'table-wrap';
   const table = document.createElement('table');
   table.innerHTML = '<thead><tr><th>Person / Konto</th><th>Gehaltstermin</th><th class="numeric">Heute</th><th class="numeric">Noch eingehend</th><th class="numeric">Noch fällig</th><th class="numeric">Untergrenze vor Gehalt</th><th class="numeric">Kurzfristig frei</th></tr></thead>';
@@ -556,6 +597,8 @@ function planActualRenderPayday(payday) {
       line.textContent = `${flow.due_date} · ${flow.label}: ${planActualSignedEur(
         flow.amount, flow.direction === 'inflow' ? 'income' : 'expense')} · ${flow.evidence}${
         flow.possibly_booked ? ' · Achtung: heute schon ein Betrag in gleicher Höhe gebucht, möglicherweise doppelt abgezogen' : ''}`;
+      const settlement = planActualSettlementDetails(cycle, flow);
+      if (settlement) line.append(settlement);
       list.append(line);
     }
     details.append(summary, list); detailCell.append(details); detailRow.append(detailCell); body.append(detailRow);
@@ -588,16 +631,121 @@ function planActualSetView(mode, persist = true) {
   if (cockpit) planActualScheduleMonthChartResize();
 }
 
+function planActualSettlementDetails(cycle, flow) {
+  if (!flow.flow_key) return null;
+  const details = document.createElement('details'); details.className = 'plan-actual-settlement';
+  details.dataset.flowKey = flow.flow_key; details.dataset.accountId = cycle.account_id;
+  const summary = document.createElement('summary');
+  summary.textContent = `Buchungen zuordnen · schon gebucht ${eur(flow.settled_amount)} · Rest ${eur(flow.remaining_amount ?? flow.amount)}${Number(flow.invalid_settlement_count) > 0 ? ' · Zuordnung prüfen' : ''}`;
+  const state = document.createElement('p'); state.className = 'muted';
+  state.setAttribute('role', 'status'); state.setAttribute('aria-live', 'polite');
+  state.textContent = Number(flow.invalid_settlement_count) > 0
+    ? 'Eine gespeicherte Zuordnung ist nicht mehr gültig. Bitte prüfen; der Rest enthält nur gültige Zuordnungen.'
+    : 'Nur ausdrücklich ausgewählte Buchungen werden angerechnet. Teilbeträge sind möglich.';
+  const content = document.createElement('div');
+  details.append(summary, state, content);
+  const revision = $('plan-actual-revision').value, month = $('plan-actual-month').value,
+    person = $('plan-actual-person-toggle').checked, epoch = planActualSettlementEpoch;
+  const current = () => details.isConnected && epoch === planActualSettlementEpoch
+    && revision === $('plan-actual-revision').value && month === $('plan-actual-month').value
+    && person === $('plan-actual-person-toggle').checked;
+  let busy = false, loaded = false;
+  details.addEventListener('toggle', async () => {
+    if (!details.open || loaded || busy) return;
+    if (!current()) { state.textContent = 'Die Auswahl hat sich geändert. Bitte den Vergleich neu laden.'; return; }
+    busy = true; state.textContent = 'Buchungen werden geladen …';
+    try {
+      const response = await api('/api/payday-settlement-view', {
+        revision: Number(revision), account_id: cycle.account_id, flow_key: flow.flow_key,
+      });
+      if (!current()) return;
+      const referenceKey = item => `${item.external_id}:${item.transaction_revision}`;
+      const selected = new Map((response.settlements || []).map(item => [referenceKey(item), item]));
+      const candidates = [...(response.candidates || [])];
+      for (const saved of selected.values()) {
+        if (!candidates.some(item => referenceKey(item) === referenceKey(saved))) {
+          candidates.push({...saved, date: '', counterparty: 'Gespeicherte Buchung nicht verfügbar – bitte prüfen', description: ''});
+        }
+      }
+      const rows = [];
+      for (const candidate of candidates) {
+        const row = document.createElement('div'); row.className = 'plan-actual-settlement-row';
+        const label = document.createElement('label'), checkbox = document.createElement('input');
+        checkbox.type = 'checkbox'; checkbox.checked = selected.has(referenceKey(candidate));
+        const text = document.createElement('span');
+        text.textContent = `${candidate.date ? planActualDate(candidate.date) + ' · ' : ''}${candidate.counterparty || 'Buchung'} · ${candidate.description || ''} · ${eur(candidate.amount)}`;
+        label.append(checkbox, text);
+        const amountLabel = document.createElement('label'); amountLabel.textContent = 'Anzurechnen (€)';
+        const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0.01'; amount.step = '0.01'; amount.required = true;
+        amount.max = String(candidate.amount); amount.value = String(selected.get(referenceKey(candidate))?.amount ?? candidate.amount);
+        amount.disabled = !checkbox.checked;
+        checkbox.addEventListener('change', () => { amount.disabled = !checkbox.checked; });
+        amountLabel.append(amount); row.append(label, amountLabel); content.append(row);
+        rows.push({candidate, checkbox, amount});
+      }
+      const save = document.createElement('button'); save.type = 'button'; save.textContent = 'Auswahl bestätigen und speichern';
+      const clear = document.createElement('button'); clear.type = 'button'; clear.className = 'secondary'; clear.textContent = 'Alle Zuordnungen zurücknehmen';
+      const persist = async remove => {
+        if (busy) return;
+        if (!current()) { state.textContent = 'Die Auswahl hat sich geändert. Bitte den Vergleich neu laden.'; return; }
+        const chosen = remove ? [] : rows.filter(row => row.checkbox.checked);
+        if (chosen.some(row => !row.amount.checkValidity())) { state.textContent = 'Bitte für jede ausgewählte Buchung einen gültigen Teilbetrag eingeben.'; return; }
+        const settlements = chosen.map(({candidate, amount}) => ({external_id: candidate.external_id,
+          transaction_revision: candidate.transaction_revision, amount: amount.value}));
+        busy = true; save.disabled = true; clear.disabled = true;
+        state.textContent = 'Zuordnung wird gespeichert …';
+        let savedRevision = null;
+        try {
+          const saved = await api('/api/payday-settlement-save', {revision: response.revision,
+            latest_revision: response.latest_revision, account_id: cycle.account_id,
+            flow_key: flow.flow_key, settlements, confirmed: true});
+          savedRevision = saved.revision;
+          if (!current()) return;
+          state.textContent = `Gespeichert als Planstand ${saved.revision}. Vergleich wird aktualisiert …`;
+          await planActualMetadata(true);
+          if (!current()) return;
+          $('plan-actual-revision').value = String(saved.revision);
+          await planActualLoadRevision(saved.revision);
+          if (epoch !== planActualSettlementEpoch || month !== $('plan-actual-month').value
+              || person !== $('plan-actual-person-toggle').checked
+              || String(saved.revision) !== $('plan-actual-revision').value) return;
+          await planActualCompare();
+        } catch (error) {
+          const savedSelection = savedRevision != null && details.isConnected && epoch === planActualSettlementEpoch
+            && month === $('plan-actual-month').value && person === $('plan-actual-person-toggle').checked
+            && String(savedRevision) === $('plan-actual-revision').value;
+          if (current() || savedSelection) state.textContent = savedRevision != null
+            ? `Als Planstand ${savedRevision} gespeichert; die Anzeige konnte nicht aktualisiert werden: ${error.message}. Bitte Vergleich neu laden.`
+            : `Zuordnung konnte nicht gespeichert werden: ${error.message}. Bitte Vergleich neu laden und prüfen.`;
+        } finally {
+          busy = false; save.disabled = savedRevision != null; clear.disabled = savedRevision != null;
+        }
+      };
+      save.addEventListener('click', () => persist(false)); clear.addEventListener('click', () => persist(true));
+      content.append(save, clear); loaded = true;
+      state.textContent = response.has_more
+        ? 'Es werden höchstens 500 Buchungen angezeigt. Keine Auswahl erfolgt automatisch. Prüfe die Auswahl vor dem Speichern.'
+        : `${candidates.length} Buchungen zur Auswahl. Nur gespeicherte Zuordnungen sind vorausgewählt. Speichern ersetzt die bisherige Zuordnung.`;
+      if (Number(response.invalid_settlement_count) > 0) state.textContent += ' Ungültige gespeicherte Zuordnungen bitte abwählen oder zurücknehmen.';
+    } catch (error) {
+      if (current()) state.textContent = `Buchungen konnten nicht geladen werden: ${error.message}. Details schließen und erneut öffnen.`;
+    } finally { busy = false; }
+  });
+  return details;
+}
+
 function planActualRenderDue(payday) {
   const list = $('plan-actual-due-list'); list.replaceChildren();
   const flows = (payday?.cycles || []).flatMap(cycle => (cycle.cashflows || []).map(flow => ({
-    ...flow, account: cycle.account_id, owner: cycle.owner_label,
+    ...flow, account: cycle.account_id, owner: cycle.owner_label, cycle,
   }))).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date))).slice(0, 5);
   for (const flow of flows) {
     const item = document.createElement('li');
     const signed = planActualSignedEur(flow.amount, flow.direction === 'inflow' ? 'income' : 'expense');
     item.textContent = `${flow.due_date} · ${flow.label} · ${flow.owner || flow.account}: ${signed}`;
     item.className = flow.direction === 'inflow' ? 'plan-actual-due-inflow' : 'plan-actual-due-outflow';
+    const settlement = planActualSettlementDetails(flow.cycle, flow);
+    if (settlement) item.append(settlement);
     list.append(item);
   }
   if (!flows.length) {
@@ -1356,6 +1504,9 @@ function planActualRenderCockpit(result) {
   const actualOnly = historical || result.plan_available === false;
   $('plan-actual-cockpit').dataset.historical = String(actualOnly);
   const freeCard = $('plan-actual-free-title').closest('.plan-actual-free-card');
+  freeCard.querySelectorAll('.plan-actual-netting').forEach(element => element.remove());
+  const netting = actualOnly ? null : planActualNettingExplanation(payday);
+  if (netting) freeCard.append(netting);
   // A planned historical month shows actual cashflow in the bridge, once only.
   freeCard.hidden = historical && result.plan_available !== false;
   freeCard.querySelector('.eyebrow').textContent = actualOnly ? `IST · ${result.month}` : 'BIS ZUM NÄCHSTEN GEHALT';
@@ -1763,8 +1914,12 @@ function planActualRenderCockpitAccounts(result) {
     const article = document.createElement('article');
     const heading = document.createElement('h4'); heading.textContent = liquidity.label || accountId;
     const text = document.createElement('p');
-    text.textContent = `Heute ${planActualSignedEur(liquidity.current_balance)} · nach Vormerkung ${planActualSignedEur(liquidity.balance_after_pending)} · nach festen Ausgaben ${planActualSignedEur(liquidity.available_after_commitments)}`;
-    article.append(heading, text); grid.append(article);
+    text.textContent = `Monatliche Kontenprognose: Kontostand danach · vorsichtig ${planActualSignedEur(liquidity.available_after_unconfirmed_expenses)}. Ausgabenschätzungen abgezogen, Einnahmenschätzungen nicht eingerechnet.`;
+    const details = document.createElement('details'), summary = document.createElement('summary');
+    summary.textContent = 'Berechnung anzeigen';
+    const basis = document.createElement('p');
+    basis.textContent = `Heute ${planActualSignedEur(liquidity.current_balance)} · nach Vormerkung ${planActualSignedEur(liquidity.balance_after_pending)} · nur nach festen Ausgaben ${planActualSignedEur(liquidity.available_after_commitments)}`;
+    details.append(summary, basis); article.append(heading, text, details); grid.append(article);
   }
   target.append(grid);
 }
@@ -2278,6 +2433,7 @@ async function planActualMetadata(force = false) {
 }
 
 function planActualInvalidateComparison() {
+  planActualSettlementEpoch += 1;
   planActualRequest += 1; planActualBusy = false;
   $('plan-actual-load').disabled = !$('plan-actual-revision').value || !$('plan-actual-month').value;
   $('plan-actual-load').setAttribute('aria-busy', 'false');
@@ -2306,6 +2462,7 @@ async function planActualCompare() {
   if (!$('plan-actual-revision').value || !$('plan-actual-month').value) {
     throw new Error('Bitte Planstand und Kalendermonat auswählen.');
   }
+  planActualSettlementEpoch += 1;
   const request = ++planActualRequest, revision = $('plan-actual-revision').value,
     month = $('plan-actual-month').value, personBreakdown = $('plan-actual-person-toggle').checked;
   const current = () => request === planActualRequest && revision === $('plan-actual-revision').value

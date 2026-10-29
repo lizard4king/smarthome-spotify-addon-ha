@@ -556,7 +556,7 @@ def list_transactions(store, data):
     rows = []
     selected = list(store.db.execute(
         "SELECT t.account_id,CASE WHEN NULLIF(TRIM(a.display_name),'') IS NULL THEN t.account_id "
-        "ELSE t.account_id || ' · ' || a.display_name END AS account_label,t.external_id,t.date,t.amount,"
+        "ELSE t.account_id || ' · ' || a.display_name END AS account_label,t.external_id,t.date,t.amount,t.currency,"
         't.category AS source_category,t.transfer_id,c.counterparty,c.description,'
         f"o.category_id,o.confirmed,o.revision,CASE WHEN {sql_transfer_predicate(context_alias='c')} "
         'THEN 1 ELSE 0 END AS is_transfer_row,'

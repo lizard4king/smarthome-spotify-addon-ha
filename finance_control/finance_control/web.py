@@ -404,6 +404,10 @@ class Cockpit:
                 if route == '/api/wealth-load':
                     return wealth.load(store, data)
                 raise ValueError('unknown_wealth_action')
+            if route in {'/api/payday-settlement-view', '/api/payday-settlement-save'}:
+                from . import payday_settlements
+                return (payday_settlements.view if route.endswith('-view')
+                        else payday_settlements.save)(store, data)
             if route.startswith('/api/budget-'):
                 from . import budget
                 if route == '/api/budget-export':
@@ -809,8 +813,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     if administration is not None else None)
     bank_refresh = (ServerBankRefresh(postbank_jobs, administration, app.database)
                     if administration is not None else None)
-    server_cards = (ServerCards(administration, ServerCardGateway(administration, bank_product_id))
+    card_gateway = ServerCardGateway(administration, bank_product_id) if administration is not None else None
+    server_cards = (ServerCards(administration, card_gateway)
                     if administration is not None else None)
+    if bank_refresh is not None:
+        from .server_card_refresh import ServerCardRefresh
+        bank_refresh.cards = ServerCardRefresh(administration, card_gateway, app.database)
     paypal_banking = PayPalBanking(administration) if administration is not None else None
     klarna_banking = KlarnaBanking(administration) if administration is not None else None
     paypal_credit = PayPalCredit(administration) if administration is not None else None
@@ -1137,6 +1145,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 self.end_headers()
                 return
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
+                      '/frontend': ('frontend-preview.html', 'text/html; charset=utf-8'),
+                      '/frontend-api.js': ('frontend-api.js', 'text/javascript; charset=utf-8'),
                       '/frontend-preview': ('frontend-preview.html', 'text/html; charset=utf-8'),
                       '/frontend-preview.html': ('frontend-preview.html', 'text/html; charset=utf-8'),
                       '/frontend-preview.css': ('frontend-preview.css', 'text/css; charset=utf-8'),
@@ -1549,6 +1559,14 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     'code': 'direct_bank_source',
                     'error': 'Direkter Bankabruf ist führend. Diese CSV-Datei enthält ein direkt angebundenes Konto und wurde vollständig abgewiesen. Importiere nur Konten ohne direkte Bankquelle, zum Beispiel NASPA.'})
             except (ValueError, KeyError, TypeError, ArithmeticError, StopIteration) as error:
+                if (urlsplit(self.path).path == '/api/analytics-summary'
+                        and isinstance(error, ValueError)):
+                    messages = {
+                        'mixed_currency_analytics': 'Die Auswahl enthält mehrere Buchungswährungen. Bitte ein anderes Konto oder einen anderen Zeitraum wählen.',
+                        'unknown_currency_analytics': 'Die Buchungswährung ist nicht eindeutig. Eine Geldanalyse ist nicht verfügbar.',
+                    }
+                    if str(error) in messages:
+                        return self.reply(400, {'code': str(error), 'error': messages[str(error)]})
                 if urlsplit(self.path).path == '/api/account-lifecycle':
                     if isinstance(error, ValueError) and str(error) == 'stale_lifecycle_revision':
                         return self.reply(409, {'error': 'Kontostatus wurde inzwischen geändert. Bitte neu laden.'})
@@ -1605,6 +1623,10 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     return self.reply(400, {'error': 'Importentwurf prüfen: Salden müssen centgenau und ausdrücklich bestätigt sein. Bei geändertem Entwurf neu laden; Quellen und bestehende Konten werden nicht überschrieben.'})
                 if urlsplit(self.path).path.startswith('/api/monthly-'):
                     return self.reply(400, {'error': 'Monatsprüfung nicht möglich. Konten benötigen einen gemeinsamen Eröffnungsstichtag vor dem Monat. Vorschau neu laden und Vollständigkeit bestätigen. Ein unveränderter Stand kann nicht erneut gespeichert werden.'})
+                if urlsplit(self.path).path.startswith('/api/payday-settlement-'):
+                    status = (409 if isinstance(error, ValueError) and str(error) in {
+                        'stale active budget revision', 'stale budget revision'} else 400)
+                    return self.reply(status, {'error': 'Zuordnung nicht gespeichert. Aktuellen Planstand neu laden und Buchungen sowie Teilzahlungen erneut pr\u00fcfen.'})
                 if urlsplit(self.path).path.startswith('/api/wealth-'):
                     return self.reply(400, {'error': 'Vermögensstand nicht verarbeitet. Eingaben, Eigentümer, Stichtage und aktuelle Revision prüfen; danach eine neue Vorschau berechnen.'})
                 return self.reply(400, {'error': 'Eingaben prüfen: Pflichtfelder, Beträge, CSV-Vertrag, gemeinsamer Stichtag und Monatsende. Vergleich benötigt denselben Ausgangsbestand.'})
@@ -1647,7 +1669,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     return self.reply(200, bank_refresh.start(self.management_user, data))
                 if action == 'bank-refresh-state':
                     return self.reply(200, bank_refresh.state(self.management_user, data))
-                if action in {'card-state', 'card-save', 'card-delete', 'card-read', 'card-read-state'}:
+                if action in {'card-state', 'card-save', 'card-delete', 'card-read', 'card-read-state', 'card-auth-save'}:
                     return self.reply(200, server_cards.dispatch(self.management_user, action, data))
                 result = administration.change(self.management_user, action, data)
                 return self.reply(200, result if result.get('removed') else {'enabled': True, **result})

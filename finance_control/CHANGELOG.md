@@ -1,3 +1,7 @@
+# 0.2.74
+
+Neue Oberfläche unter /frontend mit bestehenden Konten, Buchungen, Kategorien, wiederkehrenden Zahlungen und Analysen. Fehlende Kontostände bleiben sichtbar; gemischte Buchungswährungen werden nicht summiert. Keine neue automatische Bankaktion.
+
 # 0.2.73
 
 Klickbarer Oberflächenentwurf unter Mehr → Oberflächenentwurf, mit ausschließlich synthetischen Beispieldaten, fünf Ansichten und Layouts für Handy und PC. Bestehende Finanzansichten bleiben erreichbar. Keine neue Bankaktion.

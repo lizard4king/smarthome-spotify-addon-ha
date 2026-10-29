@@ -61,8 +61,10 @@ def _person_expenses(people, expenses, allocations):
 def category_summary(store, data=None, *, people=None):
     data = {} if data is None else data
     if not isinstance(data, dict) or set(data) - {
-            'date_from', 'date_to', 'account_id', 'person_breakdown'}:
+            'date_from', 'date_to', 'account_id', 'person_breakdown', 'require_single_currency'}:
         raise ValueError('invalid_analytics_request')
+    if 'require_single_currency' in data and type(data['require_single_currency']) is not bool:
+        raise ValueError('invalid_analytics_currency_guard')
     if 'person_breakdown' in data and type(data['person_breakdown']) is not bool:
         raise ValueError('invalid_analytics_person_breakdown')
     include_people = data.get('person_breakdown', False)
@@ -85,11 +87,23 @@ def category_summary(store, data=None, *, people=None):
         clauses.append('t.account_id=?'); params.append(account_id)
     where = '' if not clauses else ' WHERE ' + ' AND '.join(clauses)
     rows = store.db.execute(
-        'SELECT t.account_id,t.external_id,t.date,t.amount,t.category,t.transfer_id,c.description,c.counterparty,'
+        'SELECT t.account_id,t.external_id,t.date,t.amount,t.currency,t.category,t.transfer_id,c.description,c.counterparty,'
         'o.category_id,o.confirmed FROM active_transactions t '
         'LEFT JOIN transaction_context c USING(account_id,external_id) '
         'LEFT JOIN classification_overrides o USING(account_id,external_id)' + where,
         params).fetchall()
+    # The new frontend opts into a currency proof based on actual transactions,
+    # including multi-currency accounts. Never infer currency from an account label.
+    currencies = {row['currency'] for row in rows}
+    selected_currency = next(iter(currencies)) if len(currencies) == 1 else None
+    if data.get('require_single_currency'):
+        if len(currencies) > 1:
+            raise ValueError('mixed_currency_analytics')
+        if currencies and (not isinstance(selected_currency, str) or
+                           selected_currency == 'XXX' or len(selected_currency) != 3 or
+                           not selected_currency.isascii() or
+                           not selected_currency.isupper() or not selected_currency.isalpha()):
+            raise ValueError('unknown_currency_analytics')
     catalog = {row['id']: dict(row) for row in store.db.execute(
         'SELECT id,label,transaction_type,parent_id FROM category_catalog')}
     link_counts = {(row['account_id'], row['external_id']): row['count'] for row in store.db.execute(
@@ -175,6 +189,8 @@ def category_summary(store, data=None, *, people=None):
                     store, date_from or (min(row['date'] for row in rows) if rows else '0001-01-01'),
                     date_to or (max(row['date'] for row in rows) if rows else '9999-12-31'),
                     None if data.get('account_id') is None else {data['account_id'].strip()})}
+    if data.get('require_single_currency'):
+        response['currency'] = selected_currency
     if include_people:
         response['person_expenses'] = _person_expenses(labels, expenses, allocations)
     return response
