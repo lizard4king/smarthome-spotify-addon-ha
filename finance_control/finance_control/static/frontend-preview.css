@@ -7,3 +7,11 @@
 @media(max-width:360px){.hero .amount,.big,.detail-amount{font-size:26px}.section-head h2{overflow-wrap:anywhere}.toggle{flex-wrap:wrap}}
 .balance-line{position:relative;z-index:1;margin:16px 0}.balance-line strong{display:block;font-size:28px;color:#fff}.balance-line small{display:block;color:#afc8bf}.metric-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:20px}.error{margin:12px 0;color:var(--text);border:1px solid #c78c77}.filters label{flex:1;min-width:120px}.filters label input,.filters label select{width:100%}.filters>button{align-self:end}.card h2{font-size:17px}.row-main small{overflow-wrap:anywhere}.row-end{white-space:normal;overflow-wrap:anywhere}dialog{max-height:calc(100vh - 28px);overflow:auto}.action:disabled{opacity:.45;cursor:default}@media(max-width:360px){.bottom button{min-width:0;flex:1}.filters input[type=search]{min-width:0;width:100%}.metric-row{flex-wrap:wrap}.balance-line strong{font-size:23px}}
 .category-chart-row{margin:14px 0}.category-chart-row .metric-row{border:0;padding:4px 0}.category-track{height:8px;background:var(--panel2);border-radius:8px;position:relative;overflow:hidden}.category-zero{position:absolute;left:50%;height:100%;width:2px;background:var(--muted);z-index:1}.category-bar{position:absolute;top:0;height:100%;background:var(--accent)}.category-bar.negative{background:#dcaa78}
+
+/* The server adds the logout form for authenticated sessions. */
+header{flex-wrap:wrap;gap:12px}
+header>div{min-width:0}
+.header-right{flex-wrap:wrap;max-width:100%}
+header .logout{margin:0;max-width:100%}
+header .logout button{min-height:44px;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:10px;padding:10px 14px}
+@media(max-width:800px){header .logout{flex-basis:100%}header .logout button{width:100%}}

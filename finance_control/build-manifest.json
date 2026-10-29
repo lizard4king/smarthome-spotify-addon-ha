@@ -484,7 +484,7 @@
     "static/dashboard.js": "c91a4337183f28f83560d2d251d5b6be8509f91cbc44290d00e9a5a3608770a5",
     "static/finanzguru.js": "5f27486f23b09d9239a66bc5ebcf23b51f4ec063b82296a41b743b88900469aa",
     "static/frontend-api.js": "a7a3f635946c9cc942cbceaad42a4301bf44c9f3a9ce0825e53af187fbf2c5d8",
-    "static/frontend-preview.css": "6d3e4b425058aa420619ce085e96576bf7b3da667944b7ae174ab1c03d2ca098",
+    "static/frontend-preview.css": "9d76556f2af18edaa7c2a44870ffb4af5dc86c0d5794449c9335afcc2757b470",
     "static/frontend-preview.html": "a8c3a923dfcf65ac32061082c707f729a2bfc948ba48d5ad1aabebf639741b0d",
     "static/frontend-preview.js": "d7e1df027fae18703f1065206287f3a5335bf713076e307090835c0887f0cf1d",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
@@ -523,9 +523,9 @@
     "transfer_corrections.py": "2f3cb0687cca7a4f7963e9d8324c860544237100647b3b9761be4bdb210af256",
     "transfer_notices.py": "26e8c397d7f5470fa31e8ab52a5720372b1d461aa6d010b3364d4ba7f0543ba5",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
-    "web.py": "c9d0f91408ca91e7d94b5fc2ce076a575b155980023fd53719723dc89e6ecb47"
+    "web.py": "bab777ac830c8ecd0091447a302d7b468def9808aa2aeee789bbbb9fccfc95e0"
   },
   "schema_version": 1,
-  "source_commit": "e737659305950577ef25e5331c7e4491721a215e",
-  "source_tree_sha256": "fcf289abcd204df279258ffcc92969cc6854f01290147799367fa6700472bf31"
+  "source_commit": "408a777c7b5f2ca2e8b04ddb20ccb70111d0d838",
+  "source_tree_sha256": "85d4e4043aeef93f8140b0b4609665877c42750f26e8ab059ffb624a39fa6c37"
 }

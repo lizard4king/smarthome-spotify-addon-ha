@@ -1449,7 +1449,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
             if url.path in assets:
                 name, mime = assets[url.path]
                 content = files('finance_control').joinpath('static', name).read_bytes()
-                if url.path == '/' and access_token is not None:
+                if name in ('index.html', 'frontend-preview.html') and access_token is not None:
                     content = content.replace(b'</header>', LOGOUT_FORM.encode() + b'</header>', 1)
                 return self.reply(200, content, mime)
             with dispatch_lock:
