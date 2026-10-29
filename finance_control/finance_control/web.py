@@ -1145,6 +1145,8 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                 self.end_headers()
                 return
             assets = {'/': ('index.html', 'text/html; charset=utf-8'),
+                      '/frontend': ('frontend-preview.html', 'text/html; charset=utf-8'),
+                      '/frontend-api.js': ('frontend-api.js', 'text/javascript; charset=utf-8'),
                       '/frontend-preview': ('frontend-preview.html', 'text/html; charset=utf-8'),
                       '/frontend-preview.html': ('frontend-preview.html', 'text/html; charset=utf-8'),
                       '/frontend-preview.css': ('frontend-preview.css', 'text/css; charset=utf-8'),
@@ -1557,6 +1559,14 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     'code': 'direct_bank_source',
                     'error': 'Direkter Bankabruf ist führend. Diese CSV-Datei enthält ein direkt angebundenes Konto und wurde vollständig abgewiesen. Importiere nur Konten ohne direkte Bankquelle, zum Beispiel NASPA.'})
             except (ValueError, KeyError, TypeError, ArithmeticError, StopIteration) as error:
+                if (urlsplit(self.path).path == '/api/analytics-summary'
+                        and isinstance(error, ValueError)):
+                    messages = {
+                        'mixed_currency_analytics': 'Die Auswahl enthält mehrere Buchungswährungen. Bitte ein anderes Konto oder einen anderen Zeitraum wählen.',
+                        'unknown_currency_analytics': 'Die Buchungswährung ist nicht eindeutig. Eine Geldanalyse ist nicht verfügbar.',
+                    }
+                    if str(error) in messages:
+                        return self.reply(400, {'code': str(error), 'error': messages[str(error)]})
                 if urlsplit(self.path).path == '/api/account-lifecycle':
                     if isinstance(error, ValueError) and str(error) == 'stale_lifecycle_revision':
                         return self.reply(409, {'error': 'Kontostatus wurde inzwischen geändert. Bitte neu laden.'})

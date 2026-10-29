@@ -1,5 +1,7 @@
 # Finance Control Home Assistant add-on
 
+Version `0.2.74` bindet die neue Oberfläche unter `/frontend` an den geschützten Finanzbestand an. Kategorien werden ausdrücklich über die bestehende revisionsgeschützte Funktion gespeichert. Analysen prüfen die tatsächliche Buchungswährung; Bankabrufe werden nicht automatisch ausgelöst.
+
 Version `0.2.73` ergänzt einen separaten klickbaren Oberflächenentwurf mit synthetischen Beispieldaten. Er ist über „Mehr“ erreichbar und verwendet keine Finanzdaten oder API.
 
 Version `0.2.72` begrenzt neue automatische Sicherungen auf zwei geprüfte Stände und bündelt Änderungen in 15-Minuten-Abständen. Manuelle Sicherungen und historische Pakete ohne Herkunftsnachweis bleiben erhalten. Die zusätzliche Wartungsoption `backup_retention_plan_sha256` ist standardmäßig leer; nur die exakte SHA-256-Prüfsumme eines privat geprüften Plans erlaubt die einmalige Bereinigung alter generierter Paare. Native Ausschlüsse, Startskript und Tresor bleiben unverändert.
@@ -376,11 +378,11 @@ build, access, backup, and migration requirements.
 
 `GET /health/backup-guard` is a separate secret-free backup precondition on the
 existing HTTP port. It re-reads the configured `--options-file` for every request
-and only confirms an explicitly empty `access_token` plus the approved `0.2.73`
+and only confirms an explicitly empty `access_token` plus the approved `0.2.74`
 `addon_version` from `/app/build-manifest.json`. A missing, unreadable or invalid
 input returns HTTP 503 with only `schema_version: 1` and `backup_safe: false`.
 Success returns HTTP 200 with `schema_version: 1`, `backup_safe: true` and
-`addon_version: "0.2.73"`. No token, options or error detail is returned. Without
+`addon_version: "0.2.74"`. No token, options or error detail is returned. Without
 explicit server-side paths, including the default desktop server, the guard
 stays unavailable. `/health` and authentication of application routes are
 unchanged. This endpoint does not create a backup or call a bank.
