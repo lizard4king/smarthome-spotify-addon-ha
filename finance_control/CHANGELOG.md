@@ -1,3 +1,7 @@
+# 0.2.73
+
+Klickbarer Oberflächenentwurf unter Mehr → Oberflächenentwurf, mit ausschließlich synthetischen Beispieldaten, fünf Ansichten und Layouts für Handy und PC. Bestehende Finanzansichten bleiben erreichbar. Keine neue Bankaktion.
+
 # Changelog
 
 ## 0.2.72
