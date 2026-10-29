@@ -303,8 +303,9 @@ class Tests(unittest.TestCase):
     def test_approved_versions_require_exact_supervisor_and_guard_agreement(self):
         class Response(io.BytesIO):
             def getcode(self): return 200
-        for installed in ("0.2.69", "0.2.70", "0.2.71", "0.2.72", "0.2.73"):
-            for reported in ("0.2.69", "0.2.70", "0.2.71", "0.2.72", "0.2.73"):
+        versions = ("0.2.69", "0.2.70", "0.2.71", "0.2.72", "0.2.73", "0.2.74")
+        for installed in versions:
+            for reported in versions:
                 self.api.finance_info["data"]["version"] = installed
                 self.api.backup_guard["addon_version"] = reported
                 count = []
@@ -313,11 +314,11 @@ class Tests(unittest.TestCase):
                     payload = self.api.finance_info if len(count) == 1 else self.api.backup_guard
                     return Response(json.dumps(payload).encode())
                 with self.subTest(installed=installed, reported=reported):
-                    if installed == reported and installed != "0.2.73":
+                    if installed == reported and installed != "0.2.74":
                         c.supervisor_guard(CFG, "SYNTHETIC_TOKEN", opener)
                     else:
                         with self.assertRaises(c.SafetyStop): c.supervisor_guard(CFG, "SYNTHETIC_TOKEN", opener)
-                self.assertEqual(len(count), 1 if installed == "0.2.73" else 2)
+                self.assertEqual(len(count), 1 if installed == "0.2.74" else 2)
 
     def test_lock_and_invalid_config_fail_closed(self):
         with c.lock(self.path):
