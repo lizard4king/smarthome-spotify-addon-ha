@@ -1574,8 +1574,8 @@ def _liquidity_view(store, snapshot, month, comparison_rows):
             "estimated_expenses": _format(estimated_expenses),
             "available_after_commitments": _format(
                 balance + pending_transfer + expected_income - committed_expenses),
-            # Additional, deliberately named figure: the headline above stays
-            # confirmed-only; this one also deducts unconfirmed fixed costs.
+            # Both figures retain the same monthly horizon; the UI now uses
+            # this cautious figure as its headline and keeps confirmed-only details.
             "available_after_unconfirmed_expenses": _format(
                 balance + pending_transfer + expected_income - committed_expenses
                 - estimated_expenses),
@@ -1885,6 +1885,9 @@ def _trend_snapshot_for_month(snapshot, month, selected_month, *, force=False):
                 cashflows.append(flow)
                 continue
             flow["due_date"] = date(year, month_number, min(due.day, last_day)).isoformat()
+            if flow['due_date'] != original_flow['due_date']:
+                flow.pop('settlements', None)
+                flow.pop('settlement_scope', None)
             cashflows.append(flow)
         cycle["cashflows"] = cashflows
         salary_values = [cycle.get(key) for key in ("last_salary_date", "next_salary_date")]
@@ -2177,6 +2180,8 @@ def _payday_view(store, snapshot, month):
         store, as_of_date.isoformat(), [cycle["account_id"] for cycle in cycles])
     if balances is None:
         return None
+    from .payday_settlements import allocation_totals, flow_key, state as settlement_state
+    settlement_totals = allocation_totals(snapshot['plan'])
     result = []
     for cycle in cycles:
         last_salary = date.fromisoformat(cycle["last_salary_date"])
@@ -2185,18 +2190,35 @@ def _payday_view(store, snapshot, month):
             continue
         upcoming = [flow.copy() for flow in cycle["cashflows"]
                     if as_of_date <= date.fromisoformat(flow["due_date"]) < next_salary]
-        # The cashflow list is maintained by hand and is not reconciled with
-        # bookings: the balance already contains every booking up to as_of,
-        # while a flow due on as_of is still deducted in full. Sums stay
-        # unchanged; a same-day booking of the same amount is only flagged.
-        same_day = Counter(
-            money(row["amount"]) for row in store.db.execute(
-                "SELECT amount FROM active_transactions WHERE date=? AND account_id=?",
-                (as_of_date.isoformat(), cycle["account_id"])))
+        # Only an explicit, version-bound booking assignment reduces a manual
+        # commitment. Same-day/amount similarity remains a warning, never a match.
+        for original, flow in zip((f for f in cycle['cashflows']
+                                   if as_of_date <= date.fromisoformat(f['due_date']) < next_salary),
+                                  upcoming, strict=True):
+            flow['flow_key'] = flow_key(cycle, original)
+            flow['original_amount'] = original['amount']
+            flow.update(settlement_state(store, cycle, original, as_of_date.isoformat(),
+                                         plan=snapshot['plan'], _allocations=settlement_totals))
+            flow['amount'] = flow['remaining_amount']
+        same_day_rows = {(row['external_id'], row['revision']): money(row['amount'])
+                         for row in store.db.execute(
+                             "SELECT external_id,revision,amount FROM active_transaction_versions "
+                             "WHERE date=? AND account_id=? AND currency='EUR'",
+                             (as_of_date.isoformat(), cycle['account_id']))}
+        same_day = Counter(same_day_rows.values())
         for flow in upcoming:
             if flow["due_date"] == as_of_date.isoformat():
                 signed = money(flow["amount"]) * (1 if flow["direction"] == "inflow" else -1)
-                flow["possibly_booked"] = same_day[signed] > 0
+                # A partial match must not hide an unlinked residual payment.
+                # Conversely, the explicitly linked occurrence cannot also be
+                # evidence that an equal remaining amount was paid a second time.
+                linked = (flow.get('settlements', [])
+                          if flow['invalid_settlement_count'] == 0 else [])
+                used_occurrences = sum(
+                    same_day_rows.get((ref['external_id'], ref['transaction_revision'])) == signed
+                    for ref in linked)
+                flow['possibly_booked'] = (money(flow['remaining_amount']) > 0
+                                          and same_day[signed] > used_occurrences)
         for transfer in snapshot["plan"].get("pending_transfers", []):
             transfer_date = date.fromisoformat(transfer["value_date"])
             if not as_of_date <= transfer_date < next_salary:

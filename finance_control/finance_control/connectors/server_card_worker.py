@@ -239,13 +239,22 @@ def run_request(request, vault_factory, card_factory, reader_factory):
         transactions = reader.read(ReadOperation.CREDIT_CARD_TRANSACTIONS, metadata, start, end)
         if type(transactions) is not CreditCardTransactions or type(transactions.bookings) is not tuple or len(transactions.bookings) > _MAX_ROWS:
             raise ValueError('transactions')
-        current = reader.read(ReadOperation.CREDIT_CARD_BALANCE, metadata)
+        balance_error = None
+        try:
+            current = _balance(reader.read(ReadOperation.CREDIT_CARD_BALANCE, metadata))
+        except BankReadError as error:
+            # A missing balance operation must not discard a valid turnover response.
+            if error.code is not BankErrorCode.UNSUPPORTED:
+                raise
+            current, balance_error = None, 'card_operation_unsupported'
         result = {'status': 'ok', 'card_masked': metadata.masked_number,
-                  'balance': _balance(current),
+                  'balance': current,
                   'transactions': [_booking(item, metadata.card_number, metadata.masked_number)
                                    for item in transactions.bookings],
                   'last_billing_date': _date_out(transactions.last_billing_date),
                   'expected_billing_date': _date_out(transactions.expected_billing_date)}
+        if balance_error is not None:
+            result['balance_error'] = balance_error
         for item in result['transactions']:
             if not start <= _date(item['booking_date']) <= end:
                 raise ValueError('booking period')

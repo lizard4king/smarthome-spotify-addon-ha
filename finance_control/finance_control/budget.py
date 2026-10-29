@@ -285,8 +285,9 @@ def _validate_plan(value, store=None):
                 raise ValueError("payday cashflows must be a list with at most 100 entries")
             validated_cashflows = []
             for flow in cashflows:
-                _object(flow, {"label", "direction", "amount", "due_date", "evidence"},
-                        "payday cashflow")
+                required = {"label", "direction", "amount", "due_date", "evidence"}
+                if not isinstance(flow, dict) or not required <= set(flow) or set(flow) - required - {'settlements', 'settlement_scope'}:
+                    raise ValueError('invalid payday cashflow')
                 if flow["direction"] not in {"inflow", "outflow"}:
                     raise ValueError("payday cashflow direction is invalid")
                 validated_cashflows.append({
@@ -296,6 +297,19 @@ def _validate_plan(value, store=None):
                     "due_date": _date(flow["due_date"], "payday cashflow due_date"),
                     "evidence": _text(flow["evidence"], "payday cashflow evidence", 1, 240),
                 })
+                if 'settlements' in flow:
+                    from .payday_settlements import normalize_refs
+                    checked_flow = validated_cashflows[-1]
+                    checked_flow['settlements'] = normalize_refs(flow['settlements'])
+                    if checked_flow['settlements']:
+                        from .payday_settlements import flow_key
+                        scope = flow.get('settlement_scope')
+                        if scope is None:
+                            scope = flow_key({'account_id': account_id, 'last_salary_date': last_salary,
+                                              'next_salary_date': next_salary}, checked_flow)
+                        if type(scope) is not str or re.fullmatch('[0-9a-f]{64}', scope) is None:
+                            raise ValueError('invalid payday settlement scope')
+                        checked_flow['settlement_scope'] = scope
             validated_cycles.append({
                 "account_id": account_id,
                 "owner_label": _text(raw["owner_label"], "payday owner label", 1, 120),
@@ -558,6 +572,8 @@ def _validate_plan(value, store=None):
             if len(group) > 1 and not all("weight" in entry for entry in group):
                 raise ValueError("split allocations require a weight for every item")
         plan["actual_allocations"] = validated
+    from .payday_settlements import validate_plan_links
+    validate_plan_links(store, plan)
     return plan
 
 

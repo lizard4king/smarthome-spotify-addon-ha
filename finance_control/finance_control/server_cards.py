@@ -26,6 +26,7 @@ _FIELDS = {
     'card-read': {'id', 'revision', 'confirmed', 'card_id', 'tan_method',
                   'tan_medium', 'start', 'end'},
     'card-read-state': {'id', 'revision', 'card_id'},
+    'card-auth-save': {'id', 'revision', 'card_id', 'confirmed'},
 }
 _FINGERPRINT = re.compile(r'[0-9a-f]{64}\Z', re.ASCII)
 _MAX_ROWS = 10_000
@@ -148,7 +149,11 @@ class ServerCards:
         with self.administration._connection() as db:
             owner, _ = self._connection(db, actor, connection_id, revision)
             cards = [dict(row) for row in db.execute(
-                'SELECT k.card_id,k.connection_id,k.account_id,k.masked_number '
+                'SELECT k.card_id,k.connection_id,k.account_id,k.masked_number, '
+                'CASE WHEN k.connection_revision=c.revision AND (k.tan_method IS NOT NULL OR EXISTS ('
+                'SELECT 1 FROM server_bank_refresh_bindings b WHERE b.connection_id=c.id '
+                'AND b.owner_id=k.owner_id AND b.revision=c.revision AND b.tan_method IS NOT NULL)) '
+                'THEN 1 ELSE 0 END AS auth_configured '
                 'FROM server_cards k JOIN app_bank_connections c ON c.id=k.connection_id '
                 "WHERE k.owner_id=? AND c.user_id=? AND c.id=? AND c.bank_id='POSTBANK' "
                 "AND c.status!='REVOKED' ORDER BY k.rowid",
@@ -156,6 +161,8 @@ class ServerCards:
             targets = [dict(row) for row in db.execute(
                 "SELECT id,COALESCE(NULLIF(display_name,''),id) AS name,owner,currency "
                 "FROM accounts WHERE kind='CREDIT_CARD' AND currency='EUR' ORDER BY id")]
+        for card in cards:
+            card['auth_configured'] = bool(card['auth_configured'])
         if sys.platform == 'linux' and cards:
             store = self._store()
             for card in cards:
@@ -200,9 +207,9 @@ class ServerCards:
                 attempted = (store, connection_id, owner['id'], card_id)
                 store.save(connection_id, owner['id'], card_id, secret)
                 db.execute(
-                    'INSERT INTO server_cards(card_id,connection_id,owner_id,account_id,masked_number) '
-                    'VALUES (?,?,?,?,?)',
-                    (card_id, connection_id, owner['id'], account_id, masked))
+                    'INSERT INTO server_cards(card_id,connection_id,owner_id,account_id,masked_number,connection_revision) '
+                    'VALUES (?,?,?,?,?,?)',
+                    (card_id, connection_id, owner['id'], account_id, masked, revision))
                 result = {'id': connection_id, 'revision': revision,
                           'card_id': card_id, 'account_id': account_id,
                           'masked_number': masked}
@@ -296,7 +303,7 @@ class ServerCards:
             request = dict(data)
             self._jobs[card_id] = {
                 'card_id': card_id, 'connection_id': connection_id,
-                'owner_id': owner['id'], 'revision': revision,
+                'owner_id': owner['id'], 'revision': revision, 'account_id': card['account_id'],
                 'request': request, 'status': 'running', 'finished_at': None,
             }
             self._active = card_id
@@ -332,6 +339,27 @@ class ServerCards:
                 elif job['status'] in ('needs_method', 'needs_medium'):
                     response['options'] = job['options']
                 return response
+
+    def _auth_save(self, actor, data):
+        """Keep only the owner-confirmed selection from a successful current bank job."""
+        connection_id, revision, card_id = _id(data['id']), _revision(data['revision']), _id(data['card_id'])
+        with self.administration._connection(write=True) as db:
+            owner, _ = self._connection(db, actor, connection_id, revision)
+            card = self._card(db, connection_id, owner['id'], card_id)
+            with self._lock:
+                self._prune()
+                job = self._jobs.get(card_id)
+                if (job is None or job['status'] != 'complete' or job.get('auth_saved')
+                        or job['connection_id'] != connection_id or job['owner_id'] != owner['id']
+                        or job['revision'] != revision or job.get('account_id') != card['account_id']
+                        or job['request']['tan_method'] is None):
+                    raise AdministrationError('stale_preview', 409)
+                request = job['request']
+                db.execute('UPDATE server_cards SET tan_method=?,tan_medium=?,connection_revision=?,'
+                           'last_status=NULL,last_code=NULL,last_attempt_at=NULL WHERE card_id=?',
+                           (request['tan_method'], request['tan_medium'], revision, card_id))
+                job['auth_saved'] = True
+        return {'card_id': card_id, 'auth_configured': True}
 
     def cleanup_connections(self, connections):
         """Purge secrets before revoke; caller supplies DB-verified connections.
@@ -371,6 +399,8 @@ class ServerCards:
             raise AdministrationError('confirmation_required')
         if action == 'card-save':
             return self._save(actor, data)
+        if action == 'card-auth-save':
+            return self._auth_save(actor, data)
         if action == 'card-delete':
             return self._delete(actor, data)
         return self._read(actor, data)

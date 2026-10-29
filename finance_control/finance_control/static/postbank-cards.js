@@ -10,7 +10,6 @@
     return item;
   };
   const text = (value, limit = 2000) => typeof value === 'string' ? value.slice(0, limit) : '';
-  const isoDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? value : '';
   const api = async (route, data) => {
     try { return {ok: true, value: await window.api(`/api/administration/${route}`, data)}; }
     catch (error) { return {ok: false, code: typeof error?.code === 'string' ? error.code : ''}; }
@@ -20,17 +19,16 @@
     unknown_connection: 'Die Bankverbindung ist nicht mehr verfügbar.',
     forbidden: 'Für diese Bankverbindung fehlt die Berechtigung.',
     invalid_target: 'Wähle ein gültiges Zielkonto.',
-    invalid_bank_auth_selection: 'Die gewählte TAN-Methode oder das TAN-Gerät ist nicht verfügbar.',
-    bank_read_busy: 'Es läuft bereits ein Bankabruf.',
-    bank_read_timeout: 'Der Kartenabruf hat das Zeitlimit erreicht.',
-    auth_rejected: 'Die Bank hat den Zugang abgelehnt.',
-    bank_failure: 'Der Kartenabruf ist fehlgeschlagen.',
-    invalid_bank_result: 'Die Bankantwort enthält unvollständige oder ungültige Kartendaten.',
     invalid_bank: 'Diese Bankverbindung unterstützt diesen Kartenabruf nicht.',
-    card_operation_unsupported: 'Die Bank bietet den benötigten Kreditkartenabruf für diesen Zugang nicht an.',
     duplicate_card_target: 'Dieses Zielkonto ist bereits einer Karte zugeordnet.',
     invalid_card_metadata: 'Prüfe die Kartennummer und die optionalen Kartenangaben.',
     server_cards_unavailable: 'Der sichere Kartenspeicher ist derzeit nicht verfügbar.',
+    bank_read_busy: 'Es läuft bereits ein Bankabruf.',
+    bank_read_timeout: 'Die Einrichtung der Bankfreigabe hat das Zeitlimit erreicht.',
+    auth_rejected: 'Die Bank hat die Anmeldung abgelehnt.',
+    bank_failure: 'Die Bankfreigabe konnte nicht eingerichtet werden.',
+    invalid_bank_auth_selection: 'Die gewählte TAN-Methode oder das TAN-Gerät ist nicht verfügbar.',
+    card_operation_unsupported: 'Die Bank bietet den benötigten Kreditkartenabruf für diesen Zugang nicht an.',
   })[code] || 'Die Anfrage konnte nicht abgeschlossen werden. Prüfe den Serverstatus.';
   const field = (label, input) => {
     const wrapper = el('label', '', 'pbc-field');
@@ -50,7 +48,6 @@
     input.value = '';
     return input;
   };
-  const fmt = (amount, currency) => [text(String(amount ?? ''), 40), text(currency, 10)].filter(Boolean).join(' ');
   const normalizedPan = value => {
     if (typeof value !== 'string' || !/^[0-9 -]+$/.test(value)) return '';
     const digits = value.replace(/[ -]/g, '');
@@ -70,7 +67,8 @@
     host.replaceChildren();
     if (record?.bankId !== 'POSTBANK') return;
     const root = el('section', '', 'pbc-root');
-    root.append(el('h3', 'Postbank Mastercard'), el('p', 'Karten zuordnen und Umsätze lesen.', 'pbc-note'));
+    root.append(el('h3', 'Postbank Mastercard'),
+      el('p', 'Karten hier zuordnen. Umsätze und Kontostand über „Konten aktualisieren“ abrufen.', 'pbc-note'));
     const status = el('p', 'Karten werden geladen.', 'pbc-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
@@ -100,7 +98,7 @@
     };
     sourceBindings.set(host, {id: record.id, revision: record.revision, generation, updateSources});
     let busy = false;
-    let activeRead = 0;
+    let activeAuth = 0;
     let disabledBeforeBusy = new Map();
     const setBusy = value => {
       if (value === busy) return;
@@ -129,111 +127,74 @@
       row.append(el('strong', `${name}: `), el('span', Array.isArray(value) ? value.map(item => text(item)).join(' · ') : text(String(value))));
       target.append(row);
     };
-    const renderResult = value => {
-      const box = el('section', '', 'pbc-result');
-      box.append(el('h4', 'Leseansicht – noch keine Übernahme in Buchungen'));
-      const balance = value?.balance;
-      const billingDate = (label, balanceValue, transactionValue) => {
-        const fromBalance = isoDate(balanceValue);
-        const fromTransactions = isoDate(transactionValue);
-        if (fromBalance && fromTransactions && fromBalance !== fromTransactions) {
-          note(`${label} (Saldoabruf)`, fromBalance, box);
-          note(`${label} (Umsatzabruf)`, fromTransactions, box);
-        } else note(label, fromBalance || fromTransactions, box);
-      };
-      if (balance && typeof balance === 'object') {
-        note('Aktueller Kartenstand', fmt(balance.amount, balance.currency), box);
-        note('Stand vom', isoDate(balance.as_of), box);
-        note('Verfügbar', balance.available_amount == null ? '' : fmt(balance.available_amount, balance.available_currency), box);
-        note('Offene Autorisierungen', balance.open_authorizations, box);
-        note('Kreditrahmen', balance.credit_limit, box);
-      }
-      billingDate('Letzte Abrechnung', balance?.last_billing_date, value?.last_billing_date);
-      billingDate('Nächste Abrechnung', balance?.expected_billing_date, value?.expected_billing_date);
-      const rows = Array.isArray(value?.transactions) ? value.transactions : [];
-      box.append(el('p', `${rows.length} Kartenumsätze gelesen.`, 'pbc-note'));
-      const list = el('div', '', 'pbc-rows');
-      rows.forEach(row => {
-        if (!row || typeof row !== 'object') return;
-        const item = el('article', '', 'pbc-row');
-        const top = el('div', '', 'pbc-row-top');
-        top.append(el('strong', text(row.merchant_name) || 'Kartenumsatz'), el('strong', fmt(row.amount, row.currency)));
-        item.append(top);
-        note('Belegdatum', isoDate(row.receipt_date), item);
-        note('Buchungstag', isoDate(row.booking_date), item);
-        note('Abrechnungsdatum', isoDate(row.billing_date), item);
-        note('Wertstellung', isoDate(row.value_date), item);
-        if (row.billed === true) note('Status', 'Abgerechnet', item);
-        if (row.billed === false) note('Status', 'Noch nicht abgerechnet', item);
-        if (Array.isArray(row.descriptions)) row.descriptions.forEach((pair, index) => {
-          if (Array.isArray(pair)) pair.forEach((part, partIndex) => note(`Beschreibung ${index + 1}${partIndex ? ' Zusatz' : ''}`, part, item));
-        });
-        note('Land', row.country_code, item);
-        note('Originalbetrag', row.original_amount == null ? '' : fmt(row.original_amount, row.original_currency), item);
-        note('Wechselkurs', row.original_exchange_rate, item);
-        note('Abrechnung', row.billing_label, item);
-        note('Gebührencode', row.fee_code, item);
-        note('Geldautomaten-Gebühr', row.atm_fee_reference, item);
-        note('Auslandseinsatz-Gebühr', row.foreign_use_fee_reference, item);
-        note('Terminal', row.terminal_id, item);
-        note('Buchungsreferenz', row.booking_reference, item);
-        list.append(item);
-      });
-      box.append(list);
-      return box;
-    };
-    const renderAuth = (result, retry, into) => {
-      const method = result.status === 'needs_method';
-      const options = Array.isArray(result.options) ? result.options : [];
-      const choices = options.map(option => ({value: text(option?.key ?? option?.label, 100), label: text(option?.label ?? option?.key, 160)}))
-        .filter(option => option.value && option.label);
-      if (!choices.length) { setStatus('Die Bank hat keine auswählbare Freigabe geliefert.', true); return; }
-      const panel = el('div', '', 'pbc-auth');
-      const choice = select(method ? 'TAN-Methode auswählen' : 'TAN-Gerät auswählen', choices);
-      const button = el('button', 'Auswahl übernehmen', 'pbc-secondary');
-      button.type = 'button';
-      button.disabled = true;
-      choice.addEventListener('change', () => { button.disabled = !choice.value; });
-      button.addEventListener('click', () => {
-        if (!choice.value || busy) return;
-        retry(method ? {tan_method: choice.value} : {tan_medium: choice.value});
-      });
-      panel.append(field(method ? 'TAN-Methode' : 'TAN-Gerät', choice), button);
-      into.replaceChildren(panel);
-      setStatus('Die Bank verlangt eine Freigabe. Triff eine ausdrückliche Auswahl.');
-    };
-    const runRead = async (cardId, period, auth, into) => {
-      if (busy || !live()) return;
-      const token = ++activeRead;
+    const configureCardAuth = async (cardId, auth, into) => {
+      if (busy || !live() || !into.isConnected) return;
+      const token = ++activeAuth;
+      const current = () => live() && token === activeAuth && into.isConnected;
       into.replaceChildren();
       setBusy(true);
-      setStatus('Kartenumsätze werden gelesen. Bestätige bei Bedarf in der Banking-App.');
-      const payload = {...base(), confirmed: true, card_id: cardId,
-        tan_method: auth.tan_method || null, tan_medium: auth.tan_medium || null,
-        start: period.start, end: period.end};
-      const start = await request('card-read', payload);
-      if (!live() || token !== activeRead) return;
-      if (!start) { setBusy(false); return; }
+      setStatus('Bankfreigabe wird eingerichtet. Bestätige bei Bedarf in der Banking-App.');
+      const today = new Date().toISOString().slice(0, 10);
+      let state = await request('card-read', {...base(), confirmed:true, card_id:cardId,
+        tan_method:auth.tan_method || null, tan_medium:auth.tan_medium || null,
+        start:today, end:today});
+      if (!current()) return;
+      if (!state) { setBusy(false); return; }
       const deadline = Date.now() + 350000;
-      let state = start;
-      while (live() && token === activeRead && state?.status === 'running' && Date.now() < deadline) {
+      while (current() && state.status === 'running' && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 1000));
-        if (!live() || token !== activeRead) return;
-        state = await request('card-read-state', {...base(), card_id: cardId});
+        if (!current()) return;
+        state = await request('card-read-state', {...base(), card_id:cardId});
+        if (!current()) return;
         if (!state) { setBusy(false); return; }
       }
-      if (!live() || token !== activeRead) return;
+      if (!current()) return;
+      if (state.status === 'running') {
+        setBusy(false); setStatus(failure('bank_read_timeout'), true); return;
+      }
+      const result = state.status === 'complete' ? state.result : state;
+      if (!result || result.status === 'error') {
+        setBusy(false); setStatus(failure(result?.code), true); return;
+      }
+      if (['needs_method', 'needs_medium'].includes(result.status)) {
+        setBusy(false);
+        const method = result.status === 'needs_method';
+        const options = (Array.isArray(result.options) ? result.options : [])
+          .map(option => ({value:method ? option?.key : option?.label, label:option?.label}))
+          .filter(option => typeof option.value === 'string' && option.value.length > 0
+            && option.value.length <= 80 && typeof option.label === 'string'
+            && option.label.length > 0 && option.label.length <= 80
+            && !/[\x00-\x1f\x7f]/.test(option.value + option.label)
+            && (!method || /^[0-9]{1,8}$/.test(option.value)));
+        if (!options.length || options.length > 20) {
+          setStatus('Die Bank hat keine auswählbare Freigabe geliefert.', true); return;
+        }
+        const panel = el('div', '', 'pbc-auth');
+        const choice = select(method ? 'TAN-Methode auswählen' : 'TAN-Gerät auswählen', options);
+        const accept = el('button', 'Auswahl übernehmen', 'pbc-secondary');
+        accept.type = 'button'; accept.disabled = true;
+        choice.addEventListener('change', () => { accept.disabled = !choice.value; });
+        accept.addEventListener('click', () => {
+          if (!choice.value || busy || !current()) return;
+          void configureCardAuth(cardId, {...auth,
+            ...(method ? {tan_method:choice.value} : {tan_medium:choice.value})}, into);
+        });
+        panel.append(field(method ? 'TAN-Methode' : 'TAN-Gerät', choice), accept);
+        into.append(panel);
+        setStatus('Wähle einmalig die von der Bank angebotene Freigabe.');
+        return;
+      }
+      if (result.status !== 'ok') {
+        setBusy(false); setStatus('Die Bankfreigabe konnte nicht sicher bestätigt werden.', true); return;
+      }
+      // This owner-only setup probe is never rendered or imported as a preview.
+      const saved = await request('card-auth-save', {...base(), card_id:cardId, confirmed:true});
+      if (!current()) return;
+      if (!saved) { setBusy(false); return; }
+      const refreshed = await reloadCards('Bankfreigabe gespeichert. Konten aktualisieren liest Umsätze und Kontostand.');
+      if (!live()) return;
       setBusy(false);
-      if (state?.status === 'running') { setStatus('Der Kartenabruf hat das Zeitlimit erreicht.', true); return; }
-      if (state?.status === 'error') { setStatus(failure(state.code), true); return; }
-      const result = state?.result ?? state;
-      if (result?.status === 'error') { setStatus(failure(result.code), true); return; }
-      if (result?.status === 'needs_method' || result?.status === 'needs_medium') {
-        renderAuth(result, selection => runRead(cardId, period, {...auth, ...selection}, into), into);
-      } else if (result?.status === 'ok') {
-        into.replaceChildren(renderResult(result));
-        setStatus('Kartenumsätze wurden gelesen. Es wurden keine Buchungen übernommen.');
-      } else setStatus('Die Bankantwort konnte nicht sicher angezeigt werden.', true);
+      if (refreshed) changed();
     };
     const render = data => {
       body.replaceChildren();
@@ -293,25 +254,8 @@
         const match = targets.find(targetItem => targetItem.id === card.account_id);
         note('Zielkonto', match ? text(match.name, 120) : 'Nicht mehr in der Auswahlliste', item);
         const actions = el('div', '', 'pbc-actions');
-        const read = el('button', 'Mastercard-Umsätze lesen', 'pbc-secondary');
-        read.type = 'button';
         const remove = el('button', 'Zuordnung entfernen', 'pbc-danger');
         remove.type = 'button';
-        const periodPanel = el('div', '', 'pbc-period');
-        const resultPanel = el('div', '', 'pbc-read-output');
-        read.addEventListener('click', () => {
-          if (busy) return;
-          periodPanel.replaceChildren();
-          resultPanel.replaceChildren();
-          const start = el('input'); start.type = 'date';
-          const end = el('input'); end.type = 'date';
-          const go = el('button', 'Zeitraum lesen', 'pbc-primary'); go.type = 'button'; go.disabled = true;
-          const update = () => { go.disabled = !isoDate(start.value) || !isoDate(end.value) || start.value > end.value; };
-          start.addEventListener('input', update); end.addEventListener('input', update);
-          go.addEventListener('click', () => { if (!go.disabled) runRead(card.card_id, {start: start.value, end: end.value}, {}, resultPanel); });
-          periodPanel.append(field('Von', start), field('Bis', end), go);
-          setStatus('Wähle den Lesezeitraum der Karte.');
-        });
         remove.addEventListener('click', async () => {
           if (busy || !window.confirm('Diese Kartenzuordnung entfernen?')) return;
           setBusy(true);
@@ -319,8 +263,15 @@
           setBusy(false);
           if (answer && await reloadCards('Kartenzuordnung entfernt.')) changed();
         });
-        actions.append(read, remove);
-        item.append(actions, periodPanel, resultPanel);
+        const authPanel = el('div', '', 'pbc-auth-setup');
+        if (card.auth_configured === false) {
+          const configure = el('button', 'Bankfreigabe einrichten', 'pbc-secondary');
+          configure.type = 'button';
+          configure.addEventListener('click', () => { void configureCardAuth(card.card_id, {}, authPanel); });
+          actions.append(configure);
+        }
+        actions.append(remove);
+        item.append(actions, authPanel);
         list.append(item);
       });
       body.append(list);
