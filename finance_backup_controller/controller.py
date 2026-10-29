@@ -23,7 +23,7 @@ class SafetyStop(Exception):
     """Safe, fixed diagnostic text only."""
 
 
-APPROVED_FINANCE_VERSIONS = frozenset({"0.2.69", "0.2.70", "0.2.71", "0.2.72", "0.2.73", "0.2.74"})
+APPROVED_FINANCE_VERSIONS = frozenset({"0.2.69", "0.2.70", "0.2.71", "0.2.72", "0.2.73", "0.2.74", "0.2.75"})
 
 
 def utc(value):

@@ -1,3 +1,7 @@
+# 0.2.75
+
+Analyseansicht verarbeitet die bestehenden strukturierten Backend-Hinweise zu Kartenabbuchungen und einseitigen Umbuchungen. Ungültige Hinweisstrukturen werden als Ladefehler angezeigt. Finanzielle Berechnungen bleiben unverändert.
+
 # 0.2.74
 
 Neue Oberfläche unter /frontend mit bestehenden Konten, Buchungen, Kategorien, wiederkehrenden Zahlungen und Analysen. Fehlende Kontostände bleiben sichtbar; gemischte Buchungswährungen werden nicht summiert. Keine neue automatische Bankaktion.

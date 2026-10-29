@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "9c3961a6992a203cdfce540ed4f4c8d5a6f3d1dd91ad6331ad01e2c9988f2801",
-  "addon_version": "0.2.74",
+  "addon_tree_sha256": "3625323b06f06a3136155889b473be362d42142c77e0fc875d5b14c4e17c5319",
+  "addon_version": "0.2.75",
   "deployment_files": {
-    "Dockerfile": "e0aa4d1000e0d6cca69c39930b71bdb0be5c7b5ac9d4ab5b1840e1674356968c",
-    "README.md": "07d4bac6f800ebb686e9e324b81358209b1d193f0e1f15c80a55b3b4f30776a6",
+    "Dockerfile": "ada41826420c65cdd57bff440f18e4e7448cd557444217fcc429d1609bd74dad",
+    "README.md": "d9db872ee45878bdaf3f99c6de092be7ee271a02b35fa8cbd8c8fadfec47ba6a",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "d10afad368cd3787be47961b5455e0afd429e25ebbf7078ccbdafc9c907dd45b",
+    "config.yaml": "bb443417627512400cf0fddbeeae20a0d780daa0b277331daac691ac40877d16",
     "run.sh": "49963a11e8072e76e5757d339fda3a4dfba7e532dc06061e382daed6c7a3340d",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -29,7 +29,7 @@
     "analytics.py": "35c9e9e48cfbddaec3cf16485501e801ea157038f270d0bc4d32198879420cb4",
     "approval_queue.py": "695768a0a9710ef09cb3415d15db8e0419ae64da845f93fb87e725dc755d4489",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
-    "backup_guard.py": "d5c8a7589fb4f2176b142686ee4a39f6047ea37a241a82c83ff7e489a6a0b9ba",
+    "backup_guard.py": "e69dd7be34731bb8eab1c81a6a560884914eec885ffcf65e58335e1bcafc3ec7",
     "backup_package.py": "af18739a1e38ecbc4b80612252914d36e38e69fe51d7915add042a5e2a86f290",
     "backup_retention_maintenance.py": "5ec98b0352fc04de6bcba71f3753f171bafca841e5174405e35e43597ca8e0b9",
     "bank_account_policy.py": "7c5366d8a6d7dc4070c0a33fe62be3334c4202a69f14b437f0c39d9ebd6b9881",
@@ -486,7 +486,7 @@
     "static/frontend-api.js": "a7a3f635946c9cc942cbceaad42a4301bf44c9f3a9ce0825e53af187fbf2c5d8",
     "static/frontend-preview.css": "6d3e4b425058aa420619ce085e96576bf7b3da667944b7ae174ab1c03d2ca098",
     "static/frontend-preview.html": "a8c3a923dfcf65ac32061082c707f729a2bfc948ba48d5ad1aabebf639741b0d",
-    "static/frontend-preview.js": "19de37d127e05e17db7c08471ac165b462af24cbe9c97f449b2dba57412118db",
+    "static/frontend-preview.js": "4963be75f1264724aa9eb7a787f11481f6f19edd75e9b5fc6e70aa0267aa4254",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
     "static/home.js": "8cff2938258cd058d9c758ff704e691640eb51cf7caf2114c07c73c9d63aca5f",
     "static/index.html": "e26da6b3d7c413b5a971222f6931a60e8a4e5693d05989842bbc599797f57464",
@@ -526,6 +526,6 @@
     "web.py": "1af5bf5e72af6c3c57f62e98e1e62d3792f653a066ef7e9e0c02e07fc2738250"
   },
   "schema_version": 1,
-  "source_commit": "fa7202b5b37255b24c64a5c4a86f362d56eac86d",
-  "source_tree_sha256": "d37326f744104a191d1f5797283487b541608a806791f701e6f138bbafd3788e"
+  "source_commit": "0d1ddc53982845d27b68c3cd10ade10d6f1ac18c",
+  "source_tree_sha256": "a02dd3b98670f4d514198583d0aa9e8d23959df01adb7f51bf1978f0255fdfa7"
 }
