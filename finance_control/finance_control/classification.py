@@ -730,7 +730,7 @@ def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key):
                 item['category_proposal'] = {
                     'category': model['category_id'], 'parent_category': model['parent_id'],
                     'confidence': model['confidence'],
-                    'provenance': f"ollama:{model['model']}",
+                    'provenance': (model['model'] if model['model'] in {'assistant:codex_cli', 'assistant:qwen'} else f"ollama:{model['model']}"),
                 }
             else:
                 merchant = _merchant_family_match(
@@ -775,7 +775,7 @@ def _transaction_table_values(item, catalog):
     if proposal:
         source = ('Vorschlag aus Deiner Regel' if exact else
                   'Vorschlag aus Händlerregel' if proposal['provenance'] == 'local_merchant_family_rule' else
-                  'Vorschlag des lokalen Modells' if proposal['provenance'].startswith('ollama:') else 'Bestätigt')
+                  'KI-Vorschlag' if proposal['provenance'].startswith(('ollama:', 'assistant:')) else 'Bestätigt')
         meta = ('Bestätigt' if item['confirmed'] else
                 source + ' · Sicherheit ' + confidence.get(proposal['confidence'], proposal['confidence']))
         detected = hierarchy(proposal['category'], proposal['parent_category']) + ' · ' + meta
@@ -1059,7 +1059,7 @@ def suggestions(store, data):
         result.append({'category': model['category_id'],
                        'parent_category': model['parent_id'],
                        'reason': 'local_model', 'rationale': model['rationale'],
-                       'provenance': f"ollama:{model['model']}",
+                       'provenance': (model['model'] if model['model'] in {'assistant:codex_cli', 'assistant:qwen'} else f"ollama:{model['model']}"),
                        'confidence': model['confidence']})
     context = store.db.execute('SELECT counterparty,description FROM transaction_context WHERE account_id=? AND external_id=?',
                                (transaction['account_id'], transaction['external_id'])).fetchone()

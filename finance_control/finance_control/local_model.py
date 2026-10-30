@@ -18,6 +18,7 @@ from .classification import (
     source_context_complete,
 )
 from .classification_rules import DECISION_ACTIONS, is_intermediary
+from .assistant_engine import BackendFailure
 from .document_intake import DocumentIntakeError, read_document_source
 
 OLLAMA_CHAT_URL = 'http://127.0.0.1:11434/api/chat'
@@ -119,6 +120,21 @@ def _payload(store, transaction, direction):
     }, {row['id']: row for row in categories}
 
 
+def _assistant_payload(store, transaction, direction):
+    """Use only the selected booking and category labels for the server assistant."""
+    categories = [dict(row) for row in store.db.execute(
+        'SELECT c.id,c.label,c.parent_id,p.label parent_label FROM category_catalog c '
+        'JOIN category_catalog p ON p.id=c.parent_id '
+        'WHERE c.transaction_type=? ORDER BY p.label,c.label', (direction,))]
+    return {'task': 'classify', 'transaction': {
+        'counterparty': (transaction['counterparty'] or '')[:240],
+        'description': (transaction['description'] or '')[:500],
+        'amount': transaction['amount'], 'currency': transaction['currency'],
+        'date': transaction['date'], 'direction': direction},
+        'allowed_categories': [{'id': row['id'], 'label': f"{row['parent_label']} > {row['label']}"}
+                               for row in categories]}, {row['id']: row for row in categories}
+
+
 def _ollama_chat(payload):
     request = urllib.request.Request(
         OLLAMA_CHAT_URL, data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
@@ -142,15 +158,30 @@ def suggest(store, data, *, client=None):
     if direction == 'transfer':
         return {'status': 'not_applicable', 'suggestions': [],
                 'message': 'Umbuchungen werden nicht vom Modell kategorisiert.'}
-    payload, allowed = _payload(store, transaction, direction)
+    assistant_mode = client is None and 'FINANCE_CONTROL_ASSISTANT_TOKEN_FILE' in os.environ
+    payload, allowed = (_assistant_payload(store, transaction, direction) if assistant_mode
+                        else _payload(store, transaction, direction))
     try:
-        answer = (client or _ollama_chat)(payload)
+        if assistant_mode:
+            from .assistant_client import classify
+            answer = classify(payload)
+        else:
+            answer = (client or _ollama_chat)(payload)
+    except BackendFailure as exc:
+        return {'status': 'unavailable', 'code': exc.code, 'suggestions': [],
+                **({'fallback_reason': exc.fallback_reason} if exc.fallback_reason else {}),
+                'message': 'Der Assistent ist derzeit nicht erreichbar.'}
     except (OSError, TimeoutError, urllib.error.URLError):
         return {'status': 'unavailable', 'suggestions': [],
                 'message': 'Das lokale Modell ist derzeit nicht erreichbar.'}
     except (ValueError, KeyError, TypeError, json.JSONDecodeError):
         return {'status': 'invalid_response', 'suggestions': [],
                 'message': 'Das lokale Modell lieferte keine verwertbare Antwort.'}
+    if assistant_mode:
+        metadata = {key: answer[key] for key in ('engine', 'fallback_reason') if key in answer}
+        answer = {key: answer[key] for key in ('category', 'confidence', 'reason')}
+    else:
+        metadata = {}
     if (not isinstance(answer, dict) or set(answer) != {'category', 'confidence', 'reason'}
             or answer.get('category') not in allowed or answer.get('confidence') not in _CONFIDENCE
             or not isinstance(answer.get('reason'), str) or not answer['reason'].strip()
@@ -166,10 +197,12 @@ def suggest(store, data, *, client=None):
             (transaction['account_id'], transaction['external_id'], category['id'])).fetchone():
         return {'status': 'rejected', 'suggestions': [],
                 'message': 'Diese Modellkategorie wurde für diese Buchung bereits abgelehnt.'}
-    return {'status': 'ok', 'model': payload['model'], 'suggestions': [{
+    model = f"assistant:{metadata['engine']}" if assistant_mode else payload['model']
+    provenance = model if assistant_mode else f'ollama:{model}'
+    return {'status': 'ok', 'model': model, **metadata, 'suggestions': [{
         'category': category['id'], 'parent_category': category['parent_id'],
         'reason': 'local_model', 'rationale': answer['reason'].strip(),
-        'provenance': f"ollama:{payload['model']}", 'confidence': answer['confidence'],
+        'provenance': provenance, 'confidence': answer['confidence'],
     }]}
 
 
@@ -228,6 +261,7 @@ def review_transactions(store, keys, *, client=None):
                    or set(key) != {'account_id', 'external_id'} for key in keys)):
         raise ValueError('invalid_local_model_batch')
     totals = Counter()
+    reviewed_model = None
     for index, key in enumerate(keys):
         if store.db.execute(
                 'SELECT 1 FROM classification_overrides '
@@ -242,12 +276,14 @@ def review_transactions(store, keys, *, client=None):
                 totals['not_reviewed'] += len(keys) - index - 1
                 break
             continue
+        reviewed_model = result['model']
         proposal = result['suggestions'][0]
         transaction = _transaction(store, key['account_id'], key['external_id'])
         support = _independent_support(store, transaction, proposal['category'])
         safe_category = not any(marker in proposal['category']
                                 for marker in ('UNKLAR', 'SONSTIGE'))
-        auto_confirm = (proposal['confidence'] == 'high' and support >= 2
+        auto_confirm = (not result['model'].startswith('assistant:')
+                        and proposal['confidence'] == 'high' and support >= 2
                         and safe_category
                         and not is_intermediary(
                             transaction['counterparty'], transaction['description']))
@@ -288,5 +324,5 @@ def review_transactions(store, keys, *, client=None):
         except Exception:
             store.db.rollback()
             raise
-    return {'status': 'ok', 'model': _model_name(), 'counts': dict(totals),
+    return {'status': 'ok', 'model': reviewed_model or _model_name(), 'counts': dict(totals),
             'reviewed': totals['proposed'] + totals['auto_confirmed']}

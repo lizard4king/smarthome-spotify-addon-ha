@@ -43,7 +43,7 @@ def reconciliation_differences(store, account_ids, as_of):
         if set(accounts) != set(identifiers):
             raise ValueError('unknown_reconciliation_account')
         controls = latest_by_account(store, list(accounts.values()), as_of=as_of,
-                                     include_evidence=True)
+                                     include_evidence=True, include_confirmed_reference=False)
         return {account_id: _difference(store, accounts[account_id],
                                         controls.get(account_id), as_of)
                 for account_id in identifiers}

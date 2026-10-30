@@ -344,6 +344,9 @@ class Cockpit:
         store = Store(self.database, actor=actor)
         initial_changes = store.db.total_changes
         try:
+            if route == '/api/assistant-configure':
+                from .assistant_configuration import configure
+                return configure(data)
             if route == '/api/balance-reference':
                 from .balance_references import save
                 if data.get('confirmed') is not True:

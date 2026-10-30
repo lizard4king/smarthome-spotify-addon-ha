@@ -54,6 +54,24 @@ def _review_data(store, scope, data):
     return {**data, 'candidates': [*data['candidates'], *extra], '_series_catalogue': series}
 
 
+def _stale_unconfirmed_candidate(candidate, cutoff):
+    """Hide review cards after two missed dates and seven full grace days.
+
+    This is an age rule for an unconfirmed inference, not evidence of termination.
+    Unknown cadence stays visible; the catalogue and stored rules are unchanged.
+    """
+    interval, day = candidate.get('interval_months'), candidate.get('day_of_month')
+    bookings = candidate.get('bookings') or []
+    if (type(interval) is not int or not 1 <= interval <= 120
+            or type(day) is not int or not 1 <= day <= 31 or not bookings):
+        return False
+    last = date.fromisoformat(max(row['date'] for row in bookings))
+    first = _next_date(last, day, interval)
+    second = _next_date(first, day, interval)
+    # Subtraction avoids overflow near date.max; day seven is still grace.
+    return (cutoff - second).days > 7
+
+
 def _proposals(store, scope, *, recurring_data=None):
     data = recurring_data if recurring_data is not None else _review_data(store, scope, recurring.view(store, scope))
     decisions = {r['proposal_id']: dict(r) for r in store.db.execute('SELECT * FROM payment_review_decisions')}
@@ -70,6 +88,8 @@ def _proposals(store, scope, *, recurring_data=None):
         if candidate['status'] not in {'stable', 'proposed', 'needs_review'}:
             continue
         if any(b['date'] > today for b in candidate['bookings']):
+            continue
+        if _stale_unconfirmed_candidate(candidate, date.fromisoformat(min(scope['as_of'], today))):
             continue
         if any((b['account_id'], b['external_id']) in members for b in candidate['bookings']):
             continue

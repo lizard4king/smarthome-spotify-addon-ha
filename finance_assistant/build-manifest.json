@@ -1,0 +1,15 @@
+{
+  "addon_version": "0.1.0",
+  "files": {
+    "Dockerfile": "911f9d747daf91acf4cba9810b2571d9d1a4cf659666bc88a2bf36cc951d21cc",
+    "assistant_engine.py": "64c8b7b93f81543098988077a1e022fcec57dd305618c47c2cc1d4278377cc61",
+    "assistant_login.py": "3b1bcc2c78a46383c7059082484a6f644951ad42a3afef0997016cc570d7f0ea",
+    "assistant_runtime.py": "a2841cfb5e07704916df35fb28d567fea19e9bdcfd75c41692155572515d6832",
+    "config.yaml": "8aeeb4a88e185bbd305a50a24e6a58ae8eab6acacfa74efa2e8411ab02ec0d87",
+    "launcher.py": "55625ab7e1a4795b546426c7dbaa6fdd955fd5c2ee5f3c085a887fc089913d91",
+    "server.py": "917ceb24545a8b66fafcb6a444aae35fa7dd23e3a531271a19b3d725c4692a98"
+  },
+  "schema_version": 1,
+  "source_commit": "5fded5aca2368c90973934401766500cae7e3da0",
+  "source_dirty": false
+}

@@ -1,0 +1,23 @@
+name: Finance Assistant
+slug: finance_assistant
+description: Isolierter Assistent für unbestätigte Finanzkategorien
+version: "0.1.0"
+arch:
+  - amd64
+startup: application
+boot: auto
+init: true
+watchdog: "http://[HOST]:8786/health"
+backup_exclude:
+  - models
+  - models/*
+  - codex
+  - codex/*
+ingress: true
+ingress_port: 8786
+panel_icon: mdi:robot-outline
+options:
+  assistant_token: ""
+schema:
+  assistant_token: password
+stage: experimental

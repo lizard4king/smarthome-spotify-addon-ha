@@ -4,6 +4,7 @@ umask 077
 mkdir -p /data
 data_dir=/data/FinanceControl/data
 database="$data_dir/finance.sqlite"
+export FINANCE_CONTROL_ASSISTANT_TOKEN_FILE=/data/FinanceControl/bank-secrets/assistant_token
 if [ ! -e "$database" ] && [ ! -L "$database" ]; then
   python /app/bootstrap.py
 fi
