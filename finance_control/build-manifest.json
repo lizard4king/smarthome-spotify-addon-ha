@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "b3cb133ec42a57cd1f82ce9623ce3411067a716656e4e75d3ae09da1a934e4c9",
-  "addon_version": "0.2.80",
+  "addon_tree_sha256": "d1fe0876f51d84a17ea83de5bd4560a6389eed022cf9ace2179e741d4937293b",
+  "addon_version": "0.2.81",
   "deployment_files": {
-    "Dockerfile": "15560cc2b9a067669d4473f9a8e2c49622d88c66d82caf4092f62586aac5be3d",
+    "Dockerfile": "f3e7864701348971b7246a24ba87bfa7e16aaaef3b7f5a6907cbd91b5253534b",
     "README.md": "6d20c059ef33037a903e40faa2a75471151c3d0b8146a402eeb5796569686912",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "168cfcb7bd07c094e8fe0840c83004a501d4633e650ca69ee4103cdef8866b77",
+    "config.yaml": "ef2c2cfbdba3679ae2fd87bbfc2e327589fb31827298124beb5ee47d322dd316",
     "run.sh": "c6a3b2e6d755ed89ab5500778b848bed74ae83710534d50c19427ab3d13fe356",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -35,7 +35,7 @@
     "assistant_login.py": "3b1bcc2c78a46383c7059082484a6f644951ad42a3afef0997016cc570d7f0ea",
     "assistant_runtime.py": "a2841cfb5e07704916df35fb28d567fea19e9bdcfd75c41692155572515d6832",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
-    "backup_guard.py": "7e037d2924c2c2bedc464b18ff52d74b1c25b4d2d4cbf7cac10427a5f86facd9",
+    "backup_guard.py": "c982bc85e8ede9a24055c42d2707ab684548aace624fa2115f15e8116406e63b",
     "backup_package.py": "af18739a1e38ecbc4b80612252914d36e38e69fe51d7915add042a5e2a86f290",
     "backup_retention_maintenance.py": "5ec98b0352fc04de6bcba71f3753f171bafca841e5174405e35e43597ca8e0b9",
     "balance_references.py": "64f07ef4874753d5dd90ffa5139653653362d86af4f09573ae5f42e9196e083f",
@@ -494,12 +494,12 @@
     "static/finanzguru.js": "5f27486f23b09d9239a66bc5ebcf23b51f4ec063b82296a41b743b88900469aa",
     "static/frontend-api.js": "08bb018dc43214afad2271dd2cfa720c9e5b27e4d0544e771a8a30fb52c2fc82",
     "static/frontend-icons.js": "b10d3a2037dfb8d1c3d96c1f0289c56c275d7731e630494edb1eb79fd5662f4f",
-    "static/frontend-preview.css": "47bddf8bdf8a2c58ade512047968a1060509137f30ae8a7e70f6f24a7d043280",
-    "static/frontend-preview.html": "e93e5892a0d7a06728e795a7df57964b7e0c99e683ef6b5f9626901501f4f77f",
-    "static/frontend-preview.js": "62353b411459794ddd16f8228dc5bdcf89665a75307986c7760a8605a7d6c2c7",
+    "static/frontend-preview.css": "5c8d519cecba3713cfa856c5d2fc02b6b9987651e1a3acbb0646231759d88a2f",
+    "static/frontend-preview.html": "8d7a9822ecbf5469db90555a05221afca6672314c63148908d03d3a810a6a443",
+    "static/frontend-preview.js": "14ec41919c836269e4157e0fdfd1ce3d63fc075d3fd31a1e1aa8f848402a2c0a",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
     "static/home.js": "8cff2938258cd058d9c758ff704e691640eb51cf7caf2114c07c73c9d63aca5f",
-    "static/index.html": "38e6ccf5fe340c2f7aac8ae38693bb2075d4206b8552d8fe32047a22dfb7d583",
+    "static/index.html": "9b23ecfc04a8a67b2bfaa8eef0ccfe4468ae7cdf0a49c40f70170d8dfed9babb",
     "static/intake.js": "8333ac18e72093738e1a83db7a0dd5c0cf838f833979a64f781dbdddee18bfab",
     "static/klarna-banking.css": "4dd7ac0bb39d69c89fb644349639253f2cbd8d7ffec4e68a0a3c0552693a7dae",
     "static/klarna-banking.js": "b36af5b19a1b9c63b20be09807c5024445b23bac7db115f13b8697bfd0676cf9",
@@ -527,15 +527,16 @@
     "static/simple-icons-LICENSE.txt": "9046848b63a5c92bff14e4accca80bd987e0623b74adf9226ce5198d312b79d5",
     "static/style.css": "141489acbf5b956b60fff62101b2d957a94cc95371be526ec54a46e6b3f79cac",
     "static/tabs.js": "26597aea816ec532089f38767c3f6ad4eada781a3205c11ff0bc89263a7f9b8b",
-    "static/tokens.css": "bf0a596ef13beafc8188baa25300421ba97ed03158e3e5350a7cd7d17856f439",
+    "static/theme.js": "3176c575c5f41dbf87e9abd6039acc9772922780eea54af14babd6235e85799c",
+    "static/tokens.css": "250c30b7cca77f751d02e9afaae21eb6950e9f37abae2e7abfde024a67e8b486",
     "static/wealth.js": "3de7d352197ae4c20d89f1fd1434e2629a6ed71d31538707d17b515caf58c808",
     "storage_paths.py": "bdfb05e1a3367548b95c885e2527e912da19c1b5e9f260b3f334d63d4d22e89f",
     "transfer_corrections.py": "2f3cb0687cca7a4f7963e9d8324c860544237100647b3b9761be4bdb210af256",
     "transfer_notices.py": "26e8c397d7f5470fa31e8ab52a5720372b1d461aa6d010b3364d4ba7f0543ba5",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
-    "web.py": "e8a67f65f80842debfd3da2acae1f35a1c166e974f8c10ae4cdf539b514a7de0"
+    "web.py": "b8a35c7f795137c2281c7ad64576048b3c1a2a4016d24c613aabc4f2d5ce198e"
   },
   "schema_version": 1,
-  "source_commit": "0b39fcf3787e0d45666635610ac7abed7c89f920",
-  "source_tree_sha256": "5098ebed1577fed6b755d1a04219379d06e23c452cbd3709e9cc620e8edd0cea"
+  "source_commit": "c1d7635349977f2de8870849989314167b760863",
+  "source_tree_sha256": "d615f165e6564f49f157d8a2314da18055cf210627a4911b9f053bffd26f72ae"
 }

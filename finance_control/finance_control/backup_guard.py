@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import stat
 
-APPROVED_ADDON_VERSION = '0.2.80'
+APPROVED_ADDON_VERSION = '0.2.81'
 
 
 def _read_object(path, limit):

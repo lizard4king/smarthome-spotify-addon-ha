@@ -1,3 +1,7 @@
+# 0.2.81
+
+Die gespeicherte Farbauswahl gilt gemeinsam für die Standardansicht und das bisherige Cockpit. Beide starten ohne gültige Wahl dunkel; auch bei heller Systemdarstellung bleibt der gewählte Dark Mode erhalten. Die Umschaltung synchronisiert offene Tabs und funktioniert im aktuellen Tab auch bei blockiertem Browserspeicher.
+
 # 0.2.80
 
 - Die Buchungsansicht zeigt verständliche Händler mit lokalen Logos, Kategorieherkunft und getrennte Vorschläge sowie Gegenbuchungen und Zahlungshinweise. Eigene Bestätigungen lassen sich ausdrücklich zurücksetzen.

@@ -1,5 +1,5 @@
 /* Shared semantic palette. Component styles consume these roles in both themes. */
-:root {
+:root, :root[data-theme="light"] {
   color-scheme: light;
   --fc-bg: #f4f6fa;
   --fc-surface: #ffffff;
@@ -36,7 +36,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     color-scheme: dark;
     --fc-bg: #101820;
     --fc-surface: #18242e;
@@ -67,3 +67,35 @@
     --fc-ghost-hover-bg: #333333;
   }
 }
+
+/* The saved app preference takes priority over the operating system. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --fc-bg: #101820;
+    --fc-surface: #18242e;
+    --fc-surface-alt: #213340;
+    --fc-surface-hover: #29483f;
+    --fc-text: #edf3f6;
+    --fc-muted: #b4c0c9;
+    --fc-border: #607887;
+    --fc-accent: #83e4d6;
+    --fc-accent-fill: #83e4d6;
+    --fc-accent-fill-hover: #b0f4e8;
+    --fc-on-accent: #10241f;
+    --fc-accent-soft: #203d35;
+    --fc-positive: #79d99b;
+    --fc-positive-bg: #173626;
+    --fc-negative: #ff9eaa;
+    --fc-negative-bg: #47232c;
+    --fc-warning: #f4c778;
+    --fc-warning-bg: #3c301b;
+    --fc-info: #a7d7ff;
+    --fc-info-bg: #21374c;
+    --fc-focus: #83e4d6;
+    --fc-chart-text: #edf3f6;
+    --fc-chart-grid: #607887;
+    --fc-ghost-text: #d0d0d0;
+    --fc-ghost-bg: #252525;
+    --fc-ghost-border: #7c7c7c;
+    --fc-ghost-hover-bg: #333333;
+  }
