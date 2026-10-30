@@ -37,3 +37,13 @@ dialog h2{display:flex;align-items:center;gap:10px}dialog h2 .tile{width:32px;he
 @media(max-width:360px){.row{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start}.row>.tile{grid-column:1;grid-row:1}.row-main{grid-column:2}.row-end{grid-column:2;text-align:left;justify-self:start}}
 
 .contract-phases{list-style:none;padding:0;margin:16px 0}.contract-phases li{display:flex;flex-wrap:wrap;gap:4px 14px;padding:12px 0;border-bottom:1px solid var(--line)}.contract-phases li>span:last-child{flex-basis:100%;color:var(--muted);font-size:12px}.contract-phases strong{white-space:nowrap}.contract-phases .row-date{display:inline-block}
+
+/* Account provenance must not squeeze the account name into a narrow column.
+   These account-specific selectors intentionally override the generic <=360px
+   row rule: account balances span both columns; other rows keep their layout. */
+@media(max-width:600px){
+  .row[data-account]{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start;gap:8px 12px}
+  .row[data-account]>.tile{grid-column:1;grid-row:1}
+  .row[data-account]>.row-main{grid-column:2;grid-row:1}
+  .row[data-account]>.row-end{grid-column:1/-1;grid-row:2;text-align:left;justify-self:start;max-width:100%}
+}
