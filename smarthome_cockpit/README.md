@@ -7,6 +7,17 @@ Der interne Dienst nutzt Port `8767`. Der Host-Port ist standardmäßig gesperrt
 sich mit dem internen Add-on-Dienst. Ein Update darf keinen Host-Port öffnen.
 HAL9000 ist kein Produktivbestandteil.
 
+## Aktualisierung 0.1.21
+
+„Eigene Musik“ erlaubt in der Ansicht „Alle“ jetzt auch das Nachladen weiterer
+Suchergebnisse. Eine leere gefilterte Seite mit weiteren Quellseiten wird nicht
+mehr als endgültiger Nulltreffer angezeigt. Nach bewusstem Nachladen erscheinen
+auch die Treffer jenseits der sechs Vorschläge je Kategorie; doppelte Einträge
+werden entfernt. Eine neue Suche setzt die Vorschau zurück und verwirft alte
+Antworten weiterhin. Relevanzsortierung und Vollständigkeit der vom Musikdienst
+gelieferten Metadaten bleiben davon unabhängig. Alle vier Musikassets tragen
+Version `0.1.21`; Spotify Bridge bleibt unverändert.
+
 ## Aktualisierung 0.1.20
 
 Version `0.1.20` verhindert, dass ein Browser nach einem Update die neue
