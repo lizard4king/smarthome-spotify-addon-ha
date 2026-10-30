@@ -1,3 +1,11 @@
+# 0.2.83
+
+Kontonamen bleiben auf dem Handy lesbar: Kontostand und Referenzhinweis stehen unter dem Namen. Die dunkle Oberfläche bleibt Standard. Plan & Ist ist auf Nutzerwunsch ausgeblendet.
+
+# 0.2.82
+
+Buchungen mit langen importierten Händlernamen laden zuverlässig. Vertragslisten zeigen Anbieterlogos, lesbare Beträge und dokumentierte Vertragsphasen. Alte Cockpit-Adressen führen ausschließlich zur neuen Oberfläche, auch nach Neuladen.
+
 # 0.2.81
 
 Die gespeicherte Farbauswahl gilt gemeinsam für die Standardansicht und das bisherige Cockpit. Beide starten ohne gültige Wahl dunkel; auch bei heller Systemdarstellung bleibt der gewählte Dark Mode erhalten. Die Umschaltung synchronisiert offene Tabs und funktioniert im aktuellen Tab auch bei blockiertem Browserspeicher.
