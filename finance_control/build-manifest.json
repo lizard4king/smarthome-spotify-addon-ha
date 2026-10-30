@@ -493,9 +493,10 @@
     "static/dashboard.js": "aaddabe95868a8258210c9253e88c9ceb746ec540ced27508aa2e82e62d266ce",
     "static/finanzguru.js": "5f27486f23b09d9239a66bc5ebcf23b51f4ec063b82296a41b743b88900469aa",
     "static/frontend-api.js": "08bb018dc43214afad2271dd2cfa720c9e5b27e4d0544e771a8a30fb52c2fc82",
-    "static/frontend-preview.css": "8e3a8b970f0e0ecb147242335aa1961ee21c8205df2fddd4ca3a3c917d9819ef",
-    "static/frontend-preview.html": "7723b1f96b510139b81eb9b52f7f2c33d03d49c86fbcb2dea82ba668d15b410f",
-    "static/frontend-preview.js": "8e68e2b480ba90ca294649e7ea53ec808e80517f53fea6daa29cae5573dec0e0",
+    "static/frontend-icons.js": "b10d3a2037dfb8d1c3d96c1f0289c56c275d7731e630494edb1eb79fd5662f4f",
+    "static/frontend-preview.css": "47bddf8bdf8a2c58ade512047968a1060509137f30ae8a7e70f6f24a7d043280",
+    "static/frontend-preview.html": "e93e5892a0d7a06728e795a7df57964b7e0c99e683ef6b5f9626901501f4f77f",
+    "static/frontend-preview.js": "62353b411459794ddd16f8228dc5bdcf89665a75307986c7760a8605a7d6c2c7",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
     "static/home.js": "8cff2938258cd058d9c758ff704e691640eb51cf7caf2114c07c73c9d63aca5f",
     "static/index.html": "38e6ccf5fe340c2f7aac8ae38693bb2075d4206b8552d8fe32047a22dfb7d583",
@@ -532,9 +533,9 @@
     "transfer_corrections.py": "2f3cb0687cca7a4f7963e9d8324c860544237100647b3b9761be4bdb210af256",
     "transfer_notices.py": "26e8c397d7f5470fa31e8ab52a5720372b1d461aa6d010b3364d4ba7f0543ba5",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
-    "web.py": "cebc7003e39922363cd371ba36c37626177538f2359eaabcf3db731118621dc7"
+    "web.py": "e8a67f65f80842debfd3da2acae1f35a1c166e974f8c10ae4cdf539b514a7de0"
   },
   "schema_version": 1,
-  "source_commit": "d7eef3062fa7aac56a77752c3d7ce801efc11b6c",
-  "source_tree_sha256": "cc78719d8b7ca12247adbbce4a23dcd41797500ccfee1c6a3f0e816afa4d10ec"
+  "source_commit": "0b39fcf3787e0d45666635610ac7abed7c89f920",
+  "source_tree_sha256": "5098ebed1577fed6b755d1a04219379d06e23c452cbd3709e9cc620e8edd0cea"
 }

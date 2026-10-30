@@ -3,6 +3,7 @@
 - Die Buchungsansicht zeigt verständliche Händler mit lokalen Logos, Kategorieherkunft und getrennte Vorschläge sowie Gegenbuchungen und Zahlungshinweise. Eigene Bestätigungen lassen sich ausdrücklich zurücksetzen.
 - Prüfstatus, Richtung und absolute Beträge ergänzen die Filter. Trefferbilanzen beziehen sich auf alle gefilterten Buchungen und bleiben nach Währung getrennt. Kontodetails erklären Referenzstände und bedingte Projektionen; Fälligkeiten führen zu zugehörigen Buchungen.
 - Die mobile Kontenübersicht zeigt Konten früher; Datum und ergänzende Filter sind bei Bedarf aufklappbar. Das bisherige Cockpit bleibt erreichbar.
+- Banklogos und durchgängige Piktogramme ersetzen Buchstaben und Unicode-Platzhalter in Konten, Navigation und Aktionen; unbekannte Händler erhalten ein Kategorie-Symbol.
 
 # 0.2.79
 

@@ -1167,6 +1167,7 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                       '/frontend-preview.html': ('frontend-preview.html', 'text/html; charset=utf-8'),
                       '/frontend-preview.css': ('frontend-preview.css', 'text/css; charset=utf-8'),
                       '/frontend-preview.js': ('frontend-preview.js', 'text/javascript; charset=utf-8'),
+                      '/frontend-icons.js': ('frontend-icons.js', 'text/javascript; charset=utf-8'),
                       '/klarna-banking.js': ('klarna-banking.js', 'text/javascript; charset=utf-8'),
                       '/klarna-banking.css': ('klarna-banking.css', 'text/css; charset=utf-8'),
                       '/paypal-banking.js': ('paypal-banking.js', 'text/javascript; charset=utf-8'),
