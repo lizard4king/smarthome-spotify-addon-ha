@@ -1854,6 +1854,9 @@ def main():
         print('Finance Control: Anwendungs-Login deaktiviert; Zugriffsschutz muss vorgelagert sein.',
               flush=True)
     print(f'Finance Control: http://{args.host}:{server.server_port}', flush=True)
+    if args.options_file and os.environ.get('FINANCE_CONTROL_ASSISTANT_TOKEN_FILE'):
+        from .assistant_control import start
+        start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

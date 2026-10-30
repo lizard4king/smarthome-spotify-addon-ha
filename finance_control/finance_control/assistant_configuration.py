@@ -4,7 +4,7 @@ from pathlib import Path
 import secrets
 
 
-def configure(data):
+def configure(data, *, replace_existing=True):
     if type(data) is not dict or set(data) != {'token', 'confirmed'} or data['confirmed'] is not True:
         raise ValueError('assistant_confirmation_required')
     token = data['token']
@@ -26,7 +26,24 @@ def configure(data):
             stream.write(token)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        if replace_existing:
+            os.replace(temporary, path)
+        else:
+            try:
+                # Atomic create-only publication: never replace an owner's key.
+                os.link(temporary, path)
+            except FileExistsError:
+                existing = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+                with os.fdopen(existing, 'rb') as stream:
+                    previous = stream.read(129)
+                if not secrets.compare_digest(previous, token.encode('ascii')):
+                    raise ValueError('assistant_already_configured') from None
     finally:
         temporary.unlink(missing_ok=True)
     return {'configured': True, 'ready': False, 'message': 'Verbindungsschlüssel gespeichert; Erreichbarkeit und Anmeldung separat prüfen.'}
+
+
+def provision(token):
+    """Supervisor-only first provisioning; retries with the same key are safe."""
+    configure({'token': token, 'confirmed': True}, replace_existing=False)
+    return {'configured': True}
