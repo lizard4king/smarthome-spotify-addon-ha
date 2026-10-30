@@ -496,7 +496,7 @@
     "static/frontend-icons.js": "b10d3a2037dfb8d1c3d96c1f0289c56c275d7731e630494edb1eb79fd5662f4f",
     "static/frontend-preview.css": "a8721a4ee134af0b8fae3c1b77a4b79f442025972ad97c51595c12478751b4b9",
     "static/frontend-preview.html": "8d7a9822ecbf5469db90555a05221afca6672314c63148908d03d3a810a6a443",
-    "static/frontend-preview.js": "d3cdf3e25464bc58be2fac7a391956d7657d43edd2aee4839ce85b29106c5ee2",
+    "static/frontend-preview.js": "c4b2ae3ed189dc13ccc90c6b3c4b5ce5ae2ba47a48b05a570b4bb19527de2ae8",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
     "static/home.js": "8cff2938258cd058d9c758ff704e691640eb51cf7caf2114c07c73c9d63aca5f",
     "static/index.html": "9b23ecfc04a8a67b2bfaa8eef0ccfe4468ae7cdf0a49c40f70170d8dfed9babb",
@@ -537,6 +537,6 @@
     "web.py": "dd10568a3d6132db4b321fc08b5a8d261f2d54a2e992bbf0c50b0d62e9f16e2e"
   },
   "schema_version": 1,
-  "source_commit": "f5cdd0ea2f63183b2406002ed707cdf925ce3d7c",
-  "source_tree_sha256": "0b17fbcbe45fe9c012e06df7ebe913a397d5eaec453f062de55962f9347ecf22"
+  "source_commit": "8d469cabbee14154ec31d5a8e87b97a9154a3881",
+  "source_tree_sha256": "d4152ff5ad869373a065bfe9067d8572f8b4b379bb74996c87bb7a5d104b80ad"
 }
