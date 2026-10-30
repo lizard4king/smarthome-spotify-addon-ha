@@ -11,9 +11,11 @@ from itertools import combinations
 
 from .audit import actor_for
 from .booking_categories import CategoryResolver
+from .booking_balances import attach_day_balances
 from .booking_presentation import booking_filters, booking_summary, filter_bookings
 from .budget import canonical_category_id
 from .core import money, parse_money_input
+from .current_balances import latest_by_account
 from .classification_rules import (
     eligible_rules, is_intermediary, latest_decision, rule_is_eligible, validate_rule_fields,
 )
@@ -496,6 +498,9 @@ def _transaction_scope(data, allowed, error_name):
     if reviewed is not None and type(reviewed) is not bool:
         raise ValueError('invalid_reviewed')
     clauses, params = [], []
+    if data.get('account_ids'):
+        clauses.append('t.account_id IN (' + ','.join('?' for _ in data['account_ids']) + ')')
+        params.extend(data['account_ids'])
     if data.get('account_id') is not None:
         clauses.append('t.account_id=?'); params.append(_text(data['account_id'], 'account_id', 120))
     transfer_sql = sql_transfer_predicate(context_alias='c')
@@ -530,14 +535,29 @@ def _transaction_scope(data, allowed, error_name):
     return base, where, params, {'date_from': date_from, 'date_to': date_to}
 
 
-def list_transactions(store, data):
+def list_transactions(store, data, *, reporting_history=None):
     data = {} if data is None else data
     allowed = _TRANSACTION_FILTERS | {
         'page', 'order', 'order_column', 'order_direction', 'column_filters',
-        'direction', 'amount_min', 'amount_max'}
+        'direction', 'amount_min', 'amount_max', 'account_ids'}
     if (not isinstance(data, dict) or set(data) - allowed
             or type(data.get('page', 0)) is not int or data.get('page', 0) < 0):
         raise ValueError('invalid_list_request')
+    if 'account_ids' in data:
+        if ('account_id' in data or not isinstance(data['account_ids'], list)
+                or len(data['account_ids']) > 100):
+            raise ValueError('invalid_account_ids')
+        account_ids = [_text(value, 'account_id', 120) for value in data['account_ids']]
+        if len(set(account_ids)) != len(account_ids):
+            raise ValueError('duplicate_account_ids')
+        if account_ids:
+            known = {row['id'] for row in store.db.execute(
+                'SELECT id FROM accounts WHERE id IN (' +
+                ','.join('?' for _ in account_ids) + ')', account_ids)}
+            if known != set(account_ids):
+                raise ValueError('unknown_account_id')
+        # Normalized identifiers are request-local; never mutate the caller.
+        data = {**data, 'account_ids': account_ids}
     order = data.get('order', 'date')
     if order not in {'date', 'amount_desc'}:
         raise ValueError('invalid_order')
@@ -595,8 +615,35 @@ def list_transactions(store, data):
         rows = rows[page * _PAGE:(page + 1) * _PAGE]
     else:
         rows = _transaction_list_rows(store, selected[page * _PAGE:(page + 1) * _PAGE])
+    wanted = (set(data['account_ids']) if data.get('account_ids') else
+              {_text(data['account_id'], 'account_id', 120)}
+              if data.get('account_id') is not None else None)
+    accounts = _booking_balance_accounts(store, wanted, reporting_history)
+    account_coverage = []
+    for account in accounts:
+        coverage = store.db.execute(
+            'SELECT COUNT(*) AS count,MIN(date) AS first_date,MAX(date) AS last_date '
+            'FROM active_transactions WHERE account_id=?', (account['id'],)).fetchone()
+        account_coverage.append({'account_id': account['id'], **dict(coverage)})
+    if rows:
+        attach_day_balances(store, rows, accounts, latest_by_account(store, accounts))
     return {'rows': rows, 'categories': _catalog(store), 'total': total, 'summary': summary,
+            'account_coverage': account_coverage,
             'page': page, 'pages': (total + _PAGE - 1) // _PAGE}
+
+
+def _booking_balance_accounts(store, wanted, reporting_history):
+    """Retain source gaps independently of the presentation's month and filters."""
+    accounts = [account for account in store.accounts()
+                if wanted is None or account['id'] in wanted]
+    if reporting_history is not None:
+        from .reporting_history import validate
+        coverage = validate(reporting_history).get('available_from_by_account', {})
+        accounts = [{**account, 'reason': 'incomplete_source_coverage'}
+                    if account['id'] in coverage and date.fromisoformat(coverage[account['id']])
+                    > date.fromisoformat(account['opening_date']) + timedelta(days=1)
+                    else account for account in accounts]
+    return accounts
 
 
 def _filter_and_sort_table_rows(rows, filters, order_column, order_direction):
@@ -830,7 +877,7 @@ def _transaction_table_values(item, catalog):
     }
 
 
-def get_transaction(store, data):
+def get_transaction(store, data, *, reporting_history=None):
     """Return one current transaction including local category and document links."""
     if (not isinstance(data, dict) or set(data) != {'account_id', 'external_id'}):
         raise ValueError('invalid_transaction_lookup')
@@ -854,6 +901,8 @@ def get_transaction(store, data):
     selected['is_transfer_row'] = _direction(store, selected) == 'transfer'
     selected['reviewed'] = selected['is_transfer_row'] or bool(selected['confirmed'])
     item = _transaction_list_rows(store, [selected])[0]
+    accounts = _booking_balance_accounts(store, {account_id}, reporting_history)
+    attach_day_balances(store, [item], accounts, latest_by_account(store, accounts))
     return {'transaction': item}
 
 

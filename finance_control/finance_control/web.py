@@ -466,6 +466,10 @@ class Cockpit:
                 return actions[action](store, data)
             if route.startswith('/api/classification-'):
                 from . import classification, classification_rules
+                if route in {'/api/classification-list', '/api/classification-transaction-get'}:
+                    # Keep visible rows, reference snapshot and full-ledger balances
+                    # in one read snapshot while a concurrent import may commit.
+                    store.db.execute('BEGIN')
                 if route == '/api/classification-local-suggestion':
                     from .local_model import suggest
                     return suggest(store, data)
@@ -473,8 +477,10 @@ class Cockpit:
                     from .local_model import review_transactions
                     return review_transactions(store, [data])
                 actions = {
-                    'list': classification.list_transactions,
-                    'transaction-get': classification.get_transaction,
+                    'list': lambda store, data: classification.list_transactions(
+                        store, data, reporting_history=self.reporting_history),
+                    'transaction-get': lambda store, data: classification.get_transaction(
+                        store, data, reporting_history=self.reporting_history),
                     'catalog': classification.category_catalog,
                     'category-create': classification.create_category,
                     'save': classification.save_classification,

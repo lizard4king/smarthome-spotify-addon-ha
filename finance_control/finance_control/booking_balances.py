@@ -104,6 +104,7 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
     # cannot be established. Keep recorded controls, but derive no dated path.
     uncertain_accounts = transaction_date_accounts(store, list(days_by_account))
     results = {}
+    owner_day_results = {}
     for account_id, days in days_by_account.items():
         account = account_by_id[account_id]
         currency = account['currency']
@@ -133,12 +134,24 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
                 results[account_id] = unknown('recorded_balance_ambiguous')
                 continue
             if anchor.get('basis') != 'statement_day_end':
-                results[account_id] = unknown('owner_reference_not_day_end')
-                continue
+                if anchor.get('basis') != 'owner_confirmed_day':
+                    results[account_id] = unknown('owner_reference_not_day_end')
+                    continue
+                if store.db.execute(
+                        'SELECT 1 FROM active_transactions WHERE account_id=? '
+                        'AND date<=? AND currency!=? LIMIT 1',
+                        (account_id, anchor['reference_booked_on'], currency)).fetchone():
+                    results[account_id] = unknown('ledger_currency_conflict')
+                    continue
+                # latest_by_account validates captured snapshot membership.
+                # This logical path is explicitly distinct from a day end.
+                owner_day_results[account_id] = unknown('owner_reference_not_day_end')
+                shared.update(basis='owner_confirmed_snapshot', warnings=[
+                    *shared['warnings'], 'owner_snapshot_sequence_assumed'])
             # The derived current amount is not the statement anchor itself.
             anchor = {**anchor, 'booked_on': anchor['reference_booked_on'],
                       'amount': anchor['reference_amount']}
-            source = 'statement'
+            source = ('owner_snapshot' if account_id in owner_day_results else 'statement')
             shared.update(anchor_booked_on=anchor['booked_on'])
         if source == 'bank':
             # A current bank control can precede other bookings on its date.
@@ -212,11 +225,14 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
                                         'warnings': list(shared['warnings'])}
 
     for booking in bookings:
-        booking['account_day_balance'] = results[booking['account_id']][booking['date']]
-    _attach_movement_balances(store, bookings)
+        account_id = booking['account_id']
+        booking['account_day_balance'] = owner_day_results.get(
+            account_id, results[account_id])[booking['date']]
+    _attach_movement_balances(store, bookings, {
+        account_id: results[account_id] for account_id in owner_day_results})
 
 
-def _attach_movement_balances(store, bookings):
+def _attach_movement_balances(store, bookings, movement_day_balances=None):
     """Calculate a logical per-movement path, never assert bank intraday order.
 
     Use the full ledger, irrespective of presentation filters. The recorded
@@ -243,7 +259,8 @@ def _attach_movement_balances(store, bookings):
                 prefix += money(row['amount'])
                 paths[(account_id, row['external_id'])] = (prefix-total, index, len(rows))
     for booking in bookings:
-        day_balance = booking['account_day_balance']
+        day_balance = (movement_day_balances or {}).get(
+            booking['account_id'], {}).get(booking['date'], booking['account_day_balance'])
         offset, index, count = paths.get((booking['account_id'], booking['external_id']), (None, None, 0))
         warnings = list(day_balance['warnings'])
         if count > 1:
