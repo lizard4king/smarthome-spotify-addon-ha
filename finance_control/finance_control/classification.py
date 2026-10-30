@@ -727,9 +727,12 @@ def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key, resolv
             }
         else:
             item['transfer_display'] = None
+            # Importers preserve source names beyond the 240-character rule
+            # limit. They remain readable; only exact-rule matching is skipped.
             normalized_counterparty = (
                 normalize_counterparty(item['counterparty'])
-                if item['counterparty'] and item['counterparty'].strip() else None)
+                if item['counterparty'] and 0 < len(item['counterparty'].strip()) <= 240
+                else None)
             rule = rules_by_key.get((normalized_counterparty, item['direction']))
             model = models_by_key.get((item['account_id'], item['external_id']))
             if (rule is not None and rule_is_eligible(rule, item['date'])
@@ -1068,8 +1071,12 @@ def suggestions(store, data):
                                (transaction['account_id'], transaction['external_id'])).fetchone()
     if context is None or not context['counterparty'].strip():
         return {'suggestions': result}
-    normalized, direction = normalize_counterparty(context['counterparty']), _direction(store, transaction)
-    rows = eligible_rules(store, normalized, direction, transaction['date'])
+    direction = _direction(store, transaction)
+    # Preserve imported names beyond the manual rule-input limit. Their model
+    # and merchant proposals remain available without attempting exact rules.
+    rows = (eligible_rules(store, normalize_counterparty(context['counterparty']),
+                           direction, transaction['date'])
+            if len(context['counterparty'].strip()) <= 240 else [])
     result.extend(
         {'rule_id': row['id'], 'category': row['category_id'],
          'parent_category': row['parent_id'],

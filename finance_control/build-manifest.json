@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "d1fe0876f51d84a17ea83de5bd4560a6389eed022cf9ace2179e741d4937293b",
-  "addon_version": "0.2.81",
+  "addon_tree_sha256": "3ae55e3b11480ee98cff4e2251500f11cea839f2ccca495640baf42b33047149",
+  "addon_version": "0.2.82",
   "deployment_files": {
-    "Dockerfile": "f3e7864701348971b7246a24ba87bfa7e16aaaef3b7f5a6907cbd91b5253534b",
+    "Dockerfile": "0131990bd256519f890a1e861adeda1f7f68f6e5fc7d719a96aa19e5943ea40d",
     "README.md": "6d20c059ef33037a903e40faa2a75471151c3d0b8146a402eeb5796569686912",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "ef2c2cfbdba3679ae2fd87bbfc2e327589fb31827298124beb5ee47d322dd316",
+    "config.yaml": "3c60c1e5995664fb45ad7c06736462f6529e9d3b29b0d4305e8fd892bbc1dfc4",
     "run.sh": "c6a3b2e6d755ed89ab5500778b848bed74ae83710534d50c19427ab3d13fe356",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -35,7 +35,7 @@
     "assistant_login.py": "3b1bcc2c78a46383c7059082484a6f644951ad42a3afef0997016cc570d7f0ea",
     "assistant_runtime.py": "a2841cfb5e07704916df35fb28d567fea19e9bdcfd75c41692155572515d6832",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
-    "backup_guard.py": "c982bc85e8ede9a24055c42d2707ab684548aace624fa2115f15e8116406e63b",
+    "backup_guard.py": "ff6f788dae74f7212bbe8adb748ad18440ac8823a1e84961090c990053a37432",
     "backup_package.py": "af18739a1e38ecbc4b80612252914d36e38e69fe51d7915add042a5e2a86f290",
     "backup_retention_maintenance.py": "5ec98b0352fc04de6bcba71f3753f171bafca841e5174405e35e43597ca8e0b9",
     "balance_references.py": "64f07ef4874753d5dd90ffa5139653653362d86af4f09573ae5f42e9196e083f",
@@ -54,7 +54,7 @@
     "budget.py": "99055e7bb2a94c965edd4257641e297f9eec3232afec4e2e714d5bce1d73b522",
     "card_ledger_import.py": "3764e494361a497b506825c3b51c0b73d0e80733dba3b3dd91b94f5974af06be",
     "cash_components.py": "f977bba5b59e9ec9c71ab371c3e976a478ce3c7e1553b2fc654d720c5e421a38",
-    "classification.py": "04d8e08893559901afa7eb2ab8269ecc7b5669f35e4d2598aed7d684a613b3fb",
+    "classification.py": "8b81c6b259cc7a34dafa12ca77694baaf7605dc62a942fce1030d92e42d1adfe",
     "classification_rules.py": "f4837120e1f2efb148395e45c75116e7820489c292b4dd3b8782daace8b55953",
     "connectors/__init__.py": "08cf17751c829a655e6f692ca5dbdb56b22418b5defabdddf8d13ba555a36263",
     "connectors/amazon_portability.py": "066ddc8afb9d8786e3c0fd53fca0a80cec53e1111ba154d8b5dd1ddb1a62e8a6",
@@ -494,9 +494,9 @@
     "static/finanzguru.js": "5f27486f23b09d9239a66bc5ebcf23b51f4ec063b82296a41b743b88900469aa",
     "static/frontend-api.js": "08bb018dc43214afad2271dd2cfa720c9e5b27e4d0544e771a8a30fb52c2fc82",
     "static/frontend-icons.js": "b10d3a2037dfb8d1c3d96c1f0289c56c275d7731e630494edb1eb79fd5662f4f",
-    "static/frontend-preview.css": "5c8d519cecba3713cfa856c5d2fc02b6b9987651e1a3acbb0646231759d88a2f",
+    "static/frontend-preview.css": "a8721a4ee134af0b8fae3c1b77a4b79f442025972ad97c51595c12478751b4b9",
     "static/frontend-preview.html": "8d7a9822ecbf5469db90555a05221afca6672314c63148908d03d3a810a6a443",
-    "static/frontend-preview.js": "14ec41919c836269e4157e0fdfd1ce3d63fc075d3fd31a1e1aa8f848402a2c0a",
+    "static/frontend-preview.js": "d3cdf3e25464bc58be2fac7a391956d7657d43edd2aee4839ce85b29106c5ee2",
     "static/home-paypal.js": "50784c626532d7902cf47ca1a9e09116b4f0b6aa2d77639f483d2a7b96ff3693",
     "static/home.js": "8cff2938258cd058d9c758ff704e691640eb51cf7caf2114c07c73c9d63aca5f",
     "static/index.html": "9b23ecfc04a8a67b2bfaa8eef0ccfe4468ae7cdf0a49c40f70170d8dfed9babb",
@@ -534,9 +534,9 @@
     "transfer_corrections.py": "2f3cb0687cca7a4f7963e9d8324c860544237100647b3b9761be4bdb210af256",
     "transfer_notices.py": "26e8c397d7f5470fa31e8ab52a5720372b1d461aa6d010b3364d4ba7f0543ba5",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
-    "web.py": "b8a35c7f795137c2281c7ad64576048b3c1a2a4016d24c613aabc4f2d5ce198e"
+    "web.py": "dd10568a3d6132db4b321fc08b5a8d261f2d54a2e992bbf0c50b0d62e9f16e2e"
   },
   "schema_version": 1,
-  "source_commit": "6888065977acfedd41bde77794925ed77ffdec54",
-  "source_tree_sha256": "d615f165e6564f49f157d8a2314da18055cf210627a4911b9f053bffd26f72ae"
+  "source_commit": "f5cdd0ea2f63183b2406002ed707cdf925ce3d7c",
+  "source_tree_sha256": "0b17fbcbe45fe9c012e06df7ebe913a397d5eaec453f062de55962f9347ecf22"
 }
