@@ -346,6 +346,17 @@
   function identify({counterparty = '', description = ''} = {}) {
     const party = withoutLeadingIban(counterparty);
     const purpose = typeof description === 'string' ? description : '';
+    // A named store operator is a display alias only when its card descriptor
+    // explicitly identifies the trading name. Do not infer it from arbitrary
+    // references to a supermarket, private names, or conflicting brand hints.
+    if (/^\s*Travaci(?:\s+Handels(?:\s+Gm(?:bH)?)?)?\.?\s*$/iu.test(party)
+        && /^\s*REWE\s+SAGT\s+DANKE(?![\p{L}\p{N}])/iu.test(purpose)) {
+      const described = findBrands(purpose, {ignoreIntermediaries: true});
+      if (described.length === 1 && described[0].brand.id === 'rewe') {
+        const brand = described[0].brand;
+        return {id: brand.id, label: brand.label, src: brand.src};
+      }
+    }
     const exactParty = party.trim().toLocaleLowerCase('de-DE').replace(/\s+/gu, ' ');
     const exactOnly = {shell: 'shell', aral: 'aral', globus: 'globus', rabot: 'rabot',
       lime: 'lime', galeria: 'galeria', bolt: 'bolt', bauhaus: 'bauhaus',

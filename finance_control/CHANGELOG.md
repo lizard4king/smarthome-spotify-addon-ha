@@ -1,3 +1,11 @@
+# 0.2.84
+
+## 0.2.84
+
+- Konten können gemeinsam ausgewählt werden; historische Gruppen bleiben zunächst eingeklappt.
+- Berechnete Salden je Buchung nutzen eine qualifizierte Referenz; eine angenommene Reihenfolge innerhalb des Tages ist gekennzeichnet.
+- Leere Datumsfilter sind verständlicher; bei Händlern wird ein expliziter Verwendungszweckhinweis angezeigt, während der Originaltext erhalten bleibt.
+
 # 0.2.83
 
 Kontonamen bleiben auf dem Handy lesbar: Kontostand und Referenzhinweis stehen unter dem Namen. Die dunkle Oberfläche bleibt Standard. Plan & Ist ist auf Nutzerwunsch ausgeblendet.
