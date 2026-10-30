@@ -1,3 +1,7 @@
+# 0.2.77
+
+Bestaetigte Saldenreferenzen mit Sicherung, Quelle und Datum; berechnete Salden bleiben gekennzeichnet. Fehlende Haendlertexte eindeutig zugeordneter Kartenbuchungen werden ergaenzt, vorhandene Angaben bleiben erhalten.
+
 # 0.2.76
 
 Die neue Oberfläche ist die Standardansicht unter /. Das vollständige bisherige Cockpit bleibt unter /cockpit und über Mehr erreichbar. Alte Lesezeichen werden weitergeleitet; Anmeldung und Finanzlogik bleiben unverändert.

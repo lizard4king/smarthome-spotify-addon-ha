@@ -25,6 +25,8 @@ def statement_anchors(store, account_id, currency):
         'SELECT i.period_end,i.closing_balance,a.currency FROM bank_statement_imports i '
         'JOIN bank_statement_account_bindings b ON b.account_id=i.account_id '
         'JOIN accounts a ON a.id=i.account_id WHERE i.account_id=?',
+        "SELECT booked_on,amount,currency FROM confirmed_balance_references "
+        "WHERE account_id=? AND basis='statement_day_end'",
     )
     anchors = []
     for query in queries:
@@ -109,7 +111,8 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
         source = anchor.get('source') if isinstance(anchor, dict) else None
         basis = {'bank': 'recorded_bank_ledger',
                  'statement': 'reconciled_statement',
-                 'finanzguru_file': 'recorded_file_ledger'}.get(source)
+                 'finanzguru_file': 'recorded_file_ledger',
+                 'confirmed_reference': 'reconciled_statement'}.get(source)
         shared = {'currency': currency, 'basis': basis,
                   'anchor_booked_on': anchor.get('booked_on') if isinstance(anchor, dict) else None,
                   'anchor_source': source,
@@ -125,6 +128,18 @@ def attach_day_balances(store, bookings, account_rows, current_balances):
         if account.get('reason') == 'incomplete_source_coverage':
             results[account_id] = unknown('incomplete_source_coverage')
             continue
+        if source == 'confirmed_reference':
+            if anchor.get('status') == 'ambiguous' or anchor.get('amount') is None:
+                results[account_id] = unknown('recorded_balance_ambiguous')
+                continue
+            if anchor.get('basis') != 'statement_day_end':
+                results[account_id] = unknown('owner_reference_not_day_end')
+                continue
+            # The derived current amount is not the statement anchor itself.
+            anchor = {**anchor, 'booked_on': anchor['reference_booked_on'],
+                      'amount': anchor['reference_amount']}
+            source = 'statement'
+            shared.update(anchor_booked_on=anchor['booked_on'])
         if source == 'bank':
             # A current bank control can precede other bookings on its date.
             # It therefore cannot anchor any reconstruction of day-end values.
