@@ -1,3 +1,7 @@
+# 0.2.78
+
+Optionaler isolierter Assistent fuer unbestaetigte Kategorie-Vorschlaege.
+
 # 0.2.77
 
 Bestaetigte Saldenreferenzen mit Sicherung, Quelle und Datum; berechnete Salden bleiben gekennzeichnet. Fehlende Haendlertexte eindeutig zugeordneter Kartenbuchungen werden ergaenzt, vorhandene Angaben bleiben erhalten.

@@ -4,6 +4,10 @@ Dieses eigenständige HA-App-Paket enthält genau **eine** `controller.py`. Die 
 
 Der prüfbare Ablauf ist in [flow.svg](flow.svg) und [flow.png](flow.png) dargestellt.
 
+## Version 0.1.9: Finance 0.2.78 freigeben
+
+Die exakte Finance-Version 0.2.78 ist zusaetzlich zulaessig; 0.2.79 bleibt gesperrt. Installierte Version, Archivinhalt und echte Wiederherstellung bleiben gesondert zu pruefen.
+
 ## Version 0.1.8: Finance 0.2.77 freigeben
 
 Die exakte Finance-Version 0.2.77 ist zusätzlich zulässig. Die Prüfung der installierten Version, des Archivinhalts und einer tatsächlichen Wiederherstellung bleibt offen. Finance 0.2.78 bleibt gesperrt.
@@ -54,7 +58,7 @@ Der neue Schalter ist standardmäßig `false`; Rechte, Quell- und Zielvorgaben b
 
 `run_once_now: true` ist eine weitere ausdrücklich gewählte einmalige Betreiberhandlung, etwa für die Prüfung eines geänderten Sicherungsumfangs. Sie umgeht ausschließlich die Sieben-Tage-Wartefrist und erzeugt genau eine vollständig geprüfte neue Sicherung; vorhandene Eigentumsnachweise bleiben erhalten. Unklare Vorgänge, Locks, Bank-/Schlüsselausschlüsse, Verschlüsselungs- und Inhaltsprüfungen werden nicht umgangen. Der Modus kann nicht mit Diagnose, UI-Initialisierung oder Recovery kombiniert werden. Er beendet sich anschließend und aktiviert keinen Wochenplan. Vor dem getrennten Start des normalen Wochenbetriebs den Schalter wieder auf `false` setzen. CLI-Entsprechung: `--run-once --run-now`; ohne `--run-once` bleibt die CLI offline.
 
-Freigegeben sind ausschließlich Finance 0.2.69, 0.2.70, 0.2.71, 0.2.72, 0.2.73, 0.2.74, 0.2.75, 0.2.76 und 0.2.77. Die vom geheimnisfreien Guard gemeldete Version muss exakt mit der frischen Supervisor-Angabe übereinstimmen. 0.2.70 lässt zusätzlich bereits erzeugte lokale Sicherungsarchive und Datenbankkopien aus künftigen äußeren Sicherungen heraus; diese Dateien werden nicht gelöscht. Die echte Wiederherstellungsabnahme für 0.2.73 bleibt offen.
+Freigegeben sind ausschließlich Finance 0.2.69, 0.2.70, 0.2.71, 0.2.72, 0.2.73, 0.2.74, 0.2.75, 0.2.76, 0.2.77 und 0.2.78. Die vom geheimnisfreien Guard gemeldete Version muss exakt mit der frischen Supervisor-Angabe übereinstimmen. 0.2.70 lässt zusätzlich bereits erzeugte lokale Sicherungsarchive und Datenbankkopien aus künftigen äußeren Sicherungen heraus; diese Dateien werden nicht gelöscht. Die echte Wiederherstellungsabnahme für 0.2.73 bleibt offen.
 
 ## Rechte und Vorgaben
 
@@ -66,7 +70,7 @@ Offizielle Basisbilder: `ghcr.io/home-assistant/{arch}-base:3.24-2026.08.0` für
 
 ## Sicherheitsprüfung und Inhalt
 
-Vor jeder Sicherung wird über die feste interne GET-Route `http://supervisor/addons/{addon_slug}/info` ausschließlich eine der freigegebenen Versionen **0.2.69, 0.2.70, 0.2.71, 0.2.72, 0.2.73, 0.2.74, 0.2.75, 0.2.76 oder 0.2.77** und der exakt erwartete Hostname (`addon_slug.replace('_', '-')`) geprüft. Anschließend folgt ein **tokenfreier** GET an genau diesen belegten Hostnamen auf Port 8785, Route `/health/backup-guard`. Nur die exakte Struktur mit `schema_version: 1`, `backup_safe: true` und `addon_version` gleich der frischen Supervisor-Version (0.2.69, 0.2.70, 0.2.71, 0.2.72, 0.2.73, 0.2.74, 0.2.75, 0.2.76 oder 0.2.77) ist zulässig. Die Supervisor-Bearer-Anmeldung wird niemals an Finance weitergegeben. Finance liest dafür die tatsächliche Optionsdatei bei jeder Anfrage neu und bestätigt nur ein ausdrücklich vorhandenes leeres `access_token`; fehlende, abweichende oder unlesbare Werte ergeben lediglich einen negativen Status ohne Details. Die Version stammt aus dem im Finance-Bild eingebundenen Buildmanifest. Die Freigabe ist an die separat geprüften Release-Inhalte gebunden; andere Versionsnummern bleiben gesperrt.
+Vor jeder Sicherung wird über die feste interne GET-Route `http://supervisor/addons/{addon_slug}/info` ausschließlich eine der freigegebenen Versionen **0.2.69, 0.2.70, 0.2.71, 0.2.72, 0.2.73, 0.2.74, 0.2.75, 0.2.76, 0.2.77 oder 0.2.78** und der exakt erwartete Hostname (`addon_slug.replace('_', '-')`) geprüft. Anschließend folgt ein **tokenfreier** GET an genau diesen belegten Hostnamen auf Port 8785, Route `/health/backup-guard`. Nur die exakte Struktur mit `schema_version: 1`, `backup_safe: true` und `addon_version` gleich der frischen Supervisor-Version (0.2.69, 0.2.70, 0.2.71, 0.2.72, 0.2.73, 0.2.74, 0.2.75, 0.2.76, 0.2.77 oder 0.2.78) ist zulässig. Die Supervisor-Bearer-Anmeldung wird niemals an Finance weitergegeben. Finance liest dafür die tatsächliche Optionsdatei bei jeder Anfrage neu und bestätigt nur ein ausdrücklich vorhandenes leeres `access_token`; fehlende, abweichende oder unlesbare Werte ergeben lediglich einen negativen Status ohne Details. Die Version stammt aus dem im Finance-Bild eingebundenen Buildmanifest. Die Freigabe ist an die separat geprüften Release-Inhalte gebunden; andere Versionsnummern bleiben gesperrt.
 
 Ein anderer oder unvollständiger Stand stoppt vor Backup-Mutationen. Der Slug besteht aus einem streng geprüften Pfadsegment; keine Redirects oder Umgebungs-Proxys. Antwortgröße je Abfrage höchstens 256 KiB, Socketwartezeit höchstens 20 Sekunden. Optionen, Token und rohe Fehlertexte werden niemals ausgegeben. Die Vorprüfung wird vor jedem eigenen Löschaufruf erneut durchgeführt. Das vom Info-Endpunkt nicht gelieferte `backup_exclude` wird nicht angenommen, sondern muss für die separat freigegebene Finance-Version belegt sein.
 
