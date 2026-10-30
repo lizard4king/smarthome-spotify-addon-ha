@@ -201,6 +201,18 @@ def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False
             selected['control_reference'] = 'conflicting:' + sha256(encoded).hexdigest()
         result[account_id] = selected
 
+    # Explicit owner references outrank file evidence but never qualified controls.
+    from .balance_references import latest as confirmed_references
+    uncertain = transaction_date_accounts(store, wanted)
+    references = confirmed_references(store, account_rows, as_of=as_of)
+    for account_id, reference in references.items():
+        if account_id not in result:
+            if (account_id in uncertain
+                    and reference['booked_on'] > reference['reference_booked_on']):
+                reference = {**reference, 'amount': None, 'status': 'ambiguous',
+                             'warning': 'paypal_transaction_date_not_booking_date'}
+            result[account_id] = reference
+
     # File evidence is a fallback only. Any qualified bank or bound statement
     # candidate above retains the existing source/date priority.
     # Transaction dates cannot prove which booked-day interval was complete.

@@ -27,7 +27,7 @@ def apply(store, source_key, account_id, result, retrieved_at):
     if (source is None or source['account_id'] != account_id or account is None
             or account['kind'] != 'CREDIT_CARD' or account['currency'] != 'EUR'):
         raise ValueError('invalid card import target')
-    occurrences, claimed, planned = Counter(), set(), []
+    occurrences, claimed, planned, enrichments = Counter(), set(), [], []
     for row in result['transactions']:
         booked, amount = row['booking_date'], format(money(row['amount']), '.2f')
         if (row['currency'] != 'EUR' or date.fromisoformat(booked).isoformat() != booked
@@ -61,7 +61,8 @@ def apply(store, source_key, account_id, result, retrieved_at):
                     != (booked, amount, 'EUR')):
                 raise ValueError('changed or removed imported card booking')
             claimed.add(known['external_id'])
-            continue  # Never overwrite categories, transfer flags or receipt links.
+            enrichments.append((known['external_id'], merchant, description))
+            continue  # Never overwrite existing context, categories, transfer flags or receipt links.
         linked_same = store.db.execute(
             'SELECT k.bank_key,s.card_id FROM card_booking_links k JOIN card_sources s ON s.source_key=k.source_key '
             'WHERE k.account_id=? AND k.booking_date=? AND k.amount=? AND k.currency=?',
@@ -87,7 +88,15 @@ def apply(store, source_key, account_id, result, retrieved_at):
         external = matches[0]['external_id'] if matches else 'c12-' + _hash([source_key, bank_key])
         claimed.add(external)
         planned.append((bank_key, external, booked, amount, merchant, description, bool(matches)))
+        if matches:
+            enrichments.append((external, merchant, description))
     # All validation and ambiguity checks precede writes. The caller rolls back on any error.
+    balance = result.get('balance')
+    if balance is not None:
+        if (balance['currency'] != 'EUR' or date.fromisoformat(balance['as_of']).isoformat() != balance['as_of']
+                or balance['as_of'] > date.today().isoformat()):
+            raise ValueError('invalid card balance')
+        balance_amount = format(money(balance['amount']), '.2f')
     output = io.StringIO(); writer = csv.writer(output)
     writer.writerow(['external_id','account_id','date','amount','currency','category','transfer_id'])
     for _, external, booked, amount, _, _, existing in planned:
@@ -100,13 +109,19 @@ def apply(store, source_key, account_id, result, retrieved_at):
         if not existing:
             store.db.execute('INSERT INTO transaction_context VALUES (?,?,?,?)',
                              (account_id, external, merchant, description))
-    balance = result.get('balance')
+    for external, merchant, description in enrichments:
+        if merchant or description:
+            store.db.execute(
+                "INSERT INTO transaction_context(account_id,external_id,counterparty,description) VALUES (?,?,?,?) "
+                "ON CONFLICT(account_id,external_id) DO UPDATE SET "
+                "counterparty=CASE WHEN COALESCE(transaction_context.counterparty,'')='' "
+                "THEN excluded.counterparty ELSE transaction_context.counterparty END, "
+                "description=CASE WHEN COALESCE(transaction_context.description,'')='' "
+                "THEN excluded.description ELSE transaction_context.description END",
+                (account_id, external, merchant, description))
     if balance is not None:
-        if (balance['currency'] != 'EUR' or date.fromisoformat(balance['as_of']).isoformat() != balance['as_of']
-                or balance['as_of'] > date.today().isoformat()):
-            raise ValueError('invalid card balance')
         store.db.execute('INSERT OR IGNORE INTO card_balance_observations '
                          '(source_key,account_id,amount,currency,booked_on,retrieved_at) VALUES (?,?,?,?,?,?)',
-                         (source_key, account_id, format(money(balance['amount']), '.2f'), 'EUR',
+                         (source_key, account_id, balance_amount, 'EUR',
                           balance['as_of'], retrieved_at))
     return {'inserted': inserted, 'balance_saved': balance is not None}

@@ -344,6 +344,17 @@ class Cockpit:
         store = Store(self.database, actor=actor)
         initial_changes = store.db.total_changes
         try:
+            if route == '/api/balance-reference':
+                from .balance_references import save
+                if data.get('confirmed') is not True:
+                    raise ValueError('confirmation_required')
+                folder = self.database.parent / 'backups'
+                folder.mkdir(exist_ok=True)
+                store.backup(folder / ('before-balance-reference-' + secrets.token_hex(12) + '.sqlite'))
+                return save(store, account_id=data['account_id'], amount=data['amount'],
+                            currency=data['currency'], booked_on=data['booked_on'],
+                            source_reference=data['source_reference'], basis=data['basis'],
+                            confirmed=True, actor=actor)
             if route == '/api/account-reconciliation':
                 from .reconciliation import view
                 return view(store, data)

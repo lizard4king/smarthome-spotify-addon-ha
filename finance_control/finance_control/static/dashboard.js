@@ -278,7 +278,7 @@
       return {amount:'—', stand:''};
     }
     return {amount:money(balance.amount, balance.currency || account.currency),
-      stand:date(balance.booked_on) ? `Stand ${date(balance.booked_on)}` : ''};
+      stand:balance.source === 'confirmed_reference' ? `Berechnet aus Referenz · ${date(balance.reference_booked_on) || 'Datum unbekannt'}` : (date(balance.booked_on) ? `Stand ${date(balance.booked_on)}` : '')};
   };
   const accountName = account => account.display_name || account.id || 'Konto';
   const kindName = kind => ({CHECKING:'Girokonto',CURRENT:'Girokonto',SAVINGS:'Sparkonto',CASH:'Bargeld',CREDIT_CARD:'Kreditkarte',DEPOT:'Depot',INVESTMENT:'Depot'}[String(kind || '').toUpperCase()] || kind || 'Konto');
@@ -361,6 +361,51 @@
     add(evidence, 'p', 'fd-account-freshness fd-account-last-booking', latestBookingSummary);
     if (account.note) add(evidence, 'p', 'fd-account-note', account.note);
     if (window.financeReconciliation) window.financeReconciliation(evidence, account.reconciliation);
+    if (account.current_balance?.source === 'confirmed_reference') {
+      const ref = account.current_balance;
+      add(evidence, 'p', '', `Referenz: ${date(ref.reference_booked_on) || 'Datum unbekannt'} · ${money(ref.reference_amount, ref.currency || account.currency)} · ${ref.source_reference || 'Quelle nicht angegeben'}`);
+      add(evidence, 'p', '', 'Die Vollständigkeit der Buchungen nach der Referenz ist nicht geprüft.');
+    }
+    const referenceDetails = add(evidence, 'details', 'fd-account-reference');
+    add(referenceDetails, 'summary', '', 'Referenzsaldo hinterlegen');
+    const form = add(referenceDetails, 'form');
+    const field = (labelText, type) => {
+      const label = add(form, 'label', '', labelText + ' ');
+      const input = add(label, 'input'); input.type = type; input.required = true;
+      return input;
+    };
+    const referenceAmount = field(`Betrag (${account.currency})`, 'text');
+    referenceAmount.inputMode = 'decimal'; referenceAmount.placeholder = 'z. B. -123,45';
+    const referenceDate = field('Datum', 'date');
+    const source = field('Quelle', 'text'); source.maxLength = 500;
+    const basisLabel = add(form, 'label', '', 'Grundlage ');
+    const basis = add(basisLabel, 'select');
+    for (const [value, text] of [['statement_day_end', 'Auszug zum Tagesende'], ['owner_confirmed_day', 'Von mir bestätigter Stand']]) {
+      const option = add(basis, 'option', '', text); option.value = value;
+    }
+    const confirmationLabel = add(form, 'label');
+    const confirmation = add(confirmationLabel, 'input'); confirmation.type = 'checkbox'; confirmation.required = true;
+    confirmationLabel.append(document.createTextNode(' Ich bestätige diesen Referenzsaldo.'));
+    const submit = add(form, 'button', '', 'Referenzsaldo speichern'); submit.type = 'submit';
+    const status = add(form, 'p'); status.setAttribute('role', 'status');
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!confirmation.checked) { status.textContent = 'Bitte bestätige den Referenzsaldo.'; return; }
+      const amount = referenceAmount.value.trim().replace(',', '.');
+      if (!/^[+-]?\d+(?:\.\d{1,2})?$/.test(amount)) {
+        status.textContent = 'Bitte einen Betrag mit höchstens zwei Nachkommastellen eingeben.'; return;
+      }
+      submit.disabled = true; status.textContent = 'Wird gespeichert …';
+      try {
+        await window.api('/api/balance-reference', {account_id: account.id, amount, currency: account.currency,
+          booked_on: referenceDate.value, source_reference: source.value.trim(), basis: basis.value, confirmed: confirmation.checked});
+        status.textContent = 'Gespeichert. Ansicht wird aktualisiert …';
+        try { await window.financeRefreshAfterImport(); }
+        catch (_) { status.textContent = 'Gespeichert. Die Ansicht konnte nicht aktualisiert werden; bitte lade die Seite neu.'; }
+      } catch (_) {
+        status.textContent = 'Speichern fehlgeschlagen. Bitte Angaben und Verbindung prüfen.'; submit.disabled = false;
+      }
+    });
     if (!account.current_balance || account.current_balance.amount === null || account.current_balance.amount === undefined) {
       const nextAction = add(body, 'button', 'fd-account-balance-action', 'Bankabruf öffnen');
       nextAction.type = 'button';
