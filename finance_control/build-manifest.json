@@ -487,7 +487,7 @@
     "static/contracts.js": "b016315125424aa5b33d218ccc59b907bb000ac45c9f410979dbc3548d657f58",
     "static/counterparties.css": "bf604b9afa8d966a861c81b850798dac29961c4a76f1443b9441fdc4f681e760",
     "static/counterparties.js": "c99215bd0b142522792e521e8b848ba9489b476ace31751124ad784f2f72ab94",
-    "static/dashboard.css": "d6eff413e11e2986e693a066140b04e9239c9eed23ca58ed06791437456ecb7d",
+    "static/dashboard.css": "77c3648c27bd11408f38dd7155bced0f5b3541c043c96b7d98df8c75221b2870",
     "static/dashboard.js": "aaddabe95868a8258210c9253e88c9ceb746ec540ced27508aa2e82e62d266ce",
     "static/finanzguru.js": "5f27486f23b09d9239a66bc5ebcf23b51f4ec063b82296a41b743b88900469aa",
     "static/frontend-api.js": "a7a3f635946c9cc942cbceaad42a4301bf44c9f3a9ce0825e53af187fbf2c5d8",
@@ -533,6 +533,6 @@
     "web.py": "927fb351a0108dc7b3376d1c776b02aebccf05cc18df1017df754acb35ae5622"
   },
   "schema_version": 1,
-  "source_commit": "9c618f6b62df97cec03175281ba8e504a5367476",
-  "source_tree_sha256": "20627c6116e11798e1dce90e67cb19c268319531f0b60b3ac514cd10ddc75e1e"
+  "source_commit": "5fded5aca2368c90973934401766500cae7e3da0",
+  "source_tree_sha256": "b8f861e4dd0ead6431e44a7c5f4e06c56b88ebeae5b62be37baa5876d66207ae"
 }
