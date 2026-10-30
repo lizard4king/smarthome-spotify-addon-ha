@@ -1,3 +1,7 @@
+# 0.2.85
+
+Generische Kreditkartenbuchungen zeigen brauchbare Empfängerangaben aus dem Verwendungszweck und eindeutig passende lokale Firmenlogos. Originalangaben bleiben im Detail erhalten. Fehlende oder widersprüchliche Angaben ergeben keine erfundene Firma.
+
 # 0.2.84
 
 ## 0.2.84

@@ -57,11 +57,9 @@ const errorBlock=(key)=>state.errors[key]?`<div class="notice error" role="alert
 const loading=key=>state.busy[key]?'<p class="sub">Daten werden geladen; vorhandene Angaben können veraltet sein.</p>':'';
 const {icon,tile,accountTile,categoryIcon}=window.financeFrontendIcons;
 function bookingIdentity(t){
-  const identity=window.financeCounterparties?.identify({counterparty:t.counterparty,description:t.description});
-  const original=t.counterparty||t.description||'Buchung';
-  const cleaned=window.financeCounterparties?.displayName(original)||original;
-  const label=identity?.label||(/\p{L}{2}/u.test(cleaned)?cleaned:original);
-  const src=identity?.src;
+  const display=window.financeCounterparties?.describe(t);
+  const label=display?.label||t.counterparty||t.description||'Buchung';
+  const src=display?.src;
   return {label,icon:typeof src==='string'&&/^\/[\w.-]+$/.test(src)?`<span class="tile logo"><img src="${esc(src)}" alt="" loading="lazy"></span>`:tile(t.is_transfer?'transfer':categoryIcon(displayCategory(t).label))};
 }
 const categoryStatus=s=>({imported:'Import ohne Bestätigung',confirmed:'Bestätigt',explicit:'Bestätigt',proposal:'Unbestätigter Vorschlag',proposed:'Unbestätigter Vorschlag',open:'Offen'})[s]||'Offen';
