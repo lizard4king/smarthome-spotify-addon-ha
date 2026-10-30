@@ -1,3 +1,9 @@
+# 0.2.80
+
+- Die Buchungsansicht zeigt verständliche Händler mit lokalen Logos, Kategorieherkunft und getrennte Vorschläge sowie Gegenbuchungen und Zahlungshinweise. Eigene Bestätigungen lassen sich ausdrücklich zurücksetzen.
+- Prüfstatus, Richtung und absolute Beträge ergänzen die Filter. Trefferbilanzen beziehen sich auf alle gefilterten Buchungen und bleiben nach Währung getrennt. Kontodetails erklären Referenzstände und bedingte Projektionen; Fälligkeiten führen zu zugehörigen Buchungen.
+- Die mobile Kontenübersicht zeigt Konten früher; Datum und ergänzende Filter sind bei Bedarf aufklappbar. Das bisherige Cockpit bleibt erreichbar.
+
 # 0.2.79
 
 Der Verbindungsschlüssel für den Server-Assistenten kann direkt auf dem Server erzeugt und über die authentifizierte Home-Assistant-Verwaltung hinterlegt werden. Vorhandene abweichende Schlüssel werden nicht ersetzt; der Verbindungstest verwendet die tatsächlich gespeicherte Datei. Keine zusätzlichen HTTP-Freigaben oder Bankaufträge.

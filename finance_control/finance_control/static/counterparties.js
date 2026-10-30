@@ -471,5 +471,5 @@
     return element;
   }
 
-  window.financeCounterparties = {identify, decorate};
+  window.financeCounterparties = {identify, decorate, displayName: withoutLeadingIban};
 })();

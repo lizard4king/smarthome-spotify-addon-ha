@@ -10,6 +10,8 @@ from decimal import Decimal
 from itertools import combinations
 
 from .audit import actor_for
+from .booking_categories import CategoryResolver
+from .booking_presentation import booking_filters, booking_summary, filter_bookings
 from .budget import canonical_category_id
 from .core import money, parse_money_input
 from .classification_rules import (
@@ -530,7 +532,9 @@ def _transaction_scope(data, allowed, error_name):
 
 def list_transactions(store, data):
     data = {} if data is None else data
-    allowed = _TRANSACTION_FILTERS | {'page', 'order', 'order_column', 'order_direction', 'column_filters'}
+    allowed = _TRANSACTION_FILTERS | {
+        'page', 'order', 'order_column', 'order_direction', 'column_filters',
+        'direction', 'amount_min', 'amount_max'}
     if (not isinstance(data, dict) or set(data) - allowed
             or type(data.get('page', 0)) is not int or data.get('page', 0) < 0):
         raise ValueError('invalid_list_request')
@@ -550,9 +554,9 @@ def list_transactions(store, data):
     column_filters = {column: _text(value, 'column_filter', 240, empty=True).strip()
                       for column, value in column_filters.items()}
     column_filters = {column: value for column, value in column_filters.items() if value}
+    filters = booking_filters(data)
     page = data.get('page', 0)
     base, where, params, _ = _transaction_scope(data, allowed, 'invalid_list_request')
-    total = store.db.execute('SELECT COUNT(*)' + base + where, params).fetchone()[0]
     rows = []
     selected = list(store.db.execute(
         "SELECT t.account_id,CASE WHEN NULLIF(TRIM(a.display_name),'') IS NULL THEN t.account_id "
@@ -562,6 +566,9 @@ def list_transactions(store, data):
         'THEN 1 ELSE 0 END AS is_transfer_row,'
         f"CASE WHEN {sql_transfer_predicate(context_alias='c')} "
         'OR o.confirmed=1 THEN 1 ELSE 0 END AS reviewed' + base + where, params))
+    selected = filter_bookings(selected, filters)
+    total = len(selected)
+    summary = booking_summary(selected)
     selected.sort(key=lambda row: (row['account_id'], row['external_id']))
     selected.sort(key=lambda row: row['date'], reverse=True)
     if order == 'amount_desc':
@@ -576,6 +583,7 @@ def list_transactions(store, data):
         filtered = _filter_and_sort_table_rows(
             filtered, column_filters, order_column, order_direction)
         total = len(filtered)
+        summary = booking_summary(filtered)
         rows = _transaction_list_rows(
             store, filtered[page * _PAGE:(page + 1) * _PAGE])
     elif column_filters or order_column:
@@ -583,10 +591,11 @@ def list_transactions(store, data):
             _transaction_list_rows(store, selected), column_filters,
             order_column, order_direction)
         total = len(rows)
+        summary = booking_summary(rows)
         rows = rows[page * _PAGE:(page + 1) * _PAGE]
     else:
         rows = _transaction_list_rows(store, selected[page * _PAGE:(page + 1) * _PAGE])
-    return {'rows': rows, 'categories': _catalog(store), 'total': total,
+    return {'rows': rows, 'categories': _catalog(store), 'total': total, 'summary': summary,
             'page': page, 'pages': (total + _PAGE - 1) // _PAGE}
 
 
@@ -616,11 +625,12 @@ def _transaction_list_rows(store, selected):
             'ORDER BY r.id'):
         rules_by_key.setdefault(
             (rule['counterparty_normalized'], rule['direction']), dict(rule))
+    resolver = CategoryResolver(store, lazy_history=True)
     rows = []
     batch_size = 400  # 800 pair parameters stay below SQLite's legacy 999 limit.
     for offset in range(0, len(selected), batch_size):
         rows.extend(_transaction_list_batch(
-            store, selected[offset:offset + batch_size], catalog_by_id, rules_by_key))
+            store, selected[offset:offset + batch_size], catalog_by_id, rules_by_key, resolver))
     return rows
 
 
@@ -652,7 +662,7 @@ def _transaction_date_bases(store, selected_keys):
     return result
 
 
-def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key):
+def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key, resolver):
     rows = []
     selected_keys = {(row['account_id'], row['external_id']) for row in selected}
     payment_statuses = statuses_for_transactions(store, selected_keys)
@@ -687,6 +697,11 @@ def _transaction_list_batch(store, selected, catalog_by_id, rules_by_key):
         item.pop('reviewed')
         if (basis := date_bases.get((item['account_id'], item['external_id']))) is not None:
             item['date_basis'] = basis
+        resolved = resolver.resolve(dict(item, is_transfer=item['is_transfer_row']))
+        item['category_display'] = {
+            'label': resolved['category'], 'id': resolved['category_id'],
+            'status': resolved['category_status'], 'source': resolved['category_source'],
+        }
         override_category = item.pop('category_id')
         item['revision'] = item['revision'] or 0
         item['direction'] = ('transfer' if item.pop('is_transfer_row') else
@@ -832,22 +847,10 @@ def get_transaction(store, data):
            WHERE t.account_id=? AND t.external_id=?""", (account_id, external_id)).fetchone()
     if row is None:
         raise ValueError('unknown_transaction')
-    item = dict(row)
-    if (basis := _transaction_date_bases(store, {(account_id, external_id)}).get(
-            (account_id, external_id))) is not None:
-        item['date_basis'] = basis
-    override_category = item.pop('category_id')
-    item['revision'] = item['revision'] or 0
-    item['direction'] = _direction(store, item)
-    item['is_transfer'] = item['direction'] == 'transfer'
-    item['category'] = 'TRANSFER' if item['is_transfer'] else (override_category if item['confirmed'] else None)
-    item['confirmed'] = item['is_transfer'] or bool(item['confirmed'])
-    item['transfer_display'] = transfer_display(store, item) if item['is_transfer'] else None
-    item['source_context_complete'] = source_context_complete(
-        item['counterparty'], item['description'])
-    item['links'] = _links_for_transaction(store, account_id, external_id)
-    item['payment_statuses'] = statuses_for_transactions(
-        store, {(account_id, external_id)})[(account_id, external_id)]
+    selected = dict(row)
+    selected['is_transfer_row'] = _direction(store, selected) == 'transfer'
+    selected['reviewed'] = selected['is_transfer_row'] or bool(selected['confirmed'])
+    item = _transaction_list_rows(store, [selected])[0]
     return {'transaction': item}
 
 

@@ -78,7 +78,13 @@ def _direction(row):
 class CategoryResolver:
     """Resolve stored choices and return suggestions without writing anything."""
 
-    def __init__(self, store):
+    def __init__(self, store, *, lazy_history=False):
+        """Keep the eager snapshot unless a request opts into lazy history.
+
+        Lazy readers remain within this store's lifetime. The fallback is
+        loaded once per resolver, never cached across requests or edits.
+        """
+        self._store = store
         self._catalog = {
             row['id']: dict(row) for row in store.db.execute(
                 'SELECT id,label,transaction_type FROM category_catalog')
@@ -110,7 +116,7 @@ class CategoryResolver:
                        WHERE r.account_id=m.account_id AND r.external_id=m.external_id
                          AND r.category_id=m.category_id)""")
         }
-        self._history = self._load_history(store)
+        self._history = None if lazy_history else self._load_history(store)
 
     def _canonical_category_id(self, category_id):
         return self._aliases.get(category_id, category_id)
@@ -219,6 +225,8 @@ class CategoryResolver:
                 or is_intermediary(party, _field(row, 'description', ''))):
             return self._open_result()
 
+        if self._history is None:
+            self._history = self._load_history(self._store)
         history = self._history.get((party, direction), Counter())
         if len(history) > 1:
             return self._open_result()
