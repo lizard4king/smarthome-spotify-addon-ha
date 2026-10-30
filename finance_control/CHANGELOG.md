@@ -1,3 +1,7 @@
+# 0.2.79
+
+Der Verbindungsschlüssel für den Server-Assistenten kann direkt auf dem Server erzeugt und über die authentifizierte Home-Assistant-Verwaltung hinterlegt werden. Vorhandene abweichende Schlüssel werden nicht ersetzt; der Verbindungstest verwendet die tatsächlich gespeicherte Datei. Keine zusätzlichen HTTP-Freigaben oder Bankaufträge.
+
 # 0.2.78
 
 Optionaler isolierter Assistent fuer unbestaetigte Kategorie-Vorschlaege. Bestaetigte Referenzstaende werden beim Kontenabgleich beruecksichtigt; die Kontenansicht bleibt auf kleinen Bildschirmen scrollbar.
