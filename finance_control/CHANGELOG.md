@@ -1,6 +1,6 @@
 # 0.2.78
 
-Optionaler isolierter Assistent fuer unbestaetigte Kategorie-Vorschlaege.
+Optionaler isolierter Assistent fuer unbestaetigte Kategorie-Vorschlaege. Bestaetigte Referenzstaende werden beim Kontenabgleich beruecksichtigt; die Kontenansicht bleibt auf kleinen Bildschirmen scrollbar.
 
 # 0.2.77
 

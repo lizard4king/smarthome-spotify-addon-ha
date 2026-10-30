@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 ca-cert
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin finance-ai
 COPY --from=ollama /bin/ollama /usr/local/bin/ollama
 COPY --from=ollama /usr/lib/ollama /usr/lib/ollama
+RUN /usr/local/bin/ollama --version
 WORKDIR /app
 ENV PYTHONPATH=/app PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     OLLAMA_HOST=127.0.0.1:11434 OLLAMA_MODELS=/data/models \

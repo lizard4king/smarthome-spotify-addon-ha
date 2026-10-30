@@ -32,7 +32,7 @@
     "assistant_configuration.py": "a8ac43113cb90775189fb565a4d335fbe0c4358239285a473d393d118989c0b9",
     "assistant_engine.py": "64c8b7b93f81543098988077a1e022fcec57dd305618c47c2cc1d4278377cc61",
     "assistant_login.py": "3b1bcc2c78a46383c7059082484a6f644951ad42a3afef0997016cc570d7f0ea",
-    "assistant_runtime.py": "3a22823d58b8ab82e4ae20c1d6af703256efb6b9d5a950251fa8de0aba7bcf72",
+    "assistant_runtime.py": "a2841cfb5e07704916df35fb28d567fea19e9bdcfd75c41692155572515d6832",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
     "backup_guard.py": "f76851654d8cccd4e8f9726fae03b6afd2de1a010abe3ef5fa15a0ffb34e4000",
     "backup_package.py": "af18739a1e38ecbc4b80612252914d36e38e69fe51d7915add042a5e2a86f290",
@@ -73,7 +73,7 @@
     "contract_inventory.py": "c44b23af94726acf96321cf52e310c75b48d5bbf3dea305a58d69a868c1aa0f4",
     "contracts.py": "a408151459dd7ca3dcd48eb4b165ddcf38287f8fd79eaf5c36a5bc22a0067d6f",
     "core.py": "57051e02d736b4342294bed69fdc10831bb8524625b41412cf72e4240c72af19",
-    "current_balances.py": "533cd2c3f50ab2b3b0405372677db9e5dc271533e5c59390dd098fa2c875978a",
+    "current_balances.py": "46defec175eeea319e5331a9d6f22a385e7a1fc452b773258db6a4302fea42f6",
     "dashboard.py": "b547870c49e5de6b51cb4a2a5f554598382a10a93a1a91364fbaba3c080ea4a8",
     "document_intake.py": "60ce3dc8928990bc2c0c5ff3b1764c6f9e7e001c209698f509772a86c9cbeeda",
     "drive_api.py": "9cbd1913c80d74fce4775a0468b1b56058e662857a6c8368c56effd8d2fadbb9",
@@ -192,7 +192,7 @@
     "purchases.py": "fe110369d2872e2bef3d3c6fe566997c58e04977f39c2a8fbddf5652d8b303fe",
     "read_api.py": "90b12c13d3310839e50ef638049099abc09e47632351691622169d90aa45dca9",
     "read_api_server.py": "ee9f9ba419608b9b2f3f7577414440e4a6190f65143929369a86ccb323a71250",
-    "reconciliation.py": "8f8f388163eb13731d20ad0dadab210757914f0fa599e0871c04e9c02082d572",
+    "reconciliation.py": "3ee02ed0528f8842869642df62b2d96d97c888fbea21a2344bba09de8fc18438",
     "reconciliation_proof.py": "bdd5e9705519c56bdedcf371cba866b907a2e542fbb02bb8ff7679861b959af3",
     "recurring.py": "de621aabeed87132ab7d31b4e853ec8ea100b0ba545a619eabd5e306049d27f3",
     "recurring_detection.py": "5178397f8d84016d5596073c20fa18019ecf9715a310da72bf4d1cfba24d7fd1",
@@ -487,7 +487,7 @@
     "static/contracts.js": "b016315125424aa5b33d218ccc59b907bb000ac45c9f410979dbc3548d657f58",
     "static/counterparties.css": "bf604b9afa8d966a861c81b850798dac29961c4a76f1443b9441fdc4f681e760",
     "static/counterparties.js": "c99215bd0b142522792e521e8b848ba9489b476ace31751124ad784f2f72ab94",
-    "static/dashboard.css": "d5e7da337398cba13bb75d151ee9004b106c0c0fff21a65153d2e30ba7ba7de0",
+    "static/dashboard.css": "d6eff413e11e2986e693a066140b04e9239c9eed23ca58ed06791437456ecb7d",
     "static/dashboard.js": "aaddabe95868a8258210c9253e88c9ceb746ec540ced27508aa2e82e62d266ce",
     "static/finanzguru.js": "5f27486f23b09d9239a66bc5ebcf23b51f4ec063b82296a41b743b88900469aa",
     "static/frontend-api.js": "a7a3f635946c9cc942cbceaad42a4301bf44c9f3a9ce0825e53af187fbf2c5d8",
@@ -533,6 +533,6 @@
     "web.py": "927fb351a0108dc7b3376d1c776b02aebccf05cc18df1017df754acb35ae5622"
   },
   "schema_version": 1,
-  "source_commit": "0b3b73d1149c2fe45556767e0c29f43c7709c5ab",
-  "source_tree_sha256": "dea484664cbdd4ce63d15ddf3e5eeb1ebab19d07fd21a506c5d3e84c3cb9404c"
+  "source_commit": "9c618f6b62df97cec03175281ba8e504a5367476",
+  "source_tree_sha256": "20627c6116e11798e1dce90e67cb19c268319531f0b60b3ac514cd10ddc75e1e"
 }

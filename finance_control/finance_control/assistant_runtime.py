@@ -97,7 +97,8 @@ def _ollama(path, payload=None):
         def redirect_request(self, *args, **kwargs):
             return None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    with opener.open(request, timeout=120 if payload else 3) as response:
+    timeout = 600 if path == '/api/pull' else (120 if payload else 3)
+    with opener.open(request, timeout=timeout) as response:
         body = response.read(LIMIT + 1)
     if len(body) > LIMIT:
         raise ValueError('oversized_model_response')

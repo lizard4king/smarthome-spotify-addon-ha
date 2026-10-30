@@ -63,7 +63,8 @@ def _candidate(account_id, currency, amount, booked_on, retrieved_at, source, re
                          'source': source, 'control_reference': reference})
 
 
-def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False):
+def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False,
+                      include_confirmed_reference=True):
     """Use recorded controls only, optionally bounded by an inclusive ISO date.
 
     Without ``as_of`` the latest recorded control is returned regardless of the
@@ -71,7 +72,8 @@ def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False
     so earlier bank observations and statements remain available behind a future
     balance. ``include_evidence`` adds stable control references and all conflicting
     highest-ranked controls. Conflicting amounts are ambiguous even without this
-    option; no amount is selected by query order.
+    option; no amount is selected by query order. Exclude confirmed references
+    when an independent control is needed for reconciliation.
     """
     if as_of is not None:
         try:
@@ -202,16 +204,17 @@ def latest_by_account(store, account_rows, *, as_of=None, include_evidence=False
         result[account_id] = selected
 
     # Explicit owner references outrank file evidence but never qualified controls.
-    from .balance_references import latest as confirmed_references
-    uncertain = transaction_date_accounts(store, wanted)
-    references = confirmed_references(store, account_rows, as_of=as_of)
-    for account_id, reference in references.items():
-        if account_id not in result:
-            if (account_id in uncertain
-                    and reference['booked_on'] > reference['reference_booked_on']):
-                reference = {**reference, 'amount': None, 'status': 'ambiguous',
-                             'warning': 'paypal_transaction_date_not_booking_date'}
-            result[account_id] = reference
+    if include_confirmed_reference:
+        from .balance_references import latest as confirmed_references
+        uncertain = transaction_date_accounts(store, wanted)
+        references = confirmed_references(store, account_rows, as_of=as_of)
+        for account_id, reference in references.items():
+            if account_id not in result:
+                if (account_id in uncertain
+                        and reference['booked_on'] > reference['reference_booked_on']):
+                    reference = {**reference, 'amount': None, 'status': 'ambiguous',
+                                 'warning': 'paypal_transaction_date_not_booking_date'}
+                result[account_id] = reference
 
     # File evidence is a fallback only. Any qualified bank or bound statement
     # candidate above retains the existing source/date priority.

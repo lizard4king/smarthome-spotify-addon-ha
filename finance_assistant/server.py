@@ -170,7 +170,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(404, {'error': 'not_found'})
 
     def do_POST(self):
-        if self.path not in ('/api/classify', '/api/setup-model', '/ingress/login-start'):
+        if self.path not in ('/api/classify', '/api/setup-model', '/api/self-test', '/ingress/login-start'):
             self.reply(404, {'error': 'not_found'})
             return
         if self.path == '/ingress/login-start':
@@ -200,13 +200,26 @@ class Handler(BaseHTTPRequestHandler):
                 return
             payload = json.loads(raw.decode('utf-8'), object_pairs_hook=_unique_object,
                                  parse_constant=lambda value: (_ for _ in ()).throw(ValueError()))
-            if self.path in ('/api/setup-model', '/ingress/login-start'):
+            if self.path in ('/api/setup-model', '/api/self-test', '/ingress/login-start'):
                 if type(payload) is not dict or set(payload) != {'confirmed'} or payload['confirmed'] is not True:
                     raise ValueError('confirmation_required')
                 if self.path == '/ingress/login-start':
                     self.login_state(start=True)
                     return
                 from finance_control import assistant_runtime
+                if self.path == '/api/self-test':
+                    # Fixed synthetic input only: never force fallback for an owner's booking.
+                    def synthetic_limit(_):
+                        raise BackendFailure('usage_limit_reached')
+                    sample = {'task': 'classify', 'transaction': {
+                        'counterparty': 'Synthetic supermarket',
+                        'description': 'Synthetic grocery purchase', 'amount': '-12.34',
+                        'currency': 'EUR', 'date': '2026-01-01', 'direction': 'expense'},
+                        'allowed_categories': [{'id': 'groceries', 'label': 'Groceries'},
+                                               {'id': 'travel', 'label': 'Travel'}]}
+                    result = classify(sample, codex=synthetic_limit, qwen=assistant_runtime.qwen)
+                    self.reply(200, {'synthetic': True, **result})
+                    return
                 assistant_runtime.prepare_qwen()
                 self.reply(200, {'status': 'prepared'})
                 return
