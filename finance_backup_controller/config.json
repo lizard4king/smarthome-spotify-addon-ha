@@ -1,6 +1,6 @@
 {
   "name": "Finance Backup Controller (Prototype)",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "slug": "finance_backup_controller",
   "description": "Disabled-by-default Finance-only encrypted backup scheduler",
   "arch": ["amd64", "aarch64"],
