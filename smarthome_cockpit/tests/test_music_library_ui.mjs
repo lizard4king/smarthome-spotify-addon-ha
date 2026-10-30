@@ -389,6 +389,63 @@ test('Gemischte Vorschläge bleiben kurz und verweisen für weitere echte Treffe
   r.api.destroy();
 });
 
+test('Leere gefilterte Vorschlagsseite bleibt nachladbar und behauptet keinen vollständigen Nulltreffer', async () => {
+  const r = rig(url => url.includes('browser-status') ? {available:true} : url.includes('offset=0') ? (url.includes('/tracks?') ? {tracks:[],next_offset:50} : {items:[]}) : url.includes('/tracks?') ? {tracks:[track(77)]} : {items:[]}, {compact:true});
+  await r.api.ready;
+  assert.equal(r.button('Mehr laden').hidden,false);
+  assert.ok(r.all().some(n=>n.textContent.includes('Weitere Ergebnisse können geladen werden.')));
+  assert.ok(!r.all().some(n=>n.textContent==='Keine Einträge gefunden.'));
+  await r.button('Mehr laden').fire('click'); await tick();
+  assert.ok(r.all().some(n=>n.textContent==='Titel 77'));
+  assert.equal(r.button('Mehr laden').hidden,true);
+  assert.equal(r.audio().playCount,0); r.api.destroy();
+});
+
+test('Nachladen gemischter Treffer zeigt auch Titel nach den ersten sechs und entfernt Duplikate', async () => {
+  const r=rig(url=>url.includes('browser-status') ? {available:true} : url.includes('/tracks?') ? (url.includes('offset=0') ? {tracks:Array.from({length:8},(_,n)=>track(n)),next_offset:50} : {tracks:[track(7),track(8)]}) : {items:[]},{compact:true});
+  await r.api.ready;
+  assert.equal(r.all().filter(n=>n.className==='ml-row').length,6);
+  assert.equal(r.button('Mehr laden').hidden,false);
+  await r.button('Mehr laden').fire('click'); await tick();
+  assert.equal(r.all().filter(n=>n.className==='ml-row').length,9);
+  assert.ok(r.all().some(n=>n.textContent==='Titel 8'));
+  r.api.destroy();
+});
+
+test('Fehlgeschlagene Kategorie verhindert weder Nachladen noch den sichtbaren Fehlerhinweis', async () => {
+  const r=rig(url=> {
+    if(url.includes('browser-status')) return {available:true};
+    if(url.includes('/artists?')) throw Error('private upstream detail');
+    if(url.includes('/tracks?')) return url.includes('offset=0') ? {tracks:[],next_offset:50} : {tracks:[track(88)]};
+    return {items:[]};
+  },{compact:true});
+  await r.api.ready; assert.equal(r.button('Mehr laden').hidden,false);
+  await r.button('Mehr laden').fire('click'); await tick();
+  assert.ok(r.all().some(n=>n.textContent==='Titel 88'));
+  assert.ok(r.all().some(n=>n.textContent.includes('Künstler konnten nicht geladen werden.')));
+  assert.ok(!r.all().some(n=>n.textContent.includes('private upstream detail')));
+  r.api.destroy();
+});
+
+test('Neue Suche verwirft verspätete Nachladeseite und setzt Vorschlagsbegrenzung zurück', async () => {
+  let release;
+  const r=rig(url=> {
+    if(url.includes('browser-status')) return {available:true};
+    if(!url.includes('/tracks?')) return {items:[]};
+    if(url.includes('q=Neu')) return {tracks:Array.from({length:8},(_,n)=>({...track(100+n),title:'Neu '+n}))};
+    if(url.includes('offset=50')) return new Promise(resolve=>release=resolve);
+    return {tracks:[track(1)],next_offset:50};
+  },{compact:true});
+  await r.api.ready;
+  const loading=r.button('Mehr laden').fire('click'); await tick();
+  r.search().value='Neu'; await r.search().fire('input'); await r.flush();
+  release({tracks:[{...track(2),title:'Veralteter Titel'}]}); await loading; await tick();
+  assert.ok(!r.all().some(n=>n.textContent==='Veralteter Titel'));
+  assert.equal(r.all().filter(n=>n.className==='ml-row').length,6);
+  assert.ok(r.all().some(n=>n.textContent==='Neu 0'));
+  assert.equal(r.audio().playCount,0); r.api.destroy();
+});
+
 test('Compacttransport verwendet beschriftete Icons und einen weiterhin ausklappbaren Fortschritt', async () => {
   const r=rig(standard,{compact:true}); await r.api.ready;
   const previous=r.all().find(n=>n.attributes['aria-label']==='Vorheriger Titel');
