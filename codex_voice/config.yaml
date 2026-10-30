@@ -1,0 +1,73 @@
+{
+  "name": "Codex Voice",
+  "description": "Private Codex CLI with optional authenticated internal Alexa jobs.",
+  "arch": [
+    "amd64"
+  ],
+  "startup": "services",
+  "boot": "auto",
+  "init": true,
+  "map": [],
+  "ingress": true,
+  "ingress_port": 8099,
+  "panel_title": "Codex Voice",
+  "panel_icon": "mdi:robot-outline",
+  "homeassistant_api": false,
+  "hassio_api": false,
+  "hassio_role": "default",
+  "auth_api": false,
+  "host_network": false,
+  "stage": "stable",
+  "backup": "hot",
+  "schema": {
+    "authorized_user_ids": [
+      "str"
+    ],
+    "voice_bridge_secret": "password",
+    "enable_control": "bool",
+    "control_bridge_secret": "password",
+    "voice_model": "str",
+    "voice_reasoning_effort": "str",
+    "lumi_memory_enabled": "bool",
+    "lumi_memory_owner_keys": [
+      "str"
+    ],
+    "lumi_knowledge_enabled": "bool",
+    "lumi_notion_page_ids": [
+      "str"
+    ],
+    "lumi_notion_workspace_enabled": "bool",
+    "lumi_notion_write_enabled": "bool",
+    "lumi_notion_owner_keys": [
+      "str"
+    ],
+    "lumi_notion_read_token": "password",
+    "lumi_notion_write_token": "password"
+  },
+  "tmpfs": true,
+  "apparmor": true,
+  "panel_admin": true,
+  "host_pid": false,
+  "docker_api": false,
+  "full_access": false,
+  "privileged": [],
+  "slug": "codex_voice",
+  "version": "0.1.14",
+  "options": {
+    "authorized_user_ids": [],
+    "voice_bridge_secret": "",
+    "enable_control": false,
+    "control_bridge_secret": "",
+    "voice_model": "",
+    "voice_reasoning_effort": "low",
+    "lumi_memory_enabled": false,
+    "lumi_memory_owner_keys": [],
+    "lumi_knowledge_enabled": false,
+    "lumi_notion_page_ids": [],
+    "lumi_notion_workspace_enabled": false,
+    "lumi_notion_write_enabled": false,
+    "lumi_notion_owner_keys": [],
+    "lumi_notion_read_token": "",
+    "lumi_notion_write_token": ""
+  }
+}

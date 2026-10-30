@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "source_revision": "2a3fd98b21d200411fa1c214157fe274408b3c86",
+  "files": {
+    "codex_voice": {
+      ".dockerignore": "cfc966230629afa846f68eafe874924d3b7c930901c317eb35391c90a6037d40",
+      "Dockerfile": "496e11a2965262be8be2953d647f4f502dbf3ba71412fa920ddcff2ed19bc044",
+      "__init__.py": "d31eb6308525c80a805b3c98164b31e3d46677c7f6ef885fd22677b78f49d76d",
+      "action_schema.json": "7b3b44b1aa727d53a3e7afc1b5cac69616d287049b4a238c76b50c23ec2ec8d3",
+      "app.py": "3d26441dba07b494c42811d3ce208058c52decc446c81ce72b730104c6fd504f",
+      "config.yaml": "4b65d09d9116c6a9ad60e03e06d75ce4ea67d1bb5577f0d726dcb51859aebf37",
+      "control_client.py": "07a6a05ff456053c322284a815a4777fc3c251b36ad7fbd0c1e6614477447e4e",
+      "lumi_assistant.py": "e024df20c24919734af0abc020c61ce6dbf6ab88c97f2ad9f225f77fb50088b6",
+      "lumi_context.py": "89f014d1e30092bc406d83dd3e8acfa8ea9dc4988cb579a22775d5078cd2ae5b",
+      "lumi_knowledge.py": "437e2235f6ce9885a07761a8a8b57d4cd13d866fd083a8b3a60b3e8b806a4132",
+      "lumi_notion_catalog.py": "b7da22c566be475362a796594153eaabcb123111d21d6248586fe178637c553c",
+      "lumi_notion_commands.py": "654b626a8064d8c8ab1268ae53f26591edfd91b2545a8f55413a482eac120de2",
+      "lumi_notion_credentials.py": "f6d72850cbf5741d75bafbc3ba20d9b3e2dbc405db4f39034deae513eda30743",
+      "lumi_notion_runtime.py": "24e6ed6bc40082392cf4cc5ce3ad55daca8ad9d3cf5d3148712d5f8b4a4df5d4",
+      "lumi_notion_sync.py": "0b9d63e91b01cd4cccba41d1c54bc95109cd6affd6383d34bc1dd401ebe50f9c",
+      "lumi_notion_write.py": "bd141ff014c435fb0f83404044f31f898aa2822ea52204629f1034248b9d26db",
+      "voice_bridge.py": "309fc4d31f46f7b51326648c7414af51a499075e4622a5aa1c86694961a1ee0c",
+      "README.md": "d84412380ce0713a222dd41537d7bab7e19b6ebea87b3297c93cad57c6706051"
+    },
+    "music_alexa": {
+      ".dockerignore": "cfc966230629afa846f68eafe874924d3b7c930901c317eb35391c90a6037d40",
+      "Dockerfile": "a843863208026cfa8011291898304dd6663130b5aec4ee701a8a5eee628cbd60",
+      "README.md": "f444237ab6c6690c1a9ef03862feea9e9513e1b7102969f05de9d8a6932c0b48",
+      "__init__.py": "c816a91bb03b54c53bec21ed62dde02aa251eb319dbf46424f27a74af5d661c7",
+      "answer_delivery.py": "c62f0dc718c0488ec8df5f196833d848cbb395131d43451a0576f05d1a9e88de",
+      "answer_pages.py": "155335f5769329c1412d506381fa563047ca21ac525f5bf1eb99acb99a2b9184",
+      "companion.py": "217c1b7c90a837e599adc72239dc398d757065a50df9dd81bcf147f171533c47",
+      "config.yaml": "f82c7b8a8c6940e11787cdef64fac8b9833e97aceb238b635d257b05f04c4090",
+      "lumi_greeting.py": "872930b9853820e390703adf77cc644ca5d17bedea4044221d393b9c204971ca",
+      "lumi_pairing.py": "42e2cf01cdfaa10392ebb66b5ee1f668e78a14c65f49e15b229035e74923a0e8",
+      "lumi_relay.py": "1db7dd5adf40ae4aa592c2fb61d2663dea30e6b4aa1db0adb3ad78bd29eadacc",
+      "models/de-DE.json": "512af8d7cdb44a71d0943057a3444e21ac3a689e68cea1c8e2dcf2a9d79c9ef8",
+      "requirements.txt": "b204676db2ddf9a9fe1a2a6b0db7c16b0db5105c498ebc64aca114f19ae53639",
+      "run.sh": "089f5408903a8861cab4b7220a8a0cdf9cf278a3476ca4d859c0d81bed17d38b",
+      "security.py": "aa89c87c8bb40660aeaa9efa088ce979823c2af46a04df5c02752d76c4893b00",
+      "voice_gateway.py": "877b19a3abb96c41184de4c4d5eafada9ba01415927f075f9e0ef8f6f2bbf8fd"
+    }
+  }
+}
