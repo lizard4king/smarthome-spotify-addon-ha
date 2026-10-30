@@ -405,6 +405,59 @@
     return null;
   }
 
+  // Display-only extraction for generic card rows. This is deliberately separate
+  // from identify(): source identity and legacy decoration keep their semantics.
+  const genericCardParty = /^(?:Kreditkartenumsatz|Kartenumsatz|Kartenzahlung|Abrechnung Karte)$/iu;
+  const sepaField = /(?:SVWZ|EREF|MREF|KREF|CRED|IBAN|BIC|ABWA|ABWE|DEBT|COAM|OAMT|MDAT|SQTP|PURP|ULTD|ULTB)\+/giu;
+
+  function cardPurpose(description) {
+    const text = typeof description === 'string' ? description : '';
+    const fields = [...text.matchAll(sepaField)];
+    const purposeFields = fields.filter(field => /SVWZ\+$/iu.test(field[0]));
+    // SEPA references are metadata even when they happen to contain a brand.
+    const purposeful = purposeFields.length
+      ? purposeFields.map(field => {
+        const next = fields.find(other => other.index > field.index);
+        return text.slice(field.index + field[0].length, next?.index ?? text.length);
+      }).join(' · ')
+      : text.slice(0, fields[0]?.index ?? text.length);
+    const pieces = purposeful.split(/\s+·\s+|[;|\r\n]+/u).map(piece => piece.trim()).filter(Boolean);
+    const explicit = /(?:^|\s)(?:Händler|Empfänger|Merchant)\s*:\s*|(?:^|\s)Zahlung an\s*:?\s+/iu;
+    const hasText = value => /\p{L}{2}/u.test(value)
+      && !/^(?:(?:EUR|USD|GBP|CHF|CAD|AUD|JPY)\s*[-+\d., ]*|[-+\d., ]*\s*(?:EUR|USD|GBP|CHF|CAD|AUD|JPY)|(?:Datum|Buchungsdatum|Valuta|Referenz|Reference|Ref|Beleg|Karte|Kartennummer|Betrag|Amount)\b.*)$/iu.test(value)
+      && !genericCardParty.test(value)
+      && !/^\d{3,}\s+[^,]+,\s*[A-Z]{2,3},\s*[A-Z]{2,3}$/u.test(value);
+    const clean = value => value.replace(/^\s*(?:PayPal|SumUp|Klarna|Adyen|PAYONE|Stripe|Ratepay|MultiSafepay)\s*\*+\s*/iu, '')
+      .replace(/\s+/gu, ' ').trim();
+    // An explicit merchant segment wins over surrounding purpose prose. Without
+    // one, retain the readable purpose as a snippet, not a claimed legal name.
+    const marked = pieces.filter(piece => explicit.test(piece));
+    const candidates = (marked.length ? marked.flatMap(piece => {
+      const markers = [...piece.matchAll(new RegExp(explicit.source, 'giu'))];
+      return markers.map((marker, index) => piece.slice(
+        marker.index + marker[0].length, markers[index + 1]?.index ?? piece.length));
+    }) : pieces).map(clean).filter(hasText);
+    return candidates.join(' · ');
+  }
+
+  function describe(item = {}) {
+    const party = withoutLeadingIban(item.counterparty);
+    if (genericCardParty.test(party.split(/[\r\n]+/u)[0].trim())) {
+      const candidate = cardPurpose(item.description);
+      const brands = findBrands(candidate, {ignoreIntermediaries: true});
+      if (brands.length === 1) {
+        const {id, label, src} = brands[0].brand;
+        return {id, label, src};
+      }
+      const label = candidate.length > 160 ? `${candidate.slice(0, 159).trimEnd()}…` : candidate;
+      return {label: label || 'Empfänger nicht angegeben', src: null};
+    }
+    const identity = identify(item);
+    const original = item.counterparty || item.description || 'Buchung';
+    const cleaned = withoutLeadingIban(original) || original;
+    return {label: identity?.label || (/\p{L}{2}/u.test(cleaned) ? cleaned : original), src: identity?.src || null};
+  }
+
   function initials(value) {
     const words = (typeof value === 'string' ? value : '').trim().split(/\s+/u).filter(Boolean);
     const firstLetter = word => Array.from(word).find(character => /[\p{L}\p{N}]/u.test(character)) || '';
@@ -482,5 +535,5 @@
     return element;
   }
 
-  window.financeCounterparties = {identify, decorate, displayName: withoutLeadingIban};
+  window.financeCounterparties = {identify, describe, decorate, displayName: withoutLeadingIban};
 })();
