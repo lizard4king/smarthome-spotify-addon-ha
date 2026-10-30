@@ -1,11 +1,11 @@
 {
-  "addon_tree_sha256": "575af735fb77d8e2a4abeff24aeb5f6c5504544a9eb478c60fd72e17babc67fa",
-  "addon_version": "0.2.78",
+  "addon_tree_sha256": "4628388bec8cb329568b5fbec2c96ae2dd2cdfbb9d76e032108bf16b0483d3ee",
+  "addon_version": "0.2.79",
   "deployment_files": {
-    "Dockerfile": "749ac6af0bf4fc79e7434bea7c987b13a1536a3b159fe5d54c7d4b48f0943fba",
+    "Dockerfile": "faea682418127f5188cb9dc04f119af1f1c3a86a213b180a5b434e331bfdd12e",
     "README.md": "6d20c059ef33037a903e40faa2a75471151c3d0b8146a402eeb5796569686912",
     "bootstrap.py": "bf7cf378bab38d43563b4acf3594153b50fffa3d82303666b983f2cb3eacd0d8",
-    "config.yaml": "91e81ea3c561a48ee707778f19174179d405fe1fd8af710e85410c4d07e6892a",
+    "config.yaml": "3c4bd72cb959f2b63b5a78bd47a06f1fa36d07e2a7919b20df3155fd9a6f0e7a",
     "run.sh": "c6a3b2e6d755ed89ab5500778b848bed74ae83710534d50c19427ab3d13fe356",
     "vault_selftest.py": "e998ead6137ca6de48b054b7b27dab851b2d732d45e71360a5a28b475a2c2d2d"
   },
@@ -28,13 +28,14 @@
     "amazon_sns_snapshot.py": "b4f0fa3f07606c725628b65a94dbba7ea7285924cf1fd176f2e48a534bb623f4",
     "analytics.py": "35c9e9e48cfbddaec3cf16485501e801ea157038f270d0bc4d32198879420cb4",
     "approval_queue.py": "695768a0a9710ef09cb3415d15db8e0419ae64da845f93fb87e725dc755d4489",
-    "assistant_client.py": "873f012dfbd326693340b1bc22d4c14a7bd55ae9ccf777ea8da2202bbc45286f",
-    "assistant_configuration.py": "a8ac43113cb90775189fb565a4d335fbe0c4358239285a473d393d118989c0b9",
+    "assistant_client.py": "d90cc5ef8bf9abe2a0cd944f0e100b3e73c22cd74ffe1b75ecaccdfda5ad886b",
+    "assistant_configuration.py": "f4b01501d1f2eec60e27d4b28a3211e1d6a189c87a10845f8518db9e0e6e4104",
+    "assistant_control.py": "15ca857d966cac7a14c14262930ec46190860cfb06ba1e510e0d98af4026bec7",
     "assistant_engine.py": "64c8b7b93f81543098988077a1e022fcec57dd305618c47c2cc1d4278377cc61",
     "assistant_login.py": "3b1bcc2c78a46383c7059082484a6f644951ad42a3afef0997016cc570d7f0ea",
     "assistant_runtime.py": "a2841cfb5e07704916df35fb28d567fea19e9bdcfd75c41692155572515d6832",
     "audit.py": "d8299147f033460beffc924af6f8f2bea74a6731450261a31ccb1bbc50772e64",
-    "backup_guard.py": "f76851654d8cccd4e8f9726fae03b6afd2de1a010abe3ef5fa15a0ffb34e4000",
+    "backup_guard.py": "517279ff42f8241a4d6962d5257b06a83bb10668d2131ef9498797dd1bd6d6da",
     "backup_package.py": "af18739a1e38ecbc4b80612252914d36e38e69fe51d7915add042a5e2a86f290",
     "backup_retention_maintenance.py": "5ec98b0352fc04de6bcba71f3753f171bafca841e5174405e35e43597ca8e0b9",
     "balance_references.py": "64f07ef4874753d5dd90ffa5139653653362d86af4f09573ae5f42e9196e083f",
@@ -530,9 +531,9 @@
     "transfer_corrections.py": "2f3cb0687cca7a4f7963e9d8324c860544237100647b3b9761be4bdb210af256",
     "transfer_notices.py": "26e8c397d7f5470fa31e8ab52a5720372b1d461aa6d010b3364d4ba7f0543ba5",
     "wealth.py": "a66b72fbe866b15266ae0dbd17026be8e21120863b4a63a66c4f1a6a7fc12255",
-    "web.py": "927fb351a0108dc7b3376d1c776b02aebccf05cc18df1017df754acb35ae5622"
+    "web.py": "cebc7003e39922363cd371ba36c37626177538f2359eaabcf3db731118621dc7"
   },
   "schema_version": 1,
-  "source_commit": "5fded5aca2368c90973934401766500cae7e3da0",
-  "source_tree_sha256": "b8f861e4dd0ead6431e44a7c5f4e06c56b88ebeae5b62be37baa5876d66207ae"
+  "source_commit": "42f11a85e9605d31da757a1b632a862f236b8018",
+  "source_tree_sha256": "ce636311e151a5e0e912e154e06a6c499724dd40e3977caf7ce1bb0d678c5645"
 }

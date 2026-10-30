@@ -15,6 +15,15 @@ _ERRORS = {'authentication_required', 'usage_limit_reached', 'quota_exhausted',
 _LIMITS = {'usage_limit_reached', 'quota_exhausted'}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def _opener():
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+
+
 def _url():
     value = os.environ.get('FINANCE_CONTROL_ASSISTANT_URL', DEFAULT_URL)
     try:
@@ -49,6 +58,30 @@ def _object(pairs):
     return result
 
 
+def status():
+    """Probe the stored key against the fixed internal service, without records."""
+    result = {'configured': False, 'reachable': False,
+              'codex_authenticated': False, 'qwen_ready': False}
+    try:
+        token = _token()
+    except BackendFailure:
+        return result
+    result['configured'] = True
+    opener = _opener()
+    request = urllib.request.Request(_url().removesuffix('/classify') + '/status',
+                                    headers={'Authorization': 'Bearer ' + token})
+    try:
+        with opener.open(request, timeout=10) as response:
+            data = _decode(response.read(65537))
+        if (type(data) is dict and type(data.get('codex_authenticated')) is bool
+                and type(data.get('qwen_ready')) is bool):
+            result.update(reachable=True, codex_authenticated=data['codex_authenticated'],
+                          qwen_ready=data['qwen_ready'])
+    except (OSError, ValueError, BackendFailure):
+        pass
+    return result
+
+
 def _decode(raw):
     if len(raw) > 65536:
         raise ValueError('oversized_response')
@@ -65,10 +98,7 @@ def classify(payload):
         raise BackendFailure('invalid_request') from exc
     request = urllib.request.Request(_url(), data=body,
         headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _token()}, method='POST')
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):
-            return None
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    opener = _opener()
     try:
         with opener.open(request, timeout=255) as response:
             raw = response.read(65537)
