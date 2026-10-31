@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Lumi · Smart Home</title>
+  <link rel="stylesheet" href="lumi-voice.css?v=20261031">
+  <script src="lumi-voice.js?v=20261031" defer></script>
+</head>
+<body>
+  <main id="lumi-app" class="lumi-shell">
+    <header class="lumi-header">
+      <a class="lumi-back" href="/">← Leitstand</a>
+      <span class="lumi-tag">Smart Home</span>
+    </header>
+    <section class="lumi-panel" aria-labelledby="lumi-heading">
+      <div class="lumi-intro">
+        <div>
+          <p class="lumi-eyebrow">Sprachoberfläche</p>
+          <h1 id="lumi-heading">Lumi</h1>
+          <p class="lumi-subtitle">Ein Gespräch für Texteingabe und, falls lokal verfügbar, Sprache.</p>
+        </div>
+        <div class="lumi-state" role="status" aria-live="polite">
+          <span class="lumi-state-dot" aria-hidden="true"></span>
+          <span id="lumi-status">Verbindung wird geprüft</span>
+        </div>
+      </div>
+
+      <div class="lumi-actions" aria-label="Gesprächssteuerung">
+        <button id="lumi-start" class="lumi-primary" type="button" disabled>Gespräch starten</button>
+        <button id="lumi-interrupt" type="button" disabled>Unterbrechen</button>
+        <button id="lumi-end" type="button" disabled>Gespräch beenden</button>
+      </div>
+      <p id="lumi-hint" class="lumi-hint" aria-live="polite">Lumi wird geprüft.</p>
+      <p id="lumi-queue" class="lumi-queue" aria-live="polite">Keine Nachrichten in der Warteschlange.</p>
+      <details class="lumi-settings"><summary>Spracheinstellungen</summary>
+      <label class="lumi-headphone-option" for="lumi-headphones">
+        <input id="lumi-headphones" type="checkbox">
+        <span><strong>Kopfhörer-Modus (experimentell)</strong><small>Erlaubt Unterbrechen durch Sprechen während Lumi spricht. Kopfhörer erforderlich; Gerätetest noch offen.</small></span>
+      </label>
+      </details>
+
+      <section class="lumi-conversation" aria-labelledby="lumi-conversation-heading">
+        <div class="lumi-conversation-heading">
+          <h2 id="lumi-conversation-heading">Gespräch</h2>
+          <span>Nur während dieser Browser-Sitzung</span>
+        </div>
+        <ol id="lumi-transcript" class="lumi-transcript" aria-live="polite" aria-relevant="additions"></ol>
+        <p id="lumi-interim" class="lumi-interim" aria-live="polite"></p>
+      </section>
+
+      <form id="lumi-form" class="lumi-form">
+        <label for="lumi-input">Nachricht an Lumi</label>
+        <div class="lumi-compose">
+          <input id="lumi-input" type="text" maxlength="600" autocomplete="off" placeholder="Schreibe hier …" disabled>
+          <button id="lumi-send" class="lumi-primary" type="submit" disabled>Senden</button>
+        </div>
+      </form>
+    </section>
+    <p class="lumi-footnote">„Unterbrechen“ stoppt die lokale Sprachausgabe. Bereits übermittelte Aufträge können noch ausgeführt werden.</p>
+  </main>
+</body>
+</html>

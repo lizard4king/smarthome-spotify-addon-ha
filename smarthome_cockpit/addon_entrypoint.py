@@ -71,6 +71,9 @@ def _load_private_music_fallback(options: dict) -> None:
 
 def _load_options_fallback() -> None:
     """Use HA's persisted options when the shell environment is incomplete."""
+    os.environ["LUMI_CHAT_ENABLED"] = "false"
+    os.environ["LUMI_CHAT_ORIGIN"] = ""
+    os.environ["LUMI_VOICE_BRIDGE_SECRET"] = ""
     try:
         with open("/data/options.json", "r", encoding="utf-8") as handle:
             options = json.load(handle)
@@ -78,6 +81,12 @@ def _load_options_fallback() -> None:
         options = {}
     if not isinstance(options, dict):
         return
+    # Revoking the optional browser feature must also clear stale process values.
+    os.environ["LUMI_CHAT_ENABLED"] = str(options.get("lumi_chat_enabled") is True).lower()
+    for key, env_name in (("lumi_chat_origin", "LUMI_CHAT_ORIGIN"),
+                          ("lumi_voice_bridge_secret", "LUMI_VOICE_BRIDGE_SECRET")):
+        value = options.get(key, "")
+        os.environ[env_name] = value if isinstance(value, str) else ""
     for key, env_name in (
         ("home_assistant_token", "HOME_ASSISTANT_TOKEN"),
         ("bridge_secret", "SPOTIFY_BRIDGE_SECRET"),

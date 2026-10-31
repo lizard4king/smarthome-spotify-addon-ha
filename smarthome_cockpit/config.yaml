@@ -17,6 +17,9 @@ map:
   - data:rw
   - media:ro
 options:
+  lumi_chat_enabled: false
+  lumi_chat_origin: ""
+  lumi_voice_bridge_secret: ""
   home_assistant_token: ""
   home_assistant_entities_json: ""
   home_assistant_write_allowlist: []
@@ -33,6 +36,9 @@ options:
   music_browser_root: ""
   music_browser_allow_playback: false
 schema:
+  lumi_chat_enabled: bool
+  lumi_chat_origin: str
+  lumi_voice_bridge_secret: password
   home_assistant_token: password
   home_assistant_entities_json: str
   home_assistant_write_allowlist:

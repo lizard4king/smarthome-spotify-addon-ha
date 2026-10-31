@@ -455,6 +455,31 @@ def load_control_client(options_file: Path = OPTIONS_FILE):
         return None
 
 
+def load_browser_control_enabled(options_file: Path = OPTIONS_FILE) -> bool:
+    """An explicit server option enables browser control; invalid input stays disabled."""
+    try:
+        info = os.lstat(options_file)
+        if (not stat.S_ISREG(info.st_mode) or info.st_size > MAX_OPTIONS_BYTES
+                or (os.name == "posix" and os.geteuid() == 0 and info.st_uid != 0)):
+            return False
+        with options_file.open("rb") as stream:
+            raw = stream.read(MAX_OPTIONS_BYTES + 1)
+        if len(raw) > MAX_OPTIONS_BYTES:
+            return False
+        def unique_keys(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise ValueError("duplicate option")
+                result[key] = value
+            return result
+        options = json.loads(raw, object_pairs_hook=unique_keys)
+        return (isinstance(options, dict)
+                and options.get("lumi_browser_control_enabled", False) is True)
+    except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
+        return False
+
+
 VOICE_MODEL_SETTINGS = None
 
 def load_voice_model_settings(options_file: Path = OPTIONS_FILE) -> tuple[str, str]:
@@ -661,6 +686,8 @@ class CodexRuntime:
         self._lumi_context_lock = threading.RLock()
         self._lumi_forget_generation = 0
         self._lumi_greeting_cache = GreetingCache()
+        self._browser_control_enabled = False
+        self._browser_context = None
 
     @staticmethod
     def _ensure_log_dir() -> None:
@@ -699,8 +726,9 @@ class CodexRuntime:
             start_new_session=True,
         )
 
-    def query_voice(self, question: str, *, _context_prompt: str | None = None) -> str:
-        client = getattr(self, "_control_client", None)
+    def query_voice(self, question: str, *, _context_prompt: str | None = None,
+                    _allow_control: bool = True) -> str:
+        client = getattr(self, "_control_client", None) if _allow_control else None
         if client is None:
             if _context_prompt is not None:
                 return self.query(question, wait_for_slot=True, _conversation_prompt=_context_prompt + "Aktuelle Frage:\n" + question.strip())
@@ -1343,6 +1371,45 @@ class CodexRuntime:
     def query_lumi_request(self, question: str, *, memory: dict, request_id: str) -> str:
         return self.query_lumi(question, memory=memory, request_id=request_id)
 
+    def handles_browser_locally(self, question: str) -> bool:
+        return is_forget_request(question)
+
+    def query_browser(self, question: str, *, memory: dict) -> str:
+        """Anonymous browser conversation; session text never enters personal storage."""
+        if (not isinstance(question, str) or not question.strip() or len(question) > 600
+                or not isinstance(memory, dict)
+                or set(memory) != {"person_key", "session_key"}
+                or memory["person_key"] != ""
+                or not isinstance(memory["session_key"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", memory["session_key"])):
+            raise ValueError("invalid browser request")
+        key = memory["session_key"]
+        with self._lumi_context_lock:
+            store = self._browser_context
+            if store is None:
+                try:
+                    from .lumi_context import ContextStore
+                except ImportError:
+                    from lumi_context import ContextStore
+                # Session methods of ContextStore use RAM only; this path is never opened.
+                store = ContextStore(LUMI_DATA_DIR / "browser_sessions.sqlite3")
+                self._browser_context = store
+            if is_forget_request(question):
+                store.forget("session", key)
+                return "Der Kontext dieser Sitzung wurde gelöscht."
+            turns = store.recent("session", key, question=question, limit=8)
+        prompt = context_prompt(turns, [], scope="session")
+        prompt += ("Dieser Browserdialog hat keinen Zugriff auf persönliche Erinnerungen "
+                   "oder private Notion-Seiten. Behaupte keine Einsicht in solche Inhalte.\n")
+        if not self._browser_control_enabled:
+            prompt += "Keine Geräteaktion ausführen oder behaupten; Geräte sind hier nicht steuerbar.\n"
+        answer = spoken_answer(self.query_voice(
+            question, _context_prompt=prompt,
+            _allow_control=self._browser_control_enabled))
+        with self._lumi_context_lock:
+            store.remember("session", key, question, answer)
+        return answer
+
     def handles_lumi_locally(self, question: str) -> bool:
         """Explicit local commands do not require model login or planning."""
         if is_forget_request(question):
@@ -1698,6 +1765,7 @@ def main() -> None:
     authorized_user_ids = load_authorized_user_ids()
     voice_secret = load_voice_bridge_secret()
     control_client = load_control_client()
+    browser_control_enabled = load_browser_control_enabled()
     lumi_settings = load_lumi_settings()
     lumi_storage_ready = False
     if (lumi_settings.memory_enabled or lumi_settings.knowledge_enabled
@@ -1710,6 +1778,7 @@ def main() -> None:
     drop_privileges()
     runtime = CodexRuntime()
     runtime._control_client = control_client
+    runtime._browser_control_enabled = browser_control_enabled
     runtime._lumi_settings = lumi_settings
     if lumi_storage_ready and lumi_settings.memory_enabled:
         try:
