@@ -80,6 +80,11 @@ def _valid_memory(value: object) -> bool:
     )
 
 
+def _valid_browser_memory(value: object) -> bool:
+    return (_valid_memory(value) and value["person_key"] == ""
+            and bool(value["session_key"]))
+
+
 
 class VoiceJobs:
     """FIFO single-worker queue; all job state stays in process memory."""
@@ -109,17 +114,20 @@ class VoiceJobs:
         memory: dict[str, str] | None = None,
         *, kind: str | None = None,
     ) -> tuple[int, dict]:
-        if kind not in (None, "greeting"):
+        if kind not in (None, "greeting", "browser"):
             return 400, {"error": "invalid request"}
         if kind == "greeting" and (question is not None or not _valid_memory(memory)):
             return 400, {"error": "invalid request"}
-        if kind is None and (not isinstance(question, str) or not question.strip()
+        if kind == "browser" and not _valid_browser_memory(memory):
+            return 400, {"error": "invalid request"}
+        if kind in (None, "browser") and (not isinstance(question, str) or not question.strip()
                              or len(question) > MAX_QUESTION_CHARS):
             return 400, {"error": "invalid request"}
         if memory is not None and not _valid_memory(memory):
             return 400, {"error": "invalid request"}
         digest_value = ({"kind": "greeting", "memory": memory} if kind == "greeting"
-                        else {"question": question, "memory": memory})
+                        else {"kind": "browser", "question": question, "memory": memory}
+                        if kind == "browser" else {"question": question, "memory": memory})
         digest = hashlib.sha256(_json_bytes(digest_value)).hexdigest()
         now = self._clock()
         with self._condition:
@@ -156,9 +164,9 @@ class VoiceJobs:
                 "_greeting": greeting,
                 "_safe_errors": memory is not None and not greeting,
             }
-            if kind == "greeting":
-                record["kind"] = "greeting"
-            else:
+            if kind is not None:
+                record["kind"] = kind
+            if kind != "greeting":
                 record["question"] = question
             if memory is not None:
                 record["memory"] = dict(memory)
@@ -200,8 +208,9 @@ class VoiceJobs:
                 question = record.pop("question", None)
                 memory = record.pop("memory", None)
             try:
-                local_handler = getattr(self.runtime, "handles_lumi_locally", None)
-                local_request = (kind is None and memory is not None and callable(local_handler)
+                local_handler = getattr(self.runtime, "handles_browser_locally" if kind == "browser"
+                                        else "handles_lumi_locally", None)
+                local_request = (kind in (None, "browser") and memory is not None and callable(local_handler)
                                  and local_handler(question) is True)
                 if not local_request and not self.runtime.authenticated():
                     raise _Unauthenticated()
@@ -210,6 +219,11 @@ class VoiceJobs:
                     if not callable(greeting):
                         raise RuntimeError("unavailable")
                     answer = greeting(memory=dict(memory))
+                elif kind == "browser":
+                    query_browser = getattr(self.runtime, "query_browser", None)
+                    if not callable(query_browser):
+                        raise RuntimeError("unavailable")
+                    answer = query_browser(question, memory=dict(memory))
                 elif memory is None:
                     query = getattr(self.runtime, "query_voice", self.runtime.query)
                     answer = query(question)
@@ -427,17 +441,25 @@ class _VoiceHandler(BaseHTTPRequestHandler):
                 legacy_fields = {"principal", "request_id", "question"}
                 memory_fields = legacy_fields | {"memory"}
                 greeting_fields = {"principal", "request_id", "kind", "memory"}
-                if set(data) not in (legacy_fields, memory_fields, greeting_fields):
+                browser_fields = memory_fields | {"kind"}
+                if set(data) not in (legacy_fields, memory_fields, greeting_fields, browser_fields):
                     raise _ProtocolError(400, "invalid request")
                 request_id = data.get("request_id")
                 question = data.get("question")
                 if not isinstance(request_id, str) or not 1 <= len(request_id) <= 1024:
                     raise _ProtocolError(400, "invalid request")
                 greeting = set(data) == greeting_fields
+                browser = set(data) == browser_fields
                 if greeting:
                     if data["kind"] != "greeting":
                         raise _ProtocolError(400, "invalid request")
+                elif browser:
+                    if data["kind"] != "browser" or not _valid_browser_memory(data["memory"]):
+                        raise _ProtocolError(400, "invalid request")
                 elif not isinstance(question, str) or not question.strip() or len(question) > MAX_QUESTION_CHARS:
+                    raise _ProtocolError(400, "invalid request")
+                if browser and (not isinstance(question, str) or not question.strip()
+                                or len(question) > MAX_QUESTION_CHARS):
                     raise _ProtocolError(400, "invalid request")
                 memory_present = "memory" in data
                 memory = data.get("memory")
@@ -445,7 +467,7 @@ class _VoiceHandler(BaseHTTPRequestHandler):
                     raise _ProtocolError(400, "invalid request")
                 status, result = self.server.jobs.submit(
                     principal, request_id, None if greeting else question.strip(), memory=memory,
-                    kind="greeting" if greeting else None,
+                    kind="greeting" if greeting else "browser" if browser else None,
                 )
             else:
                 if set(data) != {"principal", "job_id"}:

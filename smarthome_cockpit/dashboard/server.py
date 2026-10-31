@@ -28,6 +28,7 @@ from dashboard.music_assistant import MusicAssistant, MusicAssistantError
 from dashboard.music_library import MusicLibrary
 from dashboard.music_audio import BrowserAudio, serve_audio
 from dashboard.codex_control import handle as handle_codex_control
+from dashboard.lumi_chat import handle as handle_lumi_chat
 from dashboard.spotify import SpotifyCockpit, SpotifyCockpitError
 
 
@@ -70,6 +71,14 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             self._revalidate_static_html = False
 
     def end_headers(self) -> None:
+        if getattr(self, "_lumi_cookie", None):
+            self.send_header("Set-Cookie", self._lumi_cookie)
+            self._lumi_cookie = None
+        if urlsplit(self.path).path == "/lumi.html":
+            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+            self.send_header("Permissions-Policy", "microphone=(self), on-device-speech-recognition=(self)")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Content-Type-Options", "nosniff")
         if getattr(self, "_revalidate_static_html", False):
             self.send_header("Cache-Control", "no-cache")
         super().end_headers()
@@ -79,7 +88,7 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        if not urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/", "/api/spotify")):
+        if not urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/", "/api/spotify", "/api/lumi/")):
             self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
@@ -87,7 +96,7 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             self.wfile.write(encoded)
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib API
-        if urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/", "/api/spotify")):
+        if urlsplit(self.path).path.startswith(("/api/music/", "/api/codex/", "/api/spotify", "/api/lumi/")):
             self._send_json(405, {"error": "Cross-Origin-Musikzugriff ist nicht freigegeben."})
             return
         self.send_response(204)
@@ -97,6 +106,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/lumi/"):
+            handle_lumi_chat(self)
+            return
         if urlsplit(self.path).path == "/api/spotify/status":
             if not _same_origin(self.headers):
                 self._send_json(403, {"available": False, "error": "Cross-Origin-Spotifyzugriff ist nicht freigegeben."})
@@ -159,6 +171,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/lumi/"):
+            handle_lumi_chat(self)
+            return
         if urlsplit(self.path).path.startswith("/api/codex/"):
             handle_codex_control(self)
             return
@@ -198,6 +213,9 @@ class CockpitHandler(SimpleHTTPRequestHandler):
             self._send_json(400, error)
 
     def do_HEAD(self) -> None:  # noqa: N802 - stdlib API
+        if urlsplit(self.path).path.startswith("/api/lumi/"):
+            handle_lumi_chat(self)
+            return
         if urlsplit(self.path).path.startswith("/api/music/"):
             self._handle_music_get(head=True)
             return
