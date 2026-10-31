@@ -5,10 +5,12 @@ import json
 import math
 import os
 import re
+import unicodedata
 import threading
 import time
+from difflib import SequenceMatcher
 from urllib.request import Request, build_opener, HTTPRedirectHandler
-from dashboard.music_assistant import MusicAssistant
+from dashboard.music_assistant import MusicAssistant, MusicAssistantError
 from smarthome.home_assistant import HomeAssistantConfig, HomeAssistantAdapter
 
 LIMIT = 16 * 1024
@@ -29,6 +31,64 @@ ROOM_PHRASES = {
     "Schlafzimmer": "im Schlafzimmer",
     "Wohnzimmer": "im Wohnzimmer",
 }
+
+def _music_match_text(value):
+    value = unicodedata.normalize("NFKC", value).casefold()
+    value = "".join(" " if unicodedata.category(char).startswith("P") else char for char in value)
+    return " ".join(value.split())
+
+def _safe_music_label(value, limit):
+    if not isinstance(value, str):
+        value = ""
+    value = "".join(char for char in value if not unicodedata.category(char).startswith("C"))
+    return value.strip()[:limit]
+
+def _music_suggestions(music, query):
+    words = re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", query), flags=re.UNICODE)
+    normalized_query = _music_match_text(query)
+    unique_words = {word.casefold() for word in words if len(word) >= 4
+                    and _music_match_text(word) != normalized_query}
+    words = sorted(unique_words, key=lambda word: (-len(word), word))
+    candidates = {}
+    for word in words[:2]:
+        result = music.tracks(word)
+        tracks = result.get("tracks") if isinstance(result, dict) else None
+        if not isinstance(tracks, list):
+            raise ValueError("invalid music result")
+        for track in tracks[:50]:
+            if not isinstance(track, dict):
+                continue
+            uri = track.get("uri")
+            title = track.get("title")
+            if isinstance(uri, str) and uri and isinstance(title, str) and title:
+                candidates.setdefault(uri, track)
+
+    query_words = normalized_query.split()
+    suggestions = []
+    for uri, track in candidates.items():
+        title = _safe_music_label(track.get("title"), 160)
+        artist = _safe_music_label(track.get("artist"), 100)
+        normalized_title = _music_match_text(title)
+        title_words = normalized_title.split()
+        score = SequenceMatcher(None, normalized_query, normalized_title).ratio()
+        if len(query_words) == 1 and title_words:
+            score = max(score, *(SequenceMatcher(None, query_words[0], item).ratio() for item in title_words))
+        if score >= 0.72:
+            suggestions.append((score, title.casefold(), uri, title, artist))
+    suggestions.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [item[3:] for item in suggestions[:3] if item[3]]
+
+def _music_suggestion_receipt(suggestions):
+    if not suggestions:
+        return {"receipt": "Ich habe keinen passenden eigenen Titel gefunden."}
+    labels = []
+    for title, artist in suggestions:
+        label = f"{title} — {artist}" if artist else title
+        labels.append(label[:270])
+    receipt = ("Kein exakter Treffer. Ähnliche verfügbare Titel: " + "; ".join(labels)
+               + ". Bitte nenne den gewünschten Titel mit Raum noch einmal.")
+    return {"receipt": receipt[:2000]}
+
 def _temperature_text(value):
     if type(value) not in {int, float} or not math.isfinite(value):
         return None
@@ -219,7 +279,12 @@ class ControlBroker:
                 return {"receipt": "Musikbefehl wurde von Music Assistant angenommen."}
             tracks = music.tracks(action["query"])["tracks"]
             if len(tracks) != 1:
-                return {"receipt": "Bitte nenne den Titel genauer." if tracks else "Ich habe keinen passenden eigenen Titel gefunden."}
+                if tracks:
+                    return {"receipt": "Bitte nenne den Titel genauer."}
+                try:
+                    return _music_suggestion_receipt(_music_suggestions(music, action["query"]))
+                except (MusicAssistantError, ValueError, OSError):
+                    return {"receipt": "Kein exakter Treffer. Weitere Vorschläge sind gerade nicht abrufbar. Es wurde nichts gestartet."}
             music.play(tracks[0]["uri"], player)
             return {"receipt": "Eigene Musik wurde von Music Assistant angenommen."}
         secret = os.environ["SPOTIFY_BRIDGE_SECRET"]
