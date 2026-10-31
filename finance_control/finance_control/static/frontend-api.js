@@ -3,6 +3,7 @@
 (() => {
   const allowed = new Set(['/api/state', '/api/classification-list',
     '/api/classification-catalog', '/api/classification-transaction-get',
+    '/api/classification-recipient-preview', '/api/classification-recipient-commit',
     '/api/classification-save', '/api/classification-reset', '/api/recurring-view', '/api/analytics-summary',
     '/api/wealth-load', '/api/contracts-inventory', '/api/contracts-load']);
   let csrf = null;

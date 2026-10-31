@@ -1,3 +1,7 @@
+# 0.2.86
+
+Kreditkartenbuchungen ergänzen beleggestützte Empfängerangaben mit expliziter Vorschau und Bestätigung; ursprüngliche Finanzdaten bleiben unverändert.
+
 # 0.2.85
 
 Generische Kreditkartenbuchungen zeigen brauchbare Empfängerangaben aus dem Verwendungszweck und eindeutig passende lokale Firmenlogos. Originalangaben bleiben im Detail erhalten. Fehlende oder widersprüchliche Angaben ergeben keine erfundene Firma.

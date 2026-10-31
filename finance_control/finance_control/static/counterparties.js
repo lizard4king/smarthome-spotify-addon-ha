@@ -442,7 +442,17 @@
 
   function describe(item = {}) {
     const party = withoutLeadingIban(item.counterparty);
-    if (genericCardParty.test(party.split(/[\r\n]+/u)[0].trim())) {
+    if (genericCardParty.test(party.split(/[\r\n]+/u)[0].trim())
+        || (!party.trim() && item.recipient_evidence)) {
+      const evidence = item.recipient_evidence;
+      if (typeof evidence?.recipient === 'string' && evidence.recipient.trim()) {
+        const label = evidence.recipient.trim();
+        const normalize = value => value.normalize('NFC').trim().toLocaleLowerCase('de-DE').replace(/\s+/gu, ' ');
+        const known = catalog.filter(brand => !intermediaryIds.has(brand.id)
+          && [brand.label, ...brand.aliases].some(alias => normalize(alias) === normalize(label)));
+        const brand = known.length === 1 ? known[0] : null;
+        return {label: brand?.label || label, src: brand?.src || null};
+      }
       const candidate = cardPurpose(item.description);
       const brands = findBrands(candidate, {ignoreIntermediaries: true});
       if (brands.length === 1) {

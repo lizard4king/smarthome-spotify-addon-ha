@@ -627,6 +627,8 @@ def list_transactions(store, data, *, reporting_history=None):
         account_coverage.append({'account_id': account['id'], **dict(coverage)})
     if rows:
         attach_day_balances(store, rows, accounts, latest_by_account(store, accounts))
+        from .recipient_evidence import attach
+        rows = attach(store, rows)
     return {'rows': rows, 'categories': _catalog(store), 'total': total, 'summary': summary,
             'account_coverage': account_coverage,
             'page': page, 'pages': (total + _PAGE - 1) // _PAGE}
@@ -903,6 +905,8 @@ def get_transaction(store, data, *, reporting_history=None):
     item = _transaction_list_rows(store, [selected])[0]
     accounts = _booking_balance_accounts(store, {account_id}, reporting_history)
     attach_day_balances(store, [item], accounts, latest_by_account(store, accounts))
+    from .recipient_evidence import attach
+    item = attach(store, [item])[0]
     return {'transaction': item}
 
 

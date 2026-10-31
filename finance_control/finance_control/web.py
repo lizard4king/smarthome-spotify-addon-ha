@@ -465,8 +465,9 @@ class Cockpit:
                     raise ValueError('unknown_contract_action')
                 return actions[action](store, data)
             if route.startswith('/api/classification-'):
-                from . import classification, classification_rules
-                if route in {'/api/classification-list', '/api/classification-transaction-get'}:
+                from . import classification, classification_rules, recipient_evidence
+                if route in {'/api/classification-list', '/api/classification-transaction-get',
+                             '/api/classification-recipient-preview'}:
                     # Keep visible rows, reference snapshot and full-ledger balances
                     # in one read snapshot while a concurrent import may commit.
                     store.db.execute('BEGIN')
@@ -477,6 +478,8 @@ class Cockpit:
                     from .local_model import review_transactions
                     return review_transactions(store, [data])
                 actions = {
+                    'recipient-preview': recipient_evidence.preview,
+                    'recipient-commit': recipient_evidence.commit,
                     'list': lambda store, data: classification.list_transactions(
                         store, data, reporting_history=self.reporting_history),
                     'transaction-get': lambda store, data: classification.get_transaction(
@@ -1639,6 +1642,12 @@ def make_server(app, port=8785, allowed_hosts=None, host='127.0.0.1', allowed_or
                     return self.reply(400, {
                         'error': 'Vertragsangaben prüfen: bestätigtes Dokument, gültige Laufzeit, positive EUR-Beträge und nicht überlappende Betragsphasen. Zuordnungen einzeln prüfen und bestätigen.'})
                 if urlsplit(self.path).path.startswith('/api/classification-'):
+                    if urlsplit(self.path).path.startswith('/api/classification-recipient-'):
+                        stale = isinstance(error, ValueError) and str(error) == 'stale_recipient_preview'
+                        return self.reply(409 if stale else 400, {
+                            'error': 'Bestand geändert. Bitte erneut abgleichen.' if stale else
+                                     'Auszugsangaben prüfen. Nur belegte, eindeutig zugeordnete Empfänger können ergänzt werden.',
+                            'code': 'stale_recipient_preview' if stale else 'invalid_recipient_evidence'})
                     if isinstance(error, ValueError) and str(error) == 'stale_revision':
                         return self.reply(409, {
                             'error': 'Buchung oder Beleg wurde inzwischen geändert. Bitte neu laden.'})
