@@ -74,6 +74,11 @@ def validate_plan(raw, context):
     value = decode(raw)
     if not isinstance(value, dict) or set(value) != {"answer", "action"} or not isinstance(value["answer"], str) or len(value["answer"]) > 2000:
         raise ValueError("invalid plan")
+    # Clarifications stay inside the runtime; they are never a broker operation.
+    if value["action"] == {"operation": "clarify"}:
+        if not value["answer"].strip():
+            raise ValueError("empty answer")
+        return value
     validate_action(value["action"], context)
     if value["action"]["operation"] == "none" and not value["answer"].strip():
         raise ValueError("empty answer")
@@ -160,6 +165,8 @@ class ControlClient:
         return validate_context(self._post("/api/codex/context", {"request_id": secrets.token_hex(16)}))
 
     def execute(self, action):
+        if action.get("operation") == "clarify":
+            raise ValueError("clarification is local only")
         result = self._post("/api/codex/control", {"request_id": secrets.token_hex(16), "action": action},
                             timeout_seconds=60 if action.get("operation") in {"music_play", "music_control"} else TIMEOUT_SECONDS)
         if set(result) != {"receipt"}:
