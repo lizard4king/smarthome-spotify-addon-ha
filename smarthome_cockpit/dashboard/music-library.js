@@ -8,7 +8,7 @@
     let tab = compact ? 'all' : 'tracks', query = '', path = '', collection = null, returnState = null, artistView = null;
     const folderHistory = [];
     let folderQueueRequest = 0;
-    let items = [], nextOffset = null, busy = false, available = false, selectedTrackUri = null;
+    let items = [], nextOffset = null, busy = false, available = false, selectedTrackUri = null, expandedSuggestions = false;
     let queue = [], queueIndex = -1, preparedQueue = [];
     let selectionButtons = [], playbackTarget = {kind: 'browser', label: 'Dieses Gerät'};
     const handlers = [];
@@ -144,7 +144,7 @@
       list.replaceChildren();
       const grouped = compact && (tab === 'all' || artistView) && !collection;
       const mixed = compact && tab === 'all' && !artistView && !collection;
-      const visibleItems = grouped ? ['artist', 'album', 'track'].flatMap(kind => { const matches = items.filter(item => item.kind === kind); return mixed ? matches.slice(0, 6) : matches; }) : items;
+      const visibleItems = grouped ? ['artist', 'album', 'track'].flatMap(kind => { const matches = items.filter(item => item.kind === kind); return mixed && !expandedSuggestions ? matches.slice(0, 6) : matches; }) : items;
       let group = '';
       for (const item of visibleItems) {
         if (grouped && group !== item.kind) {
@@ -180,7 +180,7 @@
         }
         row.append(meta, actions); list.append(row);
       }
-      more.hidden = mixed || collection !== null || nextOffset === null;
+      more.hidden = collection !== null || nextOffset === null;
       more.disabled = busy;
       playAll.hidden = !collection || playbackTarget.kind !== 'browser';
       playFolder.hidden = tab !== 'folders' || !!collection || !!artistView || !path || playbackTarget.kind !== 'browser';
@@ -188,7 +188,7 @@
     }
     function reload() {
       clearTimeout(timer); ++generation; for (const controller of navigationRequests) controller.abort(); busy = false;
-      items = []; nextOffset = null; render();
+      items = []; nextOffset = null; expandedSuggestions = false; render();
       return loadPage(false);
     }
     async function loadPage(append) {
@@ -223,9 +223,16 @@
           pageOffset = data.next_offset;
         }
         if (destroyed || request !== generation) return;
-        items = append ? items.concat(incoming) : incoming;
+        if (append && requestTab === 'all' && !artistView) expandedSuggestions = true;
+        const combined = append ? items.concat(incoming) : incoming;
+        const seen = new Set();
+        items = combined.filter(item => {
+          const key = (item.kind || requestTab) + '\0' + item.uri;
+          if (seen.has(key)) return false;
+          seen.add(key); return true;
+        });
         nextOffset = Number.isInteger(pageOffset) && pageOffset >= 0 && pageOffset > Number(params.offset) ? pageOffset : null;
-        listStatus.textContent = (items.length ? (requestTab === 'all' && !artistView ? 'Bis zu 6 Vorschläge je Kategorie.' : items.length + ' Einträge angezeigt.') : 'Keine Einträge gefunden.') + (notices.length ? ' ' + notices.join(' ') : '');
+        listStatus.textContent = (items.length ? (requestTab === 'all' && !artistView && !expandedSuggestions ? 'Bis zu 6 Vorschläge je Kategorie.' : items.length + ' Einträge angezeigt.') : nextOffset !== null ? 'Auf dieser Seite keine passenden Einträge. Weitere Ergebnisse können geladen werden.' : 'Keine Einträge gefunden.') + (notices.length ? ' ' + notices.join(' ') : '');
       } catch (error) {
         if (request === generation && !destroyed) listStatus.textContent = error.message;
       } finally {
@@ -346,7 +353,7 @@
     });
     on(search, 'input', () => {
       clearTimeout(timer); query = search.value.trim(); collection = null; artistView = null; returnState = null;
-      ++generation; for (const controller of navigationRequests) controller.abort(); busy = false; items = []; nextOffset = null; render();
+      ++generation; for (const controller of navigationRequests) controller.abort(); busy = false; items = []; nextOffset = null; expandedSuggestions = false; render();
       listStatus.textContent = 'Suche …';
       timer = setTimeout(() => loadPage(false), 300);
     });
